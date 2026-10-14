@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { castRay, createWeaponState, inScytheArc, tryFire, type Target } from '../src/game/combat';
+import {
+  castRay, createScytheState, createWeaponState, inScytheArc, startDeflect, startSwing, swingActive, tickScythe, tryFire,
+  type Target,
+} from '../src/game/combat';
+import { KATANA, SCYTHE } from '../src/game/config';
 
 // Target standing 10 m in front of the origin along -Z (yaw 0 looks down -Z).
 function targetAt(z: number): Target {
@@ -58,6 +62,39 @@ describe('tryFire', () => {
     const before = w.ammo;
     tryFire(w, true, true);
     expect(w.ammo).toBe(before - 1);
+  });
+});
+
+describe('katana melee', () => {
+  it('ends its swing sooner than the scythe, using its own swing length', () => {
+    const katana = createScytheState();
+    startSwing(katana, KATANA);
+    tickScythe(katana, KATANA.swingTime + 0.01);
+    expect(katana.swingTimer).toBe(-1);
+
+    const scythe = createScytheState();
+    startSwing(scythe, SCYTHE);
+    tickScythe(scythe, KATANA.swingTime + 0.01);
+    expect(scythe.swingTimer).toBeGreaterThanOrEqual(0);
+  });
+
+  it('only damages during the katana hit window', () => {
+    const s = createScytheState();
+    startSwing(s, KATANA);
+    tickScythe(s, 0.01);
+    expect(swingActive(s, KATANA)).toBe(false);
+    tickScythe(s, KATANA.hitWindowStart);
+    expect(swingActive(s, KATANA)).toBe(true);
+  });
+
+  it('raises a deflect for its duration, then puts it on cooldown', () => {
+    const s = createScytheState();
+    expect(startDeflect(s)).toBe(true);
+    expect(s.deflectTimer).toBeGreaterThan(0);
+    expect(startDeflect(s)).toBe(false);
+    tickScythe(s, KATANA.deflectTime + 0.01);
+    expect(s.deflectTimer).toBe(0);
+    expect(s.deflectCooldown).toBeGreaterThan(0);
   });
 });
 

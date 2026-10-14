@@ -93,6 +93,7 @@ export class Input {
       fireEdge: this.lmbEdge,
       melee: this.lmbEdge,
       dash: this.rmbEdge,
+      quick: this.consumeEdge('KeyF'),
       reload: this.consumeEdge('KeyR'),
       slot: this.slotEdge,
     };

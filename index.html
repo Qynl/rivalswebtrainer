@@ -42,11 +42,12 @@
             <div class="card gun"><div class="tag">PRIMARY · SECONDARY</div><h3>PANTHER</h3><p>Run-and-gun SMG. Very fast fire rate and a large magazine.</p></div>
             <div class="card gun"><div class="tag">PRIMARY</div><h3>Marksman Rifle</h3><p>Burst-fire precision. Headshots deal double damage.</p></div>
             <div class="card gun"><div class="tag">SECONDARY</div><h3>Sidearm</h3><p>Semi-automatic backup with a strong headshot multiplier.</p></div>
-            <div class="card gun scythe"><div class="tag">MELEE</div><h3>Scythe</h3><p>Always equipped. Swing for close range, dash to reposition.</p></div>
+            <div class="card gun scythe"><div class="tag">MELEE</div><h3>Scythe</h3><p>Wide slash for close range. Right click dashes to reposition.</p></div>
+            <div class="card gun katana"><div class="tag">MELEE</div><h3>Katana</h3><p>Fast, long-reach slash. Right click deflects incoming shots and reflects them back.</p></div>
           </div>
         </section>
         <footer id="controls">
-          <b>WASD</b> move · <b>Space</b> jump · <b>Ctrl / C</b> slide · <b>LMB</b> fire / slash · <b>RMB</b> scythe dash · <b>R</b> reload · <b>1 2 3</b> weapons · <b>Esc</b> pause
+          <b>WASD</b> move · <b>Space</b> jump · <b>Ctrl / C</b> slide · <b>LMB</b> fire / melee attack · <b>RMB</b> ability (dash or deflect) · <b>F</b> quick melee · <b>R</b> reload · <b>1 2 3</b> weapons · <b>Esc</b> pause
         </footer>
       </div>
       <canvas id="game"></canvas>
@@ -71,7 +72,7 @@
           <div id="weapon-name">PISTOL</div>
           <div id="ammo">12 / 12</div>
           <div id="abilities">
-            <div class="ability" id="ab-dash"><span>DASH</span><b id="dash-cd">READY</b></div>
+            <div class="ability" id="ab-dash"><span id="ab-label">DASH</span><b id="dash-cd">READY</b></div>
           </div>
         </div>
         <div id="feed"></div>
@@ -104,13 +105,19 @@
               <option value="puma">PANTHER (run-and-gun SMG)</option>
             </select>
           </label>
+          <label>Melee weapon
+            <select id="melee">
+              <option value="scythe" selected>Scythe (dash ability)</option>
+              <option value="katana">Katana (deflect ability)</option>
+            </select>
+          </label>
           <label class="check"><input type="checkbox" id="sensitivity-invert" /> Invert Y</label>
           <label>Mouse sensitivity <input type="range" id="sensitivity" min="0.0005" max="0.006" step="0.0001" value="0.0022" /></label>
           <button id="play">PLAY</button>
           <div class="controls">
             <b>WASD</b> move · <b>Space</b> jump · <b>Ctrl / C</b> slide (slide + jump = slide-jump)<br/>
-            <b>LMB</b> fire / scythe slash · <b>RMB</b> scythe dash (while scythe equipped) · <b>R</b> reload<br/>
-            <b>1 / 2 / 3</b> pistol / primary / scythe · <b>Esc</b> pause
+            <b>LMB</b> fire / melee attack · <b>RMB</b> ability (scythe dash or katana deflect) · <b>R</b> reload<br/>
+            <b>F</b> quick melee (returns to your gun) · <b>1 / 2 / 3</b> pistol / primary / melee · <b>Esc</b> pause
           </div>
         </div>
       </div>

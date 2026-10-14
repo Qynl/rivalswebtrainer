@@ -1,7 +1,7 @@
 import './style.css';
 import './landing.css';
 import { Game, type GameEvent, type Command } from './game/game';
-import type { Difficulty, WeaponId } from './game/config';
+import type { Difficulty, MeleeId, WeaponId } from './game/config';
 import { Renderer } from './render/renderer';
 import { Input } from './input';
 import { Hud } from './hud';
@@ -24,6 +24,7 @@ const sfx = new Sfx();
 const difficultyEl = $<HTMLSelectElement>('difficulty');
 const loadoutEl = $<HTMLSelectElement>('loadout');
 const secondaryEl = $<HTMLSelectElement>('secondary');
+const meleeEl = $<HTMLSelectElement>('melee');
 const sensitivityEl = $<HTMLInputElement>('sensitivity');
 const invertEl = $<HTMLInputElement>('sensitivity-invert');
 
@@ -34,12 +35,13 @@ let accumulator = 0;
 let lastTime = performance.now();
 let arenaBuilt = false;
 
-function readSettings(): { primary: WeaponId; secondary: WeaponId; difficulty: Difficulty } {
+function readSettings(): { primary: WeaponId; secondary: WeaponId; melee: MeleeId; difficulty: Difficulty } {
   input.sensitivity = Number(sensitivityEl.value);
   input.invertY = invertEl.checked;
   return {
     primary: loadoutEl.value as WeaponId,
     secondary: secondaryEl.value as WeaponId,
+    melee: meleeEl.value as MeleeId,
     difficulty: difficultyEl.value as Difficulty,
   };
 }
@@ -50,13 +52,14 @@ function newGame(): Game {
   const g = new Game({
     primary: settings.primary,
     secondary: settings.secondary,
+    melee: settings.melee,
     difficulty: settings.difficulty,
   });
   if (!arenaBuilt) {
     renderer.buildArena(g.solids);
     arenaBuilt = true;
   }
-  renderer.setLoadout(settings.primary, settings.secondary);
+  renderer.setLoadout(settings.primary, settings.secondary, settings.melee);
   input.setView(g.player.yaw, 0);
   return g;
 }
@@ -165,7 +168,7 @@ function frame(now: number): void {
       // One-shot inputs (edges) only apply on the first fixed step of the frame.
       const stepCmd: Command = first
         ? cmd
-        : { ...cmd, fireEdge: false, melee: false, dash: false, reload: false, slot: null,
+        : { ...cmd, fireEdge: false, melee: false, dash: false, quick: false, reload: false, slot: null,
             move: { ...cmd.move, jumpPressed: false, crouchPressed: false } };
       g.step(STEP, stepCmd);
       first = false;

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PLAYER, WEAPONS, SCYTHE, type WeaponId } from '../game/config';
+import { MELEE, PLAYER, SCYTHE, WEAPONS, type MeleeId, type WeaponId } from '../game/config';
 import type { Game, Actor, GameEvent } from '../game/game';
 import type { ArenaBox } from '../game/map';
 
@@ -69,7 +69,7 @@ export class Renderer {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
   readonly camera: THREE.PerspectiveCamera;
-  private readonly weapons: Record<WeaponId | 'scythe', THREE.Group>;
+  private readonly weapons: Record<WeaponId | MeleeId, THREE.Group>;
   private readonly botRoot = new THREE.Group();
   private readonly botLimbs: { arm: THREE.Object3D; gun: THREE.Object3D };
   private tracers: Tracer[] = [];
@@ -83,6 +83,7 @@ export class Renderer {
   private bobT = 0;
   private primary: WeaponId = 'ak';
   private secondary: WeaponId = 'pistol';
+  private melee: MeleeId = 'scythe';
   private muzzleT = 0;
   private readonly muzzle: THREE.Mesh;
 
@@ -109,8 +110,9 @@ export class Renderer {
       ak: this.buildAk(),
       puma: this.buildPanther(),
       scythe: this.buildScythe(),
+      katana: this.buildKatana(),
     };
-    for (const k of Object.keys(this.weapons) as (WeaponId | 'scythe')[]) {
+    for (const k of Object.keys(this.weapons) as (WeaponId | MeleeId)[]) {
       this.weapons[k].visible = false;
       this.camera.add(this.weapons[k]);
     }
@@ -310,10 +312,33 @@ export class Renderer {
     this.camera.updateProjectionMatrix();
   }
 
-  /** Sets which weapon models are shown in the primary and secondary slots. */
-  setLoadout(primary: WeaponId, secondary: WeaponId): void {
+  /** Katana: slim blade with a guard and wrapped grip. */
+  private buildKatana(): THREE.Group {
+    const g = new THREE.Group();
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.26, 8), mat(0x2a2326, 0.6));
+    grip.rotation.x = Math.PI / 2;
+    grip.position.set(0, 0, -0.1);
+    const guard = new THREE.Mesh(
+      new THREE.BoxGeometry(0.1, 0.02, 0.025),
+      new THREE.MeshStandardMaterial({ color: 0xc9a227, metalness: 0.9, roughness: 0.35 }),
+    );
+    guard.position.set(0, 0, -0.24);
+    const blade = new THREE.Mesh(
+      new THREE.BoxGeometry(0.035, 0.008, 0.85),
+      new THREE.MeshStandardMaterial({ color: 0xe6ecf2, roughness: 0.2, metalness: 0.9 }),
+    );
+    blade.position.set(0, 0, -0.68);
+    g.add(grip, guard, blade);
+    g.position.set(0.3, -0.3, -0.45);
+    g.rotation.set(0.05, -0.1, 0.1);
+    return g;
+  }
+
+  /** Sets which weapon models are shown in the primary, secondary and melee slots. */
+  setLoadout(primary: WeaponId, secondary: WeaponId, melee: MeleeId = 'scythe'): void {
     this.primary = primary;
     this.secondary = secondary;
+    this.melee = melee;
   }
 
   /** BRUTE-47 viewmodel: wooden furniture, curved mag, gold accent. */
@@ -409,9 +434,11 @@ export class Renderer {
           this.flashMuzzle();
         }
       } else if (e.type === 'swing') {
-        this.triggerSwingVisual();
+        if (e.by === 'player') this.triggerSwingVisual();
       } else if (e.type === 'dash') {
-        this.triggerDashVisual();
+        if (e.by === 'player') this.triggerDashVisual();
+      } else if (e.type === 'deflect') {
+        this.addSparks(new THREE.Vector3(e.at.x, e.at.y, e.at.z), 0x7fd6ff);
       } else if (e.type === 'hit' && e.target === 'player') {
         this.hitFlash = 0.25;
       } else if (e.type === 'hit' && e.target === 'bot') {
@@ -462,23 +489,24 @@ export class Renderer {
 
   private updateViewmodel(p: Actor, dt: number): void {
     const showSlot = p.slot;
-    const wepKey: WeaponId | 'scythe' = showSlot === 3 ? 'scythe' : showSlot === 1 ? this.secondary : this.primary;
+    const wepKey: WeaponId | MeleeId = showSlot === 3 ? this.melee : showSlot === 1 ? this.secondary : this.primary;
     if (this.muzzleT > 0) {
       this.muzzleT -= dt;
       if (this.muzzleT <= 0) this.muzzle.visible = false;
     }
-    for (const k of Object.keys(this.weapons) as (WeaponId | 'scythe')[]) {
+    for (const k of Object.keys(this.weapons) as (WeaponId | MeleeId)[]) {
       this.weapons[k].visible = k === wepKey && p.alive;
     }
     const sway = Math.sin(this.bobT * 0.5) * 0.008;
-    const base = wepKey === 'scythe' ? new THREE.Vector3(0.3, -0.3, -0.45) : new THREE.Vector3(0.28, -0.25, -0.5);
+    const isMelee = wepKey === 'scythe' || wepKey === 'katana';
+    const base = isMelee ? new THREE.Vector3(0.3, -0.3, -0.45) : new THREE.Vector3(0.28, -0.25, -0.5);
     const g = this.weapons[wepKey];
     const kick = this.recoil * (wepKey === 'rifle' ? 0.05 : 0.03);
     g.position.set(base.x + sway, base.y - kick * 0.6, base.z + kick);
     if (wepKey === 'scythe') {
       if (this.swingT >= 0) {
         this.swingT += dt;
-        const t = Math.min(1, this.swingT / SCYTHE.swingTime);
+        const t = Math.min(1, this.swingT / MELEE.scythe.swingTime);
         g.rotation.set(0.1 - t * 0.9, -0.15 + Math.sin(t * Math.PI) * 1.2 - t * 0.6, 0.25 - Math.sin(t * Math.PI) * 0.5);
         if (t >= 1) this.swingT = -1;
       } else {
@@ -488,6 +516,21 @@ export class Renderer {
         this.dashPose -= dt;
         g.position.z -= 0.12;
         g.rotation.x -= 0.25;
+      }
+    } else if (wepKey === 'katana') {
+      if (p.scythe.deflectTimer > 0) {
+        // Deflect: blade raised across the face.
+        g.position.z -= 0.12;
+        g.position.y += 0.06;
+        g.rotation.set(0.9, -0.2, 0.1);
+      } else if (this.swingT >= 0) {
+        // Fast horizontal slash from right to left.
+        this.swingT += dt;
+        const t = Math.min(1, this.swingT / MELEE.katana.swingTime);
+        g.rotation.set(-0.35 + Math.sin(t * Math.PI) * 0.2, 0.9 - t * 1.8, 0.15);
+        if (t >= 1) this.swingT = -1;
+      } else {
+        g.rotation.set(0.05, -0.1, 0.1);
       }
     } else {
       g.rotation.set(0, 0, 0);

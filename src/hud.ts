@@ -16,6 +16,7 @@ export class Hud {
   private readonly weaponName = el('weapon-name');
   private readonly ammo = el('ammo');
   private readonly dashCd = el('dash-cd');
+  private readonly abilityLabel = el('ab-label');
   private readonly scoreYou = el('score-you');
   private readonly scoreBot = el('score-bot');
   private readonly roundLabel = el('round-label');
@@ -45,7 +46,7 @@ export class Hud {
     this.stateText.textContent = state.join(' ');
 
     if (p.slot === 3) {
-      this.weaponName.textContent = 'SCYTHE';
+      this.weaponName.textContent = p.melee === 'katana' ? 'KATANA' : 'SCYTHE';
       this.ammo.textContent = '—';
     } else {
       const w = p.slot === 1 ? p.pistol : p.primary;
@@ -54,7 +55,9 @@ export class Hud {
       this.ammo.textContent = w.reloadTimer > 0 ? 'RELOADING' : `${w.ammo} / ${def.magSize}`;
     }
 
-    const cd = p.scythe.dashCooldown;
+    const katana = p.melee === 'katana';
+    this.abilityLabel.textContent = katana ? 'DEFLECT' : 'DASH';
+    const cd = katana ? p.scythe.deflectCooldown : p.scythe.dashCooldown;
     this.dashCd.textContent = cd > 0 ? `${cd.toFixed(1)}s` : 'READY';
     this.dashCd.parentElement?.classList.toggle('ready', cd <= 0);
 

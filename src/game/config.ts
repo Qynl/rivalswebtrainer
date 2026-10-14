@@ -53,6 +53,37 @@ export const SCYTHE = {
   dashHitRange: 1.6,
 } as const;
 
+/** Katana: faster, longer slash. Right click deflects incoming shots and reflects them. */
+export const KATANA = {
+  range: 2.7,
+  arcDeg: 140,
+  damage: 40,
+  swingTime: 0.3,
+  swingCooldown: 0.35,
+  hitWindowStart: 0.06,
+  hitWindowEnd: 0.18,
+  deflectTime: 0.35,
+  deflectCooldown: 3,
+  reflectMult: 0.75,
+} as const;
+
+export type MeleeId = 'scythe' | 'katana';
+
+export interface MeleeDef {
+  range: number;
+  arcDeg: number;
+  damage: number;
+  swingTime: number;
+  swingCooldown: number;
+  hitWindowStart: number;
+  hitWindowEnd: number;
+}
+
+export const MELEE: Record<MeleeId, MeleeDef> = { scythe: SCYTHE, katana: KATANA };
+
+/** F quick melee: a short melee attack, then the previous gun comes back. */
+export const QUICK_MELEE = { duration: 0.6 } as const;
+
 export type WeaponId = 'pistol' | 'smg' | 'rifle' | 'ak' | 'puma';
 
 export const WEAPON_IDS: WeaponId[] = ['pistol', 'smg', 'rifle', 'ak', 'puma'];

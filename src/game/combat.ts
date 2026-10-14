@@ -1,4 +1,4 @@
-import { SCYTHE, WEAPONS, type WeaponDef, type WeaponId } from './config';
+import { KATANA, SCYTHE, WEAPONS, type MeleeDef, type WeaponDef, type WeaponId } from './config';
 import type { Aabb, Vec3 } from './movement';
 
 export interface WeaponState {
@@ -136,16 +136,22 @@ export function castRay(origin: Vec3, dir: Vec3, solids: readonly Aabb[], target
 }
 
 /** Scythe arc: true if the point is within range and inside the forward arc (flat, XZ plane). */
-export function inScytheArc(from: Vec3, yaw: number, target: Vec3): boolean {
+export function inScytheArc(
+  from: Vec3,
+  yaw: number,
+  target: Vec3,
+  range: number = SCYTHE.range,
+  arcDeg: number = SCYTHE.arcDeg,
+): boolean {
   const fx = -Math.sin(yaw);
   const fz = -Math.cos(yaw);
   const dx = target.x - from.x;
   const dz = target.z - from.z;
   const dist = Math.hypot(dx, dz);
-  if (dist > SCYTHE.range) return false;
+  if (dist > range) return false;
   if (dist < 1e-6) return true;
   const cos = (dx * fx + dz * fz) / dist;
-  return cos >= Math.cos((SCYTHE.arcDeg * Math.PI) / 360);
+  return cos >= Math.cos((arcDeg * Math.PI) / 360);
 }
 
 export interface ScytheState {
@@ -154,33 +160,50 @@ export interface ScytheState {
   dashTimer: number; // >0 while dashing
   dashCooldown: number;
   hasHit: boolean; // this swing already damaged someone
+  deflectTimer: number; // >0 while katana deflect is up
+  deflectCooldown: number;
+  swingLen: number; // length of the current swing, set by startSwing
 }
 
 export function createScytheState(): ScytheState {
-  return { swingTimer: -1, cooldown: 0, dashTimer: 0, dashCooldown: 0, hasHit: false };
+  return {
+    swingTimer: -1, cooldown: 0, dashTimer: 0, dashCooldown: 0, hasHit: false,
+    deflectTimer: 0, deflectCooldown: 0, swingLen: SCYTHE.swingTime,
+  };
 }
 
 export function tickScythe(s: ScytheState, dt: number): void {
   s.cooldown = Math.max(0, s.cooldown - dt);
   s.dashCooldown = Math.max(0, s.dashCooldown - dt);
   s.dashTimer = Math.max(0, s.dashTimer - dt);
+  s.deflectTimer = Math.max(0, s.deflectTimer - dt);
+  s.deflectCooldown = Math.max(0, s.deflectCooldown - dt);
   if (s.swingTimer >= 0) {
     s.swingTimer += dt;
-    if (s.swingTimer >= SCYTHE.swingTime) s.swingTimer = -1;
+    if (s.swingTimer >= s.swingLen) s.swingTimer = -1;
   }
 }
 
-export function startSwing(s: ScytheState): boolean {
+export function startSwing(s: ScytheState, def: MeleeDef = SCYTHE): boolean {
   if (s.swingTimer >= 0 || s.cooldown > 0) return false;
   s.swingTimer = 0;
-  s.cooldown = SCYTHE.swingCooldown + SCYTHE.swingTime;
+  s.swingLen = def.swingTime;
+  s.cooldown = def.swingCooldown + def.swingTime;
   s.hasHit = false;
   return true;
 }
 
 /** True while the blade is in its damaging part of the swing. */
-export function swingActive(s: ScytheState): boolean {
-  return s.swingTimer >= SCYTHE.hitWindowStart && s.swingTimer <= SCYTHE.hitWindowEnd;
+export function swingActive(s: ScytheState, def: MeleeDef = SCYTHE): boolean {
+  return s.swingTimer >= def.hitWindowStart && s.swingTimer <= def.hitWindowEnd;
+}
+
+/** Katana deflect: raises the blade to block and reflect incoming shots. */
+export function startDeflect(s: ScytheState): boolean {
+  if (s.deflectCooldown > 0) return false;
+  s.deflectTimer = KATANA.deflectTime;
+  s.deflectCooldown = KATANA.deflectCooldown;
+  return true;
 }
 
 export function startDash(s: ScytheState): boolean {

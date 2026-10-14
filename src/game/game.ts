@@ -1,8 +1,8 @@
-import { PLAYER, SCYTHE, WEAPONS, type Difficulty, type WeaponId } from './config';
+import { MELEE, PLAYER, QUICK_MELEE, KATANA, SCYTHE, WEAPONS, type Difficulty, type MeleeId, type WeaponId } from './config';
 import { addHorizontalImpulse, createMoveState, stepMovement, type Aabb, type MoveEvents, type MoveInput, type MoveState, type Vec3 } from './movement';
 import { buildArena, SPAWN_CANDIDATES, ARENA_HALF, type ArenaBox } from './map';
 import {
-  castRay, createScytheState, createWeaponState, inScytheArc, startDash, startReload, startSwing,
+  castRay, createScytheState, createWeaponState, inScytheArc, startDash, startDeflect, startReload, startSwing,
   swingActive, tickScythe, tickWeapon, tryFire, type ScytheState, type Target, type WeaponState,
 } from './combat';
 import { Bot, type BotCommand, type BotPerception } from './bot';
@@ -17,7 +17,10 @@ export interface Command {
   fire: boolean;
   fireEdge: boolean;
   melee: boolean;
+  /** right click: scythe dash or katana deflect */
   dash: boolean;
+  /** F: quick melee, then back to the gun */
+  quick: boolean;
   reload: boolean;
   slot: 1 | 2 | 3 | null;
 }
@@ -34,7 +37,12 @@ export interface Actor {
   pistol: WeaponState;
   primary: WeaponState;
   slot: 1 | 2 | 3;
+  melee: MeleeId;
   scythe: ScytheState;
+  /** seconds left on a quick melee; 0 when not quick-meleeing */
+  quickTimer: number;
+  /** gun slot to return to after a quick melee */
+  quickReturn: 1 | 2;
   dashDir: Vec3;
   dashHit: boolean;
   flash: number;
@@ -45,6 +53,8 @@ export type GameEvent =
   | { type: 'hit'; by: ActorId; target: ActorId; amount: number; head: boolean; at: Vec3 }
   | { type: 'swing'; by: ActorId }
   | { type: 'dash'; by: ActorId }
+  | { type: 'deflectStart'; by: ActorId }
+  | { type: 'deflect'; by: ActorId; at: Vec3 }
   | { type: 'reload'; by: ActorId }
   | { type: 'move'; by: ActorId; ev: MoveEvents }
   | { type: 'death'; target: ActorId }
@@ -56,6 +66,7 @@ export type GameEvent =
 export interface Loadout {
   primary: WeaponId;
   secondary: WeaponId;
+  melee: MeleeId;
   difficulty: Difficulty;
 }
 
@@ -102,7 +113,10 @@ export class Game {
       pistol: createWeaponState(this.loadout.secondary),
       primary: createWeaponState(this.loadout.primary),
       slot: 2,
+      melee: id === 'player' ? this.loadout.melee : 'scythe',
       scythe: createScytheState(),
+      quickTimer: 0,
+      quickReturn: 2,
       dashDir: { x: 0, y: 0, z: -1 },
       dashHit: false,
       flash: 0,
@@ -134,6 +148,7 @@ export class Game {
     a.alive = true;
     a.slot = 2;
     a.scythe = createScytheState();
+    a.quickTimer = 0;
     a.dashHit = false;
     a.flash = 0;
   }
@@ -203,6 +218,7 @@ export class Game {
       fireEdge: botCmd.fireEdge,
       melee: botCmd.wantMelee,
       dash: botCmd.wantDash,
+      quick: false,
       reload: botCmd.wantReload,
       slot: null,
     };
@@ -230,7 +246,22 @@ export class Game {
     a.yaw = cmd.yaw;
     a.pitch = cmd.pitch;
 
-    if (cmd.slot !== null) a.slot = cmd.slot;
+    if (cmd.slot !== null) {
+      a.slot = cmd.slot;
+      a.quickTimer = 0;
+    }
+    // F quick melee: switch to melee for a moment, then return to the gun.
+    if (cmd.quick && a.quickTimer <= 0 && a.slot !== 3) {
+      a.quickReturn = a.slot;
+      a.quickTimer = QUICK_MELEE.duration;
+      a.slot = 3;
+    }
+    if (a.quickTimer > 0) {
+      a.quickTimer = Math.max(0, a.quickTimer - dt);
+      if (a.quickTimer === 0) a.slot = a.quickReturn;
+    }
+    const melee = MELEE[a.melee];
+    const meleeHeld = a.slot === 3 || a.quickTimer > 0;
 
     if (cmd.reload) {
       const w = this.weaponOf(a);
@@ -240,9 +271,21 @@ export class Game {
       }
     }
 
-    if (a.slot === 3) {
-      if (cmd.melee && startSwing(a.scythe)) this.events.push({ type: 'swing', by: a.id });
-      if (cmd.dash && startDash(a.scythe)) {
+    if (meleeHeld) {
+      // Left click (or F) swings the melee weapon.
+      if ((cmd.melee || cmd.quick) && startSwing(a.scythe, melee)) this.events.push({ type: 'swing', by: a.id });
+    } else {
+      const w = this.weaponOf(a);
+      if (w) {
+        const shots = tryFire(w, cmd.fire, cmd.fireEdge);
+        for (let i = 0; i < shots; i++) this.fireShot(a, w, enemy);
+      }
+    }
+
+    // Right click ability: scythe dashes, katana deflects.
+    if (cmd.dash && a.melee === 'katana') {
+      if (startDeflect(a.scythe)) this.events.push({ type: 'deflectStart', by: a.id });
+    } else if (cmd.dash && startDash(a.scythe)) {
         a.dashHit = false;
         const m = cmd.move;
         const fx = -Math.sin(cmd.yaw);
@@ -257,13 +300,6 @@ export class Game {
         }
         a.dashDir = { x: dx, y: 0, z: dz };
         this.events.push({ type: 'dash', by: a.id });
-      }
-    } else {
-      const w = this.weaponOf(a);
-      if (w) {
-        const shots = tryFire(w, cmd.fire, cmd.fireEdge);
-        for (let i = 0; i < shots; i++) this.fireShot(a, w, enemy);
-      }
     }
 
     // Movement; the dash overrides horizontal speed for its duration.
@@ -273,12 +309,12 @@ export class Game {
       this.events.push({ type: 'move', by: a.id, ev });
     }
 
-    // Scythe slash
-    if (a.slot === 3 && swingActive(a.scythe) && !a.scythe.hasHit && enemy.alive) {
+    // Melee slash
+    if (meleeHeld && swingActive(a.scythe, melee) && !a.scythe.hasHit && enemy.alive) {
       const dy = Math.abs(enemy.move.pos.y - a.move.pos.y);
-      if (dy < 2 && inScytheArc(a.move.pos, a.yaw, enemy.move.pos)) {
+      if (dy < 2 && inScytheArc(a.move.pos, a.yaw, enemy.move.pos, melee.range, melee.arcDeg)) {
         a.scythe.hasHit = true;
-        this.damage(enemy, SCYTHE.damage, a.id, false, enemy.move.pos);
+        this.damage(enemy, melee.damage, a.id, false, enemy.move.pos);
       }
     }
 
@@ -304,6 +340,12 @@ export class Game {
     const to = hit.point;
     const landed = hit.targetId !== null;
     this.events.push({ type: 'shot', by: a.id, from: origin, to, hit: landed, head: hit.isHead });
+    // Katana deflect: a landed shot is blocked and reflected back at the shooter.
+    if (landed && enemy.scythe.deflectTimer > 0) {
+      this.events.push({ type: 'deflect', by: enemy.id, at: { ...to } });
+      this.damage(a, def.damage * KATANA.reflectMult, enemy.id, false, origin);
+      return;
+    }
     if (landed) {
       this.damage(enemy, def.damage * (hit.isHead ? def.headMult : 1), a.id, hit.isHead, to);
     }
