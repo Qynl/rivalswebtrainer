@@ -73,4 +73,11 @@ export interface MovementWorld {
     hitFloor: boolean;
     colliderId?: string;
   };
+  raycast(origin: Vec3, direction: Vec3, maxDistance: number): {
+    colliderId: string;
+    distance: number;
+    point: Vec3;
+    normal: Vec3;
+    tag?: string;
+  } | null;
 }

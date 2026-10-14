@@ -146,6 +146,21 @@ describe('MovementController', () => {
     expect(controller.grounded).toBe(true);
   });
 
+  it('raycasts the same cover solids used for movement', () => {
+    const world = makeFlatWorld();
+    world.addBox('cover', { x: 0, y: 1, z: -4 }, { x: 6, y: 2, z: 0.8 }, 'cover');
+
+    const hit = world.raycast(
+      { x: 0, y: 1.3, z: 0 },
+      { x: 0, y: 0, z: -1 },
+      20,
+    );
+
+    expect(hit?.colliderId).toBe('cover');
+    expect(hit?.distance).toBeCloseTo(3.6, 5);
+    expect(hit?.point.z).toBeCloseTo(-3.6, 5);
+  });
+
   it('is stable when the same input is simulated at two render rates', () => {
     const sixty = new MovementController(makeFlatWorld());
     const oneTwenty = new MovementController(makeFlatWorld());

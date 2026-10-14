@@ -27,6 +27,11 @@ export class CameraController {
     this.pitch = Math.max(-Math.PI / 2 + 0.035, Math.min(Math.PI / 2 - 0.035, this.pitch));
   }
 
+  addRecoil(pitch: number, yaw = 0): void {
+    this.pitch = Math.max(-Math.PI / 2 + 0.035, Math.min(Math.PI / 2 - 0.035, this.pitch + pitch));
+    this.yaw += yaw;
+  }
+
   getYaw(): number {
     return this.yaw;
   }

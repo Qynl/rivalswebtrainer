@@ -6,18 +6,27 @@ import {
 } from 'react';
 import * as THREE from 'three';
 import { CameraController } from './CameraController';
+import { CombatInputManager } from './CombatInput';
+import { CombatSimulation } from './combat/CombatSimulation';
+import { BotAvatarView, WeaponView, createImpactEffect } from './combat/CombatPresentation';
+import type {
+  BotDifficulty,
+  CombatSnapshot,
+  MatchPhase,
+} from './combat/CombatTypes';
 import { InputManager } from './InputManager';
 import { MovementRecorder } from './MovementRecorder';
 import { buildArena } from './arena/ArenaBuilder';
-import { ARENA_SPAWN, type ArenaMode } from './arena/ArenaConfig';
+import { ARENA_SPAWN, BOT_SPAWN, LAB_SPAWN, type ArenaMode } from './arena/ArenaConfig';
 import { DEFAULT_MOVEMENT_CONFIG } from './movement/MovementConfig';
 import { MovementController } from './movement/MovementController';
-import type { MovementSnapshot } from './movement/MovementTypes';
+import type { MovementSnapshot, Vec3 } from './movement/MovementTypes';
 
 export interface GameSettings {
   fov: number;
   sensitivity: number;
   autoSprint: boolean;
+  difficulty: BotDifficulty;
 }
 
 export interface FrameMetrics {
@@ -30,6 +39,10 @@ export interface FrameMetrics {
 export interface GameCanvasHandle {
   requestPointerLock: () => void;
   exitPointerLock: () => void;
+  startMatch: () => void;
+  nextRound: () => void;
+  restartMatch: () => void;
+  stopMatch: () => void;
 }
 
 export interface GameCanvasProps {
@@ -38,9 +51,16 @@ export interface GameCanvasProps {
   paused: boolean;
   onPointerLockChange: (locked: boolean) => void;
   onTelemetry: (snapshot: MovementSnapshot, metrics: FrameMetrics) => void;
+  onCombatState?: (snapshot: CombatSnapshot) => void;
   onRecordingChange?: (recording: boolean, sampleCount: number) => void;
   onReady?: () => void;
   onError?: (message: string) => void;
+}
+
+interface ActiveEffect {
+  object: THREE.Group;
+  remaining: number;
+  duration: number;
 }
 
 function disposeScene(scene: THREE.Scene): void {
@@ -64,6 +84,14 @@ function disposeScene(scene: THREE.Scene): void {
   });
 }
 
+function setEffectOpacity(group: THREE.Group, opacity: number): void {
+  group.traverse((object) => {
+    const renderable = object as THREE.Mesh;
+    const material = renderable.material as THREE.Material & { opacity?: number } | undefined;
+    if (material && 'opacity' in material) material.opacity = opacity;
+  });
+}
+
 export const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(function GameCanvas(
   {
     mode,
@@ -71,6 +99,7 @@ export const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(function
     paused,
     onPointerLockChange,
     onTelemetry,
+    onCombatState,
     onRecordingChange,
     onReady,
     onError,
@@ -82,6 +111,7 @@ export const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(function
   const modeRef = useRef(mode);
   const pausedRef = useRef(paused);
   const onTelemetryRef = useRef(onTelemetry);
+  const onCombatStateRef = useRef(onCombatState);
   const onPointerLockChangeRef = useRef(onPointerLockChange);
   const onRecordingChangeRef = useRef(onRecordingChange);
   const onReadyRef = useRef(onReady);
@@ -90,28 +120,35 @@ export const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(function
   settingsRef.current = settings;
   pausedRef.current = paused;
   onTelemetryRef.current = onTelemetry;
+  onCombatStateRef.current = onCombatState;
   onPointerLockChangeRef.current = onPointerLockChange;
   onRecordingChangeRef.current = onRecordingChange;
   onReadyRef.current = onReady;
   onErrorRef.current = onError;
 
   const controllerRef = useRef<MovementController | null>(null);
+  const combatRef = useRef<CombatSimulation | null>(null);
   const cameraControllerRef = useRef<CameraController | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
-  const arenaRef = useRef<ReturnType<typeof buildArena> | null>(null);
   const renderPreviousRef = useRef({ x: 0, y: 0, z: 0 });
   const renderPositionRef = useRef({ x: 0, y: 0, z: 0 });
+  const startMatchRef = useRef<() => void>(() => undefined);
+  const nextRoundRef = useRef<() => void>(() => undefined);
+  const restartMatchRef = useRef<() => void>(() => undefined);
+  const stopMatchRef = useRef<() => void>(() => undefined);
 
   useImperativeHandle(ref, () => ({
     requestPointerLock: () => {
       const canvas = hostRef.current?.querySelector('canvas');
-      if (canvas && document.pointerLockElement !== canvas) {
-        canvas.requestPointerLock();
-      }
+      if (canvas && document.pointerLockElement !== canvas) canvas.requestPointerLock();
     },
     exitPointerLock: () => {
       if (document.pointerLockElement) document.exitPointerLock();
     },
+    startMatch: () => startMatchRef.current(),
+    nextRound: () => nextRoundRef.current(),
+    restartMatch: () => restartMatchRef.current(),
+    stopMatch: () => stopMatchRef.current(),
   }), []);
 
   useEffect(() => {
@@ -150,7 +187,7 @@ export const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(function
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.domElement.className = 'game-canvas';
-    renderer.domElement.setAttribute('aria-label', 'RIVALS movement trainer viewport');
+    renderer.domElement.setAttribute('aria-label', 'RIVALS movement and combat viewport');
     host.appendChild(renderer.domElement);
 
     const hemisphere = new THREE.HemisphereLight(0xdff8ff, 0x527986, 2.05);
@@ -180,25 +217,34 @@ export const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(function
       renderer.domElement.remove();
       return undefined;
     }
-    arenaRef.current = arena;
-    const spawn = arena.spawns[modeRef.current] ?? ARENA_SPAWN;
-    const controller = new MovementController(arena.world, {}, spawn.position);
+
+    const combat = new CombatSimulation(
+      arena.world,
+      ARENA_SPAWN,
+      BOT_SPAWN,
+      settingsRef.current.difficulty,
+    );
+    combatRef.current = combat;
+    const controller = combat.playerMovement;
     controllerRef.current = controller;
-    renderPreviousRef.current.x = controller.position.x;
-    renderPreviousRef.current.y = controller.position.y;
-    renderPreviousRef.current.z = controller.position.z;
-    renderPositionRef.current.x = controller.position.x;
-    renderPositionRef.current.y = controller.position.y;
-    renderPositionRef.current.z = controller.position.z;
-    cameraRef.current = camera;
+
     const cameraController = new CameraController();
     cameraController.setSensitivity(settingsRef.current.sensitivity * 0.0022);
-    cameraController.reset(spawn.yaw, 0);
+    cameraController.reset(ARENA_SPAWN.yaw, 0);
     cameraControllerRef.current = cameraController;
+    cameraRef.current = camera;
+
+    const weaponView = new WeaponView(camera);
+    const botAvatar = new BotAvatarView();
+    botAvatar.addTo(scene);
+    botAvatar.group.visible = false;
 
     const input = new InputManager();
+    const combatInput = new CombatInputManager();
     input.attach();
+    combatInput.attach();
     const recorder = new MovementRecorder();
+    const effects: ActiveEffect[] = [];
     let lastRecording: ReturnType<MovementRecorder['stop']> | null = null;
     let recording = false;
     let replaying = false;
@@ -207,25 +253,75 @@ export const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(function
     let lastTime = performance.now();
     let accumulator = 0;
     let lastTelemetry = 0;
+    let lastCombatTelemetry = -Infinity;
     let fpsAccumulator = 0;
     let fpsFrames = 0;
     let fps = 0;
     let destroyed = false;
+    let lastPhase: MatchPhase = combat.getSnapshot().phase;
+
+    const setRenderPosition = (position: Vec3): void => {
+      renderPreviousRef.current.x = position.x;
+      renderPreviousRef.current.y = position.y;
+      renderPreviousRef.current.z = position.z;
+      renderPositionRef.current.x = position.x;
+      renderPositionRef.current.y = position.y;
+      renderPositionRef.current.z = position.z;
+    };
+    setRenderPosition(controller.position);
+
+    const updateCombatState = (): CombatSnapshot => {
+      const snapshot = combat.getSnapshot();
+      onCombatStateRef.current?.(snapshot);
+      return snapshot;
+    };
+
+    const releaseLock = (): void => {
+      if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
+    };
+
+    const startMatch = (): void => {
+      if (modeRef.current !== 'arena') return;
+      combat.setDifficulty(settingsRef.current.difficulty);
+      if (!combat.isActive) combat.beginMatch();
+      input.clear();
+      combatInput.clear();
+      updateCombatState();
+    };
+    const nextRound = (): void => {
+      combat.nextRound();
+      input.clear();
+      combatInput.clear();
+      updateCombatState();
+    };
+    const restartMatch = (): void => {
+      combat.setDifficulty(settingsRef.current.difficulty);
+      combat.beginMatch();
+      input.clear();
+      combatInput.clear();
+      updateCombatState();
+    };
+    const stopMatch = (): void => {
+      combat.stopMatch();
+      releaseLock();
+      updateCombatState();
+    };
+    startMatchRef.current = startMatch;
+    nextRoundRef.current = nextRound;
+    restartMatchRef.current = restartMatch;
+    stopMatchRef.current = stopMatch;
+    updateCombatState();
 
     const requestLock = (): void => {
-      if (!pausedRef.current && document.pointerLockElement !== renderer.domElement) {
-        renderer.domElement.requestPointerLock();
-      }
+      if (document.pointerLockElement !== renderer.domElement) renderer.domElement.requestPointerLock();
     };
-    const releaseLock = (): void => {
-      if (document.pointerLockElement === renderer.domElement) {
-        document.exitPointerLock();
-      }
-    };
-
     const onCanvasClick = (): void => requestLock();
     const onPointerLockChange = (): void => {
       const locked = document.pointerLockElement === renderer.domElement;
+      if (!locked) {
+        input.clear();
+        combatInput.clear();
+      }
       onPointerLockChangeRef.current(locked);
     };
     const onMouseMove = (event: MouseEvent): void => {
@@ -241,11 +337,13 @@ export const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(function
     };
     const onVisibilityChange = (): void => {
       input.clear();
+      combatInput.clear();
       accumulator = 0;
       lastTime = performance.now();
       if (document.visibilityState === 'hidden') releaseLock();
     };
     const onRecordingKey = (event: KeyboardEvent): void => {
+      if (modeRef.current !== 'lab') return;
       if (event.code === 'KeyR' && !event.repeat) {
         if (!recording) {
           replaying = false;
@@ -258,21 +356,19 @@ export const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(function
         onRecordingChangeRef.current?.(recording, recorder.getSampleCount());
       }
       if (event.code === 'F9' && !event.repeat && lastRecording) {
-        // Re-feed the exact input and camera-yaw stream through the same fixed
-        // 120 Hz controller. This makes a recording useful as a regression
-        // sequence rather than merely a screenshot of the final position.
         controller.reset(lastRecording.initialPosition);
-        renderPreviousRef.current.x = controller.position.x;
-        renderPreviousRef.current.y = controller.position.y;
-        renderPreviousRef.current.z = controller.position.z;
-        renderPositionRef.current.x = controller.position.x;
-        renderPositionRef.current.y = controller.position.y;
-        renderPositionRef.current.z = controller.position.z;
+        setRenderPosition(controller.position);
         cameraController.reset(lastRecording.initialYaw, 0);
         input.clear();
         replayIndex = 0;
         replaying = true;
       }
+    };
+
+    const addImpact = (point: Vec3 | null): void => {
+      if (!point) return;
+      const effect = createImpactEffect(scene, point, { x: 0, y: 1, z: 0 });
+      effects.push({ object: effect, remaining: 0.22, duration: 0.22 });
     };
 
     renderer.domElement.addEventListener('click', onCanvasClick);
@@ -304,37 +400,60 @@ export const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(function
           accumulator >= DEFAULT_MOVEMENT_CONFIG.fixedTimeStep &&
           simulationSteps < DEFAULT_MOVEMENT_CONFIG.maxCatchUpSteps
         ) {
-          let snapshotInput = input.snapshot(settingsRef.current.autoSprint);
-          let simulationYaw = cameraController.getYaw();
-          if (replaying && lastRecording) {
-            const replaySample = lastRecording.samples[replayIndex];
-            if (replaySample) {
-              snapshotInput = replaySample.input;
-              simulationYaw = replaySample.yaw;
-              replayIndex += 1;
-            } else {
-              replaying = false;
+          const snapshotInput = input.snapshot(settingsRef.current.autoSprint);
+          const simulationYaw = cameraController.getYaw();
+          const simulationPitch = cameraController.getPitch();
+          if (modeRef.current === 'arena' && combat.isActive) {
+            const combatStep = combat.step(
+              DEFAULT_MOVEMENT_CONFIG.fixedTimeStep,
+              snapshotInput,
+              { yaw: simulationYaw, pitch: simulationPitch },
+              combatInput.snapshot(),
+            );
+            if (combatStep.playerShot?.fired) {
+              weaponView.triggerFire();
+              cameraController.addRecoil(
+                combat.playerWeapons.activeDefinition.recoilPitch,
+                combat.playerWeapons.activeDefinition.recoilYaw * (Math.sin(combat.getSnapshot().round + simulationSteps) * 0.5),
+              );
+              addImpact(combatStep.playerShot.hit ? combatStep.playerShot.point : null);
             }
-          }
-          renderPreviousRef.current.x = controller.position.x;
-          renderPreviousRef.current.y = controller.position.y;
-          renderPreviousRef.current.z = controller.position.z;
-          controller.step(
-            snapshotInput,
-            DEFAULT_MOVEMENT_CONFIG.fixedTimeStep,
-            simulationYaw,
-          );
-          input.consumePressed();
-          if (recording) recorder.record(controller.getSnapshot(), snapshotInput, simulationYaw);
-          if (replaying && lastRecording && replayIndex >= lastRecording.samples.length) {
-            replaying = false;
+            if (combatStep.botShot?.fired) addImpact(combatStep.botShot.hit ? combatStep.botShot.point : null);
+            if (combatStep.playerShot?.hit && combatStep.playerShot.targetId === 'bot') botAvatar.flashHit();
+            input.consumePressed();
+            combatInput.consumePressed();
+            const combatSnapshot = combat.getSnapshot();
+            if (combatSnapshot.phase !== lastPhase) {
+              lastPhase = combatSnapshot.phase;
+              if (combatSnapshot.phase === 'roundSummary' || combatSnapshot.phase === 'matchSummary') releaseLock();
+              updateCombatState();
+            }
+            if (combatSnapshot.phase === 'fight') weaponView.setWeapon(combat.playerWeapons.activeId);
+          } else {
+            let stepInput = snapshotInput;
+            let stepYaw = simulationYaw;
+            if (replaying && lastRecording) {
+              const replaySample = lastRecording.samples[replayIndex];
+              if (replaySample) {
+                stepInput = replaySample.input;
+                stepYaw = replaySample.yaw;
+                replayIndex += 1;
+              } else {
+                replaying = false;
+              }
+            }
+            renderPreviousRef.current.x = controller.position.x;
+            renderPreviousRef.current.y = controller.position.y;
+            renderPreviousRef.current.z = controller.position.z;
+            controller.step(stepInput, DEFAULT_MOVEMENT_CONFIG.fixedTimeStep, stepYaw);
+            input.consumePressed();
+            combatInput.consumePressed();
+            if (recording) recorder.record(controller.getSnapshot(), stepInput, stepYaw);
           }
           accumulator -= DEFAULT_MOVEMENT_CONFIG.fixedTimeStep;
           simulationSteps += 1;
         }
-        if (simulationSteps >= DEFAULT_MOVEMENT_CONFIG.maxCatchUpSteps) {
-          accumulator = 0;
-        }
+        if (simulationSteps >= DEFAULT_MOVEMENT_CONFIG.maxCatchUpSteps) accumulator = 0;
       } else {
         accumulator = 0;
         renderPreviousRef.current.x = controller.position.x;
@@ -342,10 +461,7 @@ export const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(function
         renderPreviousRef.current.z = controller.position.z;
       }
 
-      const interpolation = Math.min(
-        1,
-        accumulator / DEFAULT_MOVEMENT_CONFIG.fixedTimeStep,
-      );
+      const interpolation = Math.min(1, accumulator / DEFAULT_MOVEMENT_CONFIG.fixedTimeStep);
       renderPositionRef.current.x = renderPreviousRef.current.x +
         (controller.position.x - renderPreviousRef.current.x) * interpolation;
       renderPositionRef.current.y = renderPreviousRef.current.y +
@@ -362,8 +478,26 @@ export const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(function
         DEFAULT_MOVEMENT_CONFIG.eyeHeight,
         DEFAULT_MOVEMENT_CONFIG.slidingEyeHeight,
       );
-      renderer.render(scene, camera);
+      weaponView.group.visible = modeRef.current === 'arena' && combat.isActive;
+      weaponView.update(frameTime, snapshot, combatInput.snapshot().aimHeld, combat.getSnapshot().playerReloading);
+      botAvatar.group.visible = modeRef.current === 'arena' && combat.isActive;
+      if (botAvatar.group.visible) {
+        botAvatar.update(combat.bot.movement.position, combat.bot.aim.state.yaw, combat.bot.movement.getSnapshot(), frameTime);
+      }
 
+      for (let index = effects.length - 1; index >= 0; index -= 1) {
+        const effect = effects[index];
+        effect.remaining -= frameTime;
+        const progress = 1 - Math.max(0, effect.remaining / effect.duration);
+        effect.object.scale.setScalar(0.7 + progress * 1.8);
+        setEffectOpacity(effect.object, 1 - progress);
+        if (effect.remaining <= 0) {
+          scene.remove(effect.object);
+          effects.splice(index, 1);
+        }
+      }
+
+      renderer.render(scene, camera);
       if (now - lastTelemetry >= 90) {
         lastTelemetry = now;
         onTelemetryRef.current(snapshot, {
@@ -372,6 +506,10 @@ export const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(function
           simulationSteps,
           recordingSamples: recorder.getSampleCount(),
         });
+      }
+      if (modeRef.current === 'arena' && now - lastCombatTelemetry >= 90) {
+        lastCombatTelemetry = now;
+        onCombatStateRef.current?.(combat.getSnapshot());
       }
       animationFrame = window.requestAnimationFrame(renderLoop);
     };
@@ -388,14 +526,20 @@ export const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(function
       document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('keydown', onRecordingKey);
       input.detach();
-      if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
+      combatInput.detach();
+      releaseLock();
+      botAvatar.dispose();
       disposeScene(scene);
       renderer.dispose();
       renderer.domElement.remove();
       controllerRef.current = null;
+      combatRef.current = null;
       cameraControllerRef.current = null;
       cameraRef.current = null;
-      arenaRef.current = null;
+      startMatchRef.current = () => undefined;
+      nextRoundRef.current = () => undefined;
+      restartMatchRef.current = () => undefined;
+      stopMatchRef.current = () => undefined;
     };
   }, []);
 
@@ -407,15 +551,17 @@ export const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(function
       camera.fov = settings.fov;
       camera.updateProjectionMatrix();
     }
-  }, [settings.fov, settings.sensitivity]);
+    combatRef.current?.setDifficulty(settings.difficulty);
+  }, [settings.fov, settings.sensitivity, settings.difficulty]);
 
   useEffect(() => {
-    const arena = arenaRef.current;
+    const combat = combatRef.current;
     const controller = controllerRef.current;
     const cameraController = cameraControllerRef.current;
-    if (!arena || !controller || !cameraController || modeRef.current === mode) return;
+    if (!combat || !controller || !cameraController || modeRef.current === mode) return;
     modeRef.current = mode;
-    const spawn = arena.spawns[mode];
+    combat.stopMatch();
+    const spawn = mode === 'arena' ? ARENA_SPAWN : LAB_SPAWN;
     controller.reset(spawn.position);
     renderPreviousRef.current.x = controller.position.x;
     renderPreviousRef.current.y = controller.position.y;
@@ -424,6 +570,7 @@ export const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(function
     renderPositionRef.current.y = controller.position.y;
     renderPositionRef.current.z = controller.position.z;
     cameraController.reset(spawn.yaw, 0);
+    onCombatStateRef.current?.(combat.getSnapshot());
   }, [mode]);
 
   return <div ref={hostRef} className="game-canvas-host" />;

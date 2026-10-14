@@ -45,6 +45,14 @@ export interface VerticalMoveResult {
   colliderId?: string;
 }
 
+export interface RaycastHit {
+  colliderId: string;
+  distance: number;
+  point: Vec3;
+  normal: Vec3;
+  tag?: string;
+}
+
 const EPSILON = 1e-5;
 
 function clamp(value: number, min: number, max: number): number {
@@ -94,6 +102,75 @@ function verticalOverlap(
 function normalize(x: number, y: number, z: number): Vec3 {
   const length = Math.hypot(x, y, z) || 1;
   return { x: x / length, y: y / length, z: z / length };
+}
+
+function rayBoxIntersection(
+  origin: Vec3,
+  direction: Vec3,
+  solid: AabbSolid,
+  maxDistance: number,
+): { distance: number; normal: Vec3 } | null {
+  let near = 0;
+  let far = maxDistance;
+  let nearNormal: Vec3 = { x: 0, y: 0, z: 0 };
+  const axes: Array<{
+    origin: number;
+    direction: number;
+    min: number;
+    max: number;
+    negativeNormal: Vec3;
+    positiveNormal: Vec3;
+  }> = [
+    {
+      origin: origin.x,
+      direction: direction.x,
+      min: solid.minX,
+      max: solid.maxX,
+      negativeNormal: { x: -1, y: 0, z: 0 },
+      positiveNormal: { x: 1, y: 0, z: 0 },
+    },
+    {
+      origin: origin.y,
+      direction: direction.y,
+      min: solid.minY,
+      max: solid.maxY,
+      negativeNormal: { x: 0, y: -1, z: 0 },
+      positiveNormal: { x: 0, y: 1, z: 0 },
+    },
+    {
+      origin: origin.z,
+      direction: direction.z,
+      min: solid.minZ,
+      max: solid.maxZ,
+      negativeNormal: { x: 0, y: 0, z: -1 },
+      positiveNormal: { x: 0, y: 0, z: 1 },
+    },
+  ];
+
+  for (const axis of axes) {
+    if (Math.abs(axis.direction) < EPSILON) {
+      if (axis.origin < axis.min || axis.origin > axis.max) return null;
+      continue;
+    }
+    const inverse = 1 / axis.direction;
+    let entry = (axis.min - axis.origin) * inverse;
+    let exit = (axis.max - axis.origin) * inverse;
+    let entryNormal = axis.negativeNormal;
+    if (entry > exit) {
+      [entry, exit] = [exit, entry];
+      entryNormal = axis.positiveNormal;
+    }
+    if (entry > near) {
+      near = entry;
+      nearNormal = entryNormal;
+    }
+    far = Math.min(far, exit);
+    if (near > far || far < 0) return null;
+  }
+
+  const distance = near >= 0 ? near : far;
+  if (distance < 0 || distance > maxDistance) return null;
+  return { distance, normal: nearNormal };
 }
 
 /**
@@ -326,6 +403,32 @@ export class CollisionWorld {
     }
 
     return { position: next, collided, normal, colliderId };
+  }
+
+  /**
+   * Raycast against gameplay solids only. Height surfaces are intentionally
+   * excluded: a weapon ray should be blocked by cover and walls, not by the
+   * infinite mathematical floor beneath the target.
+   */
+  raycast(origin: Vec3, direction: Vec3, maxDistance: number): RaycastHit | null {
+    const unit = normalize(direction.x, direction.y, direction.z);
+    let closest: RaycastHit | null = null;
+    for (const solid of this.solids) {
+      const intersection = rayBoxIntersection(origin, unit, solid, maxDistance);
+      if (!intersection || (closest && intersection.distance >= closest.distance)) continue;
+      closest = {
+        colliderId: solid.id,
+        distance: intersection.distance,
+        point: {
+          x: origin.x + unit.x * intersection.distance,
+          y: origin.y + unit.y * intersection.distance,
+          z: origin.z + unit.z * intersection.distance,
+        },
+        normal: intersection.normal,
+        tag: solid.tag,
+      };
+    }
+    return closest;
   }
 
   resolveVertical(

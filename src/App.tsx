@@ -2,6 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import type { Dispatch, JSX, SetStateAction } from 'react';
 import { GameCanvas, type FrameMetrics, type GameCanvasHandle, type GameSettings } from './game/GameCanvas';
 import type { ArenaMode } from './game/arena/ArenaConfig';
+import {
+  BOT_DIFFICULTIES,
+  type BotDifficulty,
+  type CombatSnapshot,
+} from './game/combat/CombatTypes';
 import type { MovementSnapshot } from './game/movement/MovementTypes';
 
 const INITIAL_SNAPSHOT: MovementSnapshot = {
@@ -30,6 +35,31 @@ const INITIAL_METRICS: FrameMetrics = {
   recordingSamples: 0,
 };
 
+const INITIAL_COMBAT: CombatSnapshot = {
+  phase: 'idle',
+  round: 1,
+  playerScore: 0,
+  botScore: 0,
+  roundWinner: null,
+  matchWinner: null,
+  countdown: 0,
+  roundTimeRemaining: 60,
+  playerHealth: 100,
+  botHealth: 100,
+  playerWeapon: 'carbine',
+  playerAmmo: 24,
+  playerReserve: 96,
+  playerReloading: false,
+  botWeapon: 'carbine',
+  botTacticalState: 'searching',
+  botVisible: false,
+  botDistance: 0,
+  event: null,
+  hitMarker: false,
+  damageFlash: 0,
+  difficulty: 'expert',
+};
+
 function format(value: number, digits = 2): string {
   return value.toFixed(digits);
 }
@@ -45,8 +75,10 @@ function App(): JSX.Element {
     fov: 96,
     sensitivity: 1,
     autoSprint: false,
+    difficulty: 'expert',
   });
   const [snapshot, setSnapshot] = useState(INITIAL_SNAPSHOT);
+  const [combat, setCombat] = useState(INITIAL_COMBAT);
   const [metrics, setMetrics] = useState(INITIAL_METRICS);
   const [debug, setDebug] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -96,7 +128,29 @@ function App(): JSX.Element {
 
   const enterGame = (): void => {
     setPaused(false);
+    if (mode === 'arena') canvasRef.current?.startMatch();
     canvasRef.current?.requestPointerLock();
+  };
+
+  const nextRound = (): void => {
+    setPaused(false);
+    canvasRef.current?.nextRound();
+    canvasRef.current?.requestPointerLock();
+  };
+
+  const restartMatch = (): void => {
+    setPaused(false);
+    setHasStarted(true);
+    canvasRef.current?.restartMatch();
+    canvasRef.current?.requestPointerLock();
+  };
+
+  const returnToMenu = (): void => {
+    canvasRef.current?.stopMatch();
+    canvasRef.current?.exitPointerLock();
+    setHasStarted(false);
+    setPaused(false);
+    setCombat(INITIAL_COMBAT);
   };
 
   const openSettings = (): void => {
@@ -107,9 +161,12 @@ function App(): JSX.Element {
 
   const chooseMode = (nextMode: ArenaMode): void => {
     if (nextMode === mode) return;
+    canvasRef.current?.stopMatch();
     setMode(nextMode);
+    setHasStarted(false);
     setPaused(false);
     setSettingsOpen(false);
+    setCombat(INITIAL_COMBAT);
     canvasRef.current?.exitPointerLock();
   };
 
@@ -125,6 +182,7 @@ function App(): JSX.Element {
           setSnapshot(nextSnapshot);
           setMetrics(nextMetrics);
         }}
+        onCombatState={(nextCombat) => setCombat(nextCombat)}
         onRecordingChange={(isRecording, count) => {
           setRecording(isRecording);
           setRecordingSamples(count);
@@ -145,8 +203,8 @@ function App(): JSX.Element {
         <div className="brand-lockup">
           <div className="brand-mark">R</div>
           <div>
-            <div className="eyebrow">RESEARCH BUILD / 01</div>
-            <h1>RIVALS <span>//</span> MOVEMENT REPLICATION</h1>
+            <div className="eyebrow">PHASE 02 / SINGLE-PLAYER DUEL</div>
+            <h1>RIVALS <span>//</span> ARENA 1V1</h1>
           </div>
         </div>
         <div className="topbar-actions">
@@ -167,30 +225,66 @@ function App(): JSX.Element {
 
       <div className="status-strip hud-layer">
         <span className="live-pip" />
-        <span>{mode === 'arena' ? 'ARENA BLOCKOUT' : 'CALIBRATION SPACE'}</span>
+        <span>{mode === 'arena' ? 'ARENA / LIVE DUEL' : 'MOVEMENT LAB'}</span>
         <b>·</b>
         <span>{pointerLocked ? 'INPUT LIVE' : paused ? 'PAUSED' : 'CLICK TO CAPTURE'}</span>
+        {mode === 'arena' && hasStarted && <span className="status-match">ROUND {combat.round} · {BOT_DIFFICULTIES[combat.difficulty].label}</span>}
         {recording && <span className="recording-badge"><span className="record-dot" /> REC {recordingSamples}</span>}
       </div>
 
+      {mode === 'arena' && hasStarted && (
+        <section className="match-hud hud-layer" aria-label="Match score">
+          <div className="match-side player-side"><span className="match-label">YOU</span><strong>{combat.playerScore}</strong><small>{combat.playerHealth} HP</small></div>
+          <div className="match-center"><span>ROUND {combat.round}</span><b>{combat.phase === 'countdown' ? 'GET READY' : `${Math.ceil(combat.roundTimeRemaining)}s · FIRST TO 3`}</b></div>
+          <div className="match-side bot-side"><span className="match-label">{BOT_DIFFICULTIES[combat.difficulty].label}</span><strong>{combat.botScore}</strong><small>{combat.botHealth} HP</small></div>
+        </section>
+      )}
+
       <section className="bottom-left-hud hud-layer">
         <div className="hud-card control-card">
-          <div className="card-kicker">MOVEMENT PRIMER</div>
+          <div className="card-kicker">{mode === 'arena' ? 'DUEL CONTROLS' : 'MOVEMENT PRIMER'}</div>
           <div className="key-row"><kbd>W A S D</kbd><span>move</span><kbd>SHIFT</kbd><span>sprint</span></div>
           <div className="key-row"><kbd>SPACE</kbd><span>jump</span><kbd>C / CTRL</kbd><span>slide</span></div>
-          <div className="card-divider" />
-          <div className="micro-note"><span className="cyan-line" /> Slide → jump preserves the testable momentum chain.</div>
+          {mode === 'arena' ? (
+            <>
+              <div className="key-row"><kbd>LMB</kbd><span>fire</span><kbd>R</kbd><span>reload</span></div>
+              <div className="key-row"><kbd>1 / 2</kbd><span>weapons</span><kbd>RMB</kbd><span>focus</span></div>
+            </>
+          ) : (
+            <div className="card-divider" />
+          )}
+          <div className="micro-note"><span className="cyan-line" /> {mode === 'arena' ? 'Same movement model. Fair information. No bot teleporting.' : 'Slide → jump preserves the testable momentum chain.'}</div>
         </div>
       </section>
 
       <section className="bottom-right-hud hud-layer">
         <div className="hud-card telemetry-card">
-          <div className="telemetry-top"><span className="card-kicker">LIVE TELEMETRY</span><span className="state-chip">{formatState(snapshot.state)}</span></div>
-          <div className="speed-readout"><strong>{format(snapshot.horizontalSpeed, 1)}</strong><span>u/s<br />HORIZONTAL</span></div>
-          <div className="telemetry-bars"><span className={snapshot.grounded ? 'on' : ''} /> <span className={snapshot.sprinting ? 'on sprint' : ''} /> <span className={snapshot.sliding ? 'on slide' : ''} /></div>
-          <div className="telemetry-labels"><span>GROUND</span><span>SPRINT</span><span>SLIDE</span></div>
+          {mode === 'arena' ? (
+            <>
+              <div className="telemetry-top"><span className="card-kicker">COMBAT STATUS</span><span className="state-chip">{combat.playerWeapon.toUpperCase()}</span></div>
+              <div className="ammo-readout"><strong>{combat.playerAmmo}</strong><span>/ {combat.playerReserve}<br />ROUNDS</span></div>
+              <div className="health-track"><span style={{ width: `${combat.playerHealth}%` }} /></div>
+              <div className="telemetry-labels"><span>HEALTH {combat.playerHealth}</span><span>{combat.playerReloading ? 'RELOADING' : 'READY'}</span></div>
+            </>
+          ) : (
+            <>
+              <div className="telemetry-top"><span className="card-kicker">LIVE TELEMETRY</span><span className="state-chip">{formatState(snapshot.state)}</span></div>
+              <div className="speed-readout"><strong>{format(snapshot.horizontalSpeed, 1)}</strong><span>u/s<br />HORIZONTAL</span></div>
+              <div className="telemetry-bars"><span className={snapshot.grounded ? 'on' : ''} /> <span className={snapshot.sprinting ? 'on sprint' : ''} /> <span className={snapshot.sliding ? 'on slide' : ''} /></div>
+              <div className="telemetry-labels"><span>GROUND</span><span>SPRINT</span><span>SLIDE</span></div>
+            </>
+          )}
         </div>
       </section>
+
+      {mode === 'arena' && combat.event && combat.phase === 'fight' && (
+        <div className={`combat-event combat-event-${combat.event.kind} hud-layer`} key={combat.event.id}>{combat.event.text}</div>
+      )}
+      {mode === 'arena' && combat.hitMarker && <div className="hit-marker hud-layer">×</div>}
+      {mode === 'arena' && combat.damageFlash > 0 && <div className="damage-flash hud-layer" style={{ opacity: combat.damageFlash * 0.33 }} />}
+      {mode === 'arena' && combat.phase === 'countdown' && hasStarted && (
+        <div className="countdown-readout hud-layer"><span>ROUND {combat.round}</span><strong>{combat.countdown > 0.7 ? Math.ceil(combat.countdown) : 'FIGHT'}</strong></div>
+      )}
 
       {debug && (
         <aside className="debug-panel hud-layer" aria-live="polite">
@@ -206,6 +300,7 @@ function App(): JSX.Element {
             <span>JUMP ELAPSED</span><strong>{format(snapshot.jumpElapsed, 3)}s</strong>
             <span>COLLISION</span><strong>{snapshot.lastCollision ?? '—'}</strong>
             <span>SIM TIME</span><strong>{format(snapshot.simulationTime, 2)}s</strong>
+            {mode === 'arena' && <><span>BOT TACTIC</span><strong>{combat.botTacticalState}</strong><span>BOT LOS</span><strong className={combat.botVisible ? 'good' : 'warning-text'}>{combat.botVisible ? `YES / ${format(combat.botDistance, 1)}m` : 'NO'}</strong></>}
           </div>
           <div className="debug-footer"><span>FRAME {format(metrics.frameTimeMs, 1)}ms</span><span>{format(metrics.fps, 0)} FPS</span><span>STEP {metrics.simulationSteps}</span></div>
         </aside>
@@ -227,10 +322,11 @@ function App(): JSX.Element {
         <div className="capture-overlay hud-layer">
           <div className="capture-panel">
             <div className="capture-icon"><span className="crosshair-ring" /></div>
-            <div className="eyebrow">FIXED-STEP MOVEMENT SANDBOX</div>
-            <h2>Enter the arena.</h2>
-            <p>Click to capture the mouse and run the evidence-driven movement test. No weapons. No bots. Just momentum, collision, ramps, and repeatable drills.</p>
-            <button className="primary-button" onClick={enterGame}>Click to play <span>↗</span></button>
+            <div className="eyebrow">{mode === 'arena' ? 'PHASE 02 / FAIR 1V1 COMBAT' : 'FIXED-STEP MOVEMENT SANDBOX'}</div>
+            <h2>{mode === 'arena' ? 'Enter the duel.' : 'Enter the lab.'}</h2>
+            <p>{mode === 'arena' ? 'Face a movement-aware opponent in the original Arena blockout. Read cover, choose your weapon, and win three rounds without artificial bot advantages.' : 'Run the evidence-driven movement test. The lab keeps weapons and AI out of the way so movement traces stay repeatable.'}</p>
+            {mode === 'arena' && <DifficultyPicker value={settings.difficulty} onChange={(difficulty) => setSettings((current) => ({ ...current, difficulty }))} />}
+            <button className="primary-button" onClick={enterGame}>{mode === 'arena' ? 'Click to duel' : 'Click to play'} <span>↗</span></button>
             <div className="capture-meta"><span>FOV {settings.fov}°</span><span>120 Hz SIM</span><span>ESC releases mouse</span></div>
           </div>
         </div>
@@ -248,7 +344,7 @@ function App(): JSX.Element {
         </div>
       )}
 
-      {paused && hasStarted && !initializationError && (
+      {((paused && hasStarted) || (settingsOpen && !hasStarted)) && !initializationError && combat.phase !== 'roundSummary' && combat.phase !== 'matchSummary' && (
         <div className="pause-overlay hud-layer">
           <div className="pause-panel">
             <div className="eyebrow">SIMULATION PAUSED</div>
@@ -258,19 +354,61 @@ function App(): JSX.Element {
               <SettingsPanel
                 settings={settings}
                 setSettings={setSettings}
-                onClose={() => { setSettingsOpen(false); setPaused(false); enterGame(); }}
+                onClose={() => {
+                  setSettingsOpen(false);
+                  setPaused(false);
+                  if (hasStarted) enterGame();
+                }}
               />
             ) : (
               <div className="pause-actions">
-                <button className="primary-button" onClick={enterGame}>Resume movement <span>↗</span></button>
+                <button className="primary-button" onClick={enterGame}>{mode === 'arena' ? 'Resume duel' : 'Resume movement'} <span>↗</span></button>
                 <button className="secondary-button" onClick={openSettings}>Open settings</button>
               </div>
             )}
-            {!settingsOpen && <div className="pause-footnote">F3 toggles physics telemetry · R records a sequence · F9 resets to the last recording start</div>}
+            {!settingsOpen && <div className="pause-footnote">F3 telemetry · {mode === 'arena' ? 'LMB fires · R reloads · 1/2 weapons' : 'R records · F9 replays the last sequence'}</div>}
+          </div>
+        </div>
+      )}
+
+      {hasStarted && mode === 'arena' && (combat.phase === 'roundSummary' || combat.phase === 'matchSummary') && (
+        <div className="summary-overlay hud-layer">
+          <div className="summary-panel">
+            <div className="eyebrow">{combat.phase === 'matchSummary' ? 'MATCH COMPLETE' : `ROUND ${combat.round} COMPLETE`}</div>
+            <h2>{combat.matchWinner === 'player' ? 'Arena secured.' : combat.matchWinner === 'bot' ? 'Rival wins.' : combat.roundWinner === 'player' ? 'Round won.' : 'Round lost.'}</h2>
+            <p>{combat.matchWinner ? `Final score ${combat.playerScore} — ${combat.botScore}. ${BOT_DIFFICULTIES[combat.difficulty].label} opponent retained fair line-of-sight and shared movement rules.` : `Score ${combat.playerScore} — ${combat.botScore}. Review the angle, then run the next round.`}</p>
+            <div className="summary-score"><strong>{combat.playerScore}</strong><span>—</span><strong>{combat.botScore}</strong></div>
+            <div className="pause-actions">
+              <button className="primary-button" onClick={combat.matchWinner ? restartMatch : nextRound}>{combat.matchWinner ? 'Rematch' : 'Next round'} <span>↗</span></button>
+              <button className="secondary-button" onClick={returnToMenu}>Return to menu</button>
+            </div>
           </div>
         </div>
       )}
     </main>
+  );
+}
+
+function DifficultyPicker({
+  value,
+  onChange,
+}: {
+  value: BotDifficulty;
+  onChange: (difficulty: BotDifficulty) => void;
+}): JSX.Element {
+  return (
+    <div className="difficulty-picker" role="group" aria-label="Bot difficulty">
+      {(Object.keys(BOT_DIFFICULTIES) as BotDifficulty[]).map((difficulty) => (
+        <button
+          type="button"
+          key={difficulty}
+          className={value === difficulty ? 'active' : ''}
+          onClick={() => onChange(difficulty)}
+        >
+          {BOT_DIFFICULTIES[difficulty].label}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -309,6 +447,10 @@ function SettingsPanel({
         />
         <span className="toggle-ui" />
       </label>
+      <div className="difficulty-settings">
+        <div className="setting-caption"><b>Bot difficulty</b><small>Decision quality changes; health and damage do not.</small></div>
+        <DifficultyPicker value={settings.difficulty} onChange={(difficulty) => setSettings((current) => ({ ...current, difficulty }))} />
+      </div>
       <div className="settings-note"><span className="note-icon">i</span><span>Movement constants stay in <code>MovementConfig.ts</code>. The research report marks every estimate separately from observed behavior.</span></div>
       <button className="primary-button compact" onClick={onClose}>Apply and resume <span>↗</span></button>
     </div>

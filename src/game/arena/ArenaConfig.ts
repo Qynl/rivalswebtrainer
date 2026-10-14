@@ -12,6 +12,11 @@ export const ARENA_SPAWN: SpawnPoint = {
   yaw: Math.PI,
 };
 
+export const BOT_SPAWN: SpawnPoint = {
+  position: { x: 0, y: 0, z: 8.3 },
+  yaw: 0,
+};
+
 export const LAB_SPAWN: SpawnPoint = {
   position: { x: 25, y: 0, z: -12.5 },
   yaw: Math.PI,

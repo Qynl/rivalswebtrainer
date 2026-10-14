@@ -33,6 +33,8 @@ No proprietary Roblox assets, client files, decompiled code, or extracted map ge
 | S10 | [Fandom update ledger](https://robloxrivals.fandom.com/wiki/Updates) | Current community ledger records later movement-related changes, including the restriction that players can no longer slide while climbing. | Medium as a community mirror; establishes a compatibility constraint, not a complete mechanic. |
 | S11 | [Roblox Creator Hub: Roblox units](https://create.roblox.com/docs/physics/units) | First-party unit documentation states that 1 stud is 28 cm and that Roblox physics units are internally consistent but game-specific interpretation remains possible. | High for Roblox unit convention; none for RIVALS map scale or controller values. |
 | S12 | [Roblox Wiki: RIVALS](https://roblox.fandom.com/wiki/Nosniy_Games/RIVALS) and its [Arena map thumbnail](https://static.wikia.nocookie.net/roblox/images/4/48/RIVALSMAP_Arena.png/revision/latest?cb=20240806175703) | Community reference describes running/crouching slide and ramp/explosive jump behavior, and exposes a labeled Arena map thumbnail among the map table. | Medium for broad mechanics and qualitative visual layout; not first-party technical data and not used as a shipped asset. |
+| S13 | [Public RIVALS settings guide](https://pixeltwelve.com/articles/roblox-rivals-best-settings-sensitivity-crosshair-fps) and [crosshair guide](https://gameboost.com/blog/roblox-rivals-best-crosshair) | Community recommendations converge on a small high-contrast/static crosshair, restrained camera shake, readable HUD, and roughly 90–105 FOV for duels. | Low-medium: settings recommendations are not official defaults. Used only to choose adjustable 96° FOV and restrained feedback. |
+| S14 | [RIVALS Arena guide](https://rivalsroblox.wiki/guide/arena/) | Community strategy description calls out mirrored grid spacing, angled blocks, ramps, and short competitive sightlines; it also warns against purposeless jumping and predictable routes. | Low-medium: strategy guide, not source data. Used as a tactical design sanity check for bot cover/route choices. |
 
 ### Research limits
 
@@ -81,11 +83,59 @@ These estimates are deliberately proportional and renderer-specific; they are no
 
 The public Creator Store references are useful for studying the low-poly vocabulary, but downloading or embedding an unverified user-uploaded map would undermine the clean-room and licensing boundary. The implementation continues to use original meshes, materials, and procedural atmosphere. Exact replication would require permission-safe reference captures with known camera/scale or access to the original game’s controller and map data; those are not public in the reviewed material.
 
+## Phase 2 combat research and implementation
+
+The Phase 2 pass added combat only after the existing movement baseline was rerun: the pre-change repository had **8 passing tests** and a successful production build. The new baseline is recorded by the current test suite and adds movement raycast coverage, weapon tests, combat simulation tests, and bot evaluation scenarios.
+
+### Combat evidence and deliberate scope
+
+Public RIVALS pages establish a first-person, round-based duel structure and community guides describe movement as central to winning. They do not provide authoritative weapon damage, fire cadence, hitbox, recoil, or AI behavior. I therefore chose a small original hitscan loadout rather than pretend to reproduce proprietary gun data:
+
+- `Vector Carbine`: automatic 18 damage body / 1.35 head multiplier, 24-round magazine, bounded fire cadence, short recoil.
+- `Pulse Sidearm`: slower 34 damage body / 1.45 head multiplier, 8-round magazine, stronger recoil.
+- Both weapons use explicit ammo, reserve, reload, fire-interval, spread, range, and recoil state in `WeaponSystem.ts`.
+- Damage and hit tests use the same `CollisionWorld` cover raycast used for movement diagnostics. A wall blocks a target; there is no through-wall target access.
+- `CombatSimulation` uses first-to-three round scoring, countdown, health reset, ammunition reset, round summary, match summary, rematch, and return-to-menu paths.
+
+These are **INFERRED original game-design values**, not RIVALS facts. The goal is a testable 1v1 foundation that keeps movement fidelity more important than weapon breadth.
+
+### Bot architecture
+
+The bot is split into explicit testable responsibilities:
+
+1. `BotPerceptionSystem` casts from the bot eye through the shared collision world and records visible target position, distance, elevation, target movement state, blocker ID, and last-known information. It cannot see through cover.
+2. `BotMemory` stores a bounded sighting history, recent damage threat, failed approaches, retreat bins, and repeated lateral movement samples. Adaptation requires multiple observations and alternates occasionally instead of becoming deterministic.
+3. `BotDecision` selects `approaching`, `engaging/strafing`, `taking-cover`, `retreating`, `searching`, or `repositioning`. It can choose cover anchors, cross exposed lanes with a slide, jump out of a slide, pursue a last-known location, or rebuild an angle.
+4. `BotAimController` models reaction delay, turn-rate limits, confidence, bounded prediction lead, weapon-specific spread, target reacquisition, and a fire cone. It does not snap to hidden coordinates.
+5. `BotController` updates perception/decision at a difficulty-specific cadence while stepping the same `MovementController` every fixed tick. It uses no teleport, arbitrary acceleration, collision bypass, or extra health.
+6. `CombatSimulation` owns weapon selection/reload/fire cadence, ray-vs-cover-vs-target resolution, health, round score, and match phase. `BotEvaluation.ts` runs repeatable scenarios rather than asserting skill from code structure.
+
+### Difficulty contract
+
+Easy through Rival change reaction time, aim turn speed/quality/jitter, prediction, decision cadence, movement quality, tactical risk, and the number of observations required before adaptation. Health, weapon damage, collision, and movement constants remain shared. This makes the difficulty measurable and explainable rather than an artificial damage multiplier.
+
+### Visual implementation
+
+`research/VISUAL_REFERENCE_BOARD.md` records the Phase 2 reference board and the uncertainty around public screenshots, thumbnails, settings guides, and Creator Store listings. The implementation adds:
+
+- An original procedural blocky bot avatar with a readable colored visor and ground ring.
+- Original camera-relative carbine and sidearm silhouettes with restrained bob, focus movement, recoil kick, muzzle pulse, and cheap impact geometry.
+- Compact top-center score, bottom-right health/ammo, round countdown, short event banner, hit marker, damage vignette, difficulty label, and match summary.
+- Bright Arena materials/atmosphere from the previous visual pass, without external or unlicensed assets.
+
+The visual pass is deliberately selective: no imported character/weapon meshes, no texture pack, no expensive ambient-occlusion/post stack, and no decorative props that compromise fast cover sightlines.
+
+### Evaluation and limitations
+
+The automated bot harness covers stationary, straight-line, strafing, jumping, sliding, slide-jumping, direction changes, breaking line of sight, and elevation scenarios. It reports bot/player shots and hits, visibility samples, collisions, slide/jump ticks, health, and final match phase. Passing these tests means the scenarios execute and produce measurable signals; it does **not** establish that the bot is exceptionally skilled or fairly tuned in a human browser session.
+
+Browser Pointer Lock, console inspection, screenshots, live FPS under combat load, and cross-browser match reset have not been verified in this environment. The live Vite server is runnable, but no browser automation binary is available here. Those gaps remain explicit acceptance items rather than implied results.
+
 ## Evidence ledger
 
 | Behavior under investigation | Evidence label | Finding | Implementation consequence | Browser test |
 | --- | --- | --- | --- | --- |
-| RIVALS is a first-person duel shooter | `VERIFIED` (S1) | The official page identifies RIVALS by Nosniy Games and advertises first-person 1v1–5v5 duels. | Build a first-person pointer-lock trainer first; do not spend this milestone on bots or networking. | Click capture, look with mouse, release with Escape; confirm HUD remains responsive. |
+| RIVALS is a first-person duel shooter | `VERIFIED` (S1) | The official page identifies RIVALS by Nosniy Games and advertises first-person 1v1–5v5 duels. | Keep a pointer-locked first-person camera and add only a local single-player duel; defer multiplayer/networking. | Click capture, look with mouse, fire, release with Escape; confirm HUD and pause state remain responsive. |
 | Arena's visual identity | `VERIFIED` for the wiki's description; `OBSERVED` for geometry | S2 describes a clean grid, angled blocks, and cover. The gallery exposes a layout image and side view. | Use an original modular, symmetrical blockout: grid floor, end ramps, center platform/wall, mirrored angled covers, and spawn decks. | Compare matching top/side camera views manually; walk each cover edge and sightline. |
 | Overall Arena proportions | `OBSERVED`/`INFERRED` (S2, S3) | S3 calls Arena a 26-tile compact map and puts ramps at both ends. Exact tile dimensions and camera scale are not provided. | Use a 34×34 world-unit arena with 3.5-unit visual grid spacing; document it as an estimate. | Debug coordinates and measured tracks; adjust `ArenaConfig`/builder dimensions without touching movement constants. |
 | Sprint exists and is central to movement tech | `OBSERVED` (S4, S6, S8) | Tutorials consistently show running/sprinting before a slide jump. Public sources disagree on whether auto-sprint is the preferred setting, not on the need for forward movement. | Explicit `Shift` sprint is the baseline; optional auto-sprint is exposed as a setting rather than silently assumed. | Rest-to-sprint acceleration track; compare shift and auto-sprint sequences. |
@@ -94,7 +144,7 @@ The public Creator Store references are useful for studying the low-poly vocabul
 | Exact slide duration and friction | `UNKNOWN` | No reviewed source publishes a reliable duration, curve, or collision shape. | Baseline `0.68 s` duration and separate deceleration are explicitly labelled estimated in `MovementConfig`. | Measure R recording samples and adjust one parameter at a time. |
 | Ramps cause special movement opportunities | `OBSERVED` (S2, S3, S6, S8) | Public map descriptions put ramps at Arena's ends; tutorials describe ramp jumping/gliding/super-jump behavior. | Ramps are analytic height surfaces with normals, not decorative meshes. Ground movement follows them and jump preserves momentum. | Ramp sequence, ramp ground-normal readout, ramp jump recording. |
 | Air control and horizontal momentum | `OBSERVED`/`INFERRED` (S6, S8) | Tutorials visibly combine slide jumps and mid-air movement, but no air-acceleration constant is published. | Separate air acceleration, air braking, and cap; do not apply full ground friction in air. | Air-strafe sequence with the same yaw/input stream; compare landing position. |
-| Double jumps, grenade boosts, weapon dashes | `OBSERVED` (S4–S8) | Public guides describe these as weapon/utility-dependent techs and list them separately from basic movement. | Deliberately out of scope for the first movement-only milestone; no fake weapons are added to hide the limitation. | Future milestone should add them as isolated abilities, not fold them into base movement. |
+| Weapons and basic combat | `VERIFIED` for broad duel/loadout context (S1, S12); numeric behavior `UNKNOWN` | Public pages describe rounds and four loadout categories, but not authoritative damage/recoil/fire constants. | Add only two original hitscan weapons, explicit ammo/reload state, collision-aware shots, health, score, and summaries; label values as inferred. | Weapon cadence, wall blocking, reload, hit marker, damage feedback, and round reset tests. |
 | Player collision and anti-tunnelling | `VERIFIED` as a requirement from public patch ledgers; behavior `INFERRED` | S9/S10 record fixes for slide-jump wall noclip and invisible ceilings. The exact original collider is unknown. | Use a fixed 120 Hz custom controller, circular footprint, standing/slide heights, axis-separated AABB resolution, ceiling checks, and ramp support. | Wall, corner, narrow passage, platform, and high-speed collision tests. |
 | Sliding on/climbing geometry | `VERIFIED` as a patch-note statement (S10) | The community update ledger records that later RIVALS updates disallow sliding while climbing. | The trainer requires a sprinting grounded state before slide entry and does not allow an airborne/climbing slide trigger. | Attempt slide from air and on a ramp; verify only grounded momentum enters slide. |
 | Camera FOV and camera spring | `UNKNOWN` | Guides recommend ranges, but recommendations are not documentation of the shipped default. No reviewed first-party source publishes the default. | Use adjustable 96° baseline, pointer lock, pitch clamp, smooth slide camera height, and no head-bob/motion blur. | F2 settings test; compare FOV and slide camera without changing physical trajectory. |
@@ -144,7 +194,7 @@ The lab and tests cover the first 16 acceptance checks as follows:
 
 ## Known differences from the original
 
-- No weapons, utilities, bots, matchmaking, damage, double-jump items, grenade/rocket boosts, or weapon-specific speed modifiers.
+- No explosives, utilities, bots with hidden information, multiplayer, double-jump items, grenade/rocket boosts, projectile weapons, or weapon-specific movement modifiers. The Phase 2 scope includes two original hitscan weapons and a single-player bot.
 - The original controller may use a different capsule, slope limit, substep rate, friction model, slide curve, camera spring, and air-control model.
 - Exact speed, jump, and slide values are not established by the reviewed public evidence.
 - The Arena blockout is a clean-room approximation of the public layout motifs, not a claim of geometric identity or licensed map asset reproduction.
@@ -152,6 +202,6 @@ The lab and tests cover the first 16 acceptance checks as follows:
 
 ## Next high-impact research and engineering work
 
-1. Build a frame-counted reference dataset from permission-safe, publicly viewable Arena footage with a known scale reference; measure takeoff/landing, slide length, ramp height, and camera FOV uncertainty explicitly.
-2. Add an in-browser calibration export/CSV view and overlay two recordings so one parameter can be optimized against a reference trace.
-3. Validate capsule-vs-ramp edge behavior at more Arena cover corners, then add isolated optional ability modules only after base movement traces are stable.
+1. Build a permission-safe, frame-counted Arena/combat reference dataset and calibrate weapon spread, FOV, cover scale, hit feedback, and bot aim against repeatable traces.
+2. Add projectile/utility modules and cover-aware path candidates only after human browser sessions show the base hitscan duel is balanced.
+3. Profile a real browser combat session, reduce measured draw-call/AI overhead, and add browser smoke tests for Pointer Lock, match reset, and summary transitions.
