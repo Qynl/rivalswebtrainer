@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Arena Duel</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="landing">
+        <nav>
+          <div class="brand">ARENA <span>DUEL</span></div>
+          <div>
+            <a href="#features">Features</a>
+            <a href="#loadouts">Loadouts</a>
+            <a href="#controls">Controls</a>
+          </div>
+        </nav>
+        <header class="hero">
+          <div class="eyebrow">1V1 ARENA SHOOTER · BEST OF 5</div>
+          <h1>Slide. Jump. <em>Slice.</em> Repeat.</h1>
+          <p class="lede">
+            Fast, fluid movement with slides, slide-jumps and a scythe dash. Pick your guns,
+            then take on a bot in five rounds. Runs in your browser, no install.
+          </p>
+          <div class="cta-row">
+            <button class="btn" id="enter">PLAY NOW</button>
+            <a class="btn ghost" href="#controls">HOW TO PLAY</a>
+          </div>
+        </header>
+        <section class="features" id="features">
+          <div class="card"><div class="tag">MOVEMENT</div><h3>Slide and slide-jump</h3><p>Slide to keep speed, then jump out of it for a launch. Hold jump to auto-hop and carry speed.</p></div>
+          <div class="card"><div class="tag">WEAPONS</div><h3>Guns with character</h3><p>Assault rifle, run-and-gun SMG, marksman rifle and a sidearm. Each has its own range and recoil.</p></div>
+          <div class="card"><div class="tag">SCYTHE</div><h3>Slash and dash</h3><p>Close range is the scythe's domain. Its dash closes gaps and dodges incoming fire.</p></div>
+          <div class="card"><div class="tag">BOTS</div><h3>Four difficulty tiers</h3><p>From Recruit to Nightmare. Each round is 90 seconds, first to three wins takes the match.</p></div>
+        </section>
+        <section class="loadouts" id="loadouts">
+          <h2>Build your loadout</h2>
+          <div class="guns">
+            <div class="card gun gold"><div class="tag">PRIMARY</div><h3>BRUTE-47</h3><p>Assault rifle. Strong per-bullet damage, controlled full-auto.</p></div>
+            <div class="card gun"><div class="tag">PRIMARY · SECONDARY</div><h3>PANTHER</h3><p>Run-and-gun SMG. Very fast fire rate and a large magazine.</p></div>
+            <div class="card gun"><div class="tag">PRIMARY</div><h3>Marksman Rifle</h3><p>Burst-fire precision. Headshots deal double damage.</p></div>
+            <div class="card gun"><div class="tag">SECONDARY</div><h3>Sidearm</h3><p>Semi-automatic backup with a strong headshot multiplier.</p></div>
+            <div class="card gun scythe"><div class="tag">MELEE</div><h3>Scythe</h3><p>Always equipped. Swing for close range, dash to reposition.</p></div>
+          </div>
+        </section>
+        <footer id="controls">
+          <b>WASD</b> move · <b>Space</b> jump · <b>Ctrl / C</b> slide · <b>LMB</b> fire / slash · <b>RMB</b> scythe dash · <b>R</b> reload · <b>1 2 3</b> weapons · <b>Esc</b> pause
+        </footer>
+      </div>
+      <canvas id="game"></canvas>
+
+      <div id="hud" class="hidden">
+        <div id="crosshair"><span></span><span></span><span></span><span></span></div>
+        <div id="hitmarker"></div>
+        <div id="topbar">
+          <div class="score" id="score-you">0</div>
+          <div class="center">
+            <div id="round-label">ROUND 1 / 5</div>
+            <div id="timer">1:30</div>
+          </div>
+          <div class="score" id="score-bot">0</div>
+        </div>
+        <div id="bottom-left">
+          <div class="bar"><div class="fill hp" id="hp-fill"></div><span id="hp-text">100</span></div>
+          <div class="bar small"><div class="fill stamina" id="stamina-fill"></div></div>
+          <div id="state-text"></div>
+        </div>
+        <div id="bottom-right">
+          <div id="weapon-name">PISTOL</div>
+          <div id="ammo">12 / 12</div>
+          <div id="abilities">
+            <div class="ability" id="ab-dash"><span>DASH</span><b id="dash-cd">READY</b></div>
+          </div>
+        </div>
+        <div id="feed"></div>
+        <div id="banner"></div>
+      </div>
+
+      <div id="menu" class="overlay">
+        <div class="panel">
+          <h1>ARENA DUEL</h1>
+          <p class="sub">1v1 vs Bot · Best of 5 rounds</p>
+          <label>Bot difficulty
+            <select id="difficulty">
+              <option value="easy">Recruit</option>
+              <option value="normal" selected>Veteran</option>
+              <option value="hard">Elite</option>
+              <option value="nightmare">Nightmare</option>
+            </select>
+          </label>
+          <label>Primary weapon
+            <select id="loadout">
+              <option value="ak" selected>BRUTE-47 (assault rifle)</option>
+              <option value="puma">PANTHER (run-and-gun SMG)</option>
+              <option value="smg">Vector SMG (full-auto)</option>
+              <option value="rifle">Marksman Rifle (burst)</option>
+            </select>
+          </label>
+          <label>Secondary weapon
+            <select id="secondary">
+              <option value="pistol" selected>Sidearm (semi-auto)</option>
+              <option value="puma">PANTHER (run-and-gun SMG)</option>
+            </select>
+          </label>
+          <label class="check"><input type="checkbox" id="sensitivity-invert" /> Invert Y</label>
+          <label>Mouse sensitivity <input type="range" id="sensitivity" min="0.0005" max="0.006" step="0.0001" value="0.0022" /></label>
+          <button id="play">PLAY</button>
+          <div class="controls">
+            <b>WASD</b> move · <b>Space</b> jump · <b>Ctrl / C</b> slide (slide + jump = slide-jump)<br/>
+            <b>LMB</b> fire / scythe slash · <b>RMB</b> scythe dash (while scythe equipped) · <b>R</b> reload<br/>
+            <b>1 / 2 / 3</b> pistol / primary / scythe · <b>Esc</b> pause
+          </div>
+        </div>
+      </div>
+
+      <div id="pause" class="overlay hidden">
+        <div class="panel">
+          <h2>PAUSED</h2>
+          <button id="resume">RESUME</button>
+          <button id="quit">QUIT TO MENU</button>
+        </div>
+      </div>
+
+      <div id="match-end" class="overlay hidden">
+        <div class="panel">
+          <h2 id="match-result">MATCH OVER</h2>
+          <p id="match-score"></p>
+          <button id="rematch">PLAY AGAIN</button>
+          <button id="to-menu">MENU</button>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
