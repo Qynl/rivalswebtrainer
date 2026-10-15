@@ -72,6 +72,11 @@ try {
           if (g.viewModel.userData.weaponId !== id)
             throw new Error("Wrong rendered weapon: " + id);
           g.cooldown = 0;
+          g.renderPrevious = null;
+          g.stepOffset = 0;
+          g.landingDip = 0;
+          g.eyeHeight = 1.66;
+          g.updateCamera(1);
           g.blindTime = 0;
           g.keys.clear();
           g.keys.add(batch % 2 ? "KeyW" : "KeyD");
@@ -105,6 +110,7 @@ try {
           }
           g.keys.clear();
           g.mouseDown = false;
+          g.world.atmosphere.update(g.clock, g.settings.performance);
           g.renderer.autoClear = true;
           g.renderWorld();
           g.renderer.autoClear = false;
@@ -123,6 +129,8 @@ try {
           textures: g.renderer.info.memory.textures,
           programs: g.renderer.info.programs.length,
           effects: g.effects.length,
+          pooledFX: g.combatFX?.active,
+          decals: g.combatFX?.decals.count,
           projectiles: g.projectiles.length,
           heap: performance.memory?.usedJSHeapSize,
         };

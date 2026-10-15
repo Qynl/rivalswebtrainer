@@ -6,8 +6,7 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 // Original, purpose-built silhouettes. World units are metres, muzzle is -Z.
 // Named moving parts are shared by the live view and the loadout turntable.
 export function detailedWeapon(id, data, { hands = true } = {}) {
-  if (data.slot === 2 || ["grenade", "smoke", "molotov", "rpg"].includes(id))
-    return null;
+  if (!data) return null;
   const g = new THREE.Group();
   g.userData.weaponId = id;
   const mats = {};
@@ -81,22 +80,24 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
       fabric = material(0x293740, 0, 0.95);
     box(0, 0, 0, 0.11, 0.095, 0.15, skin, h);
     box(0, -0.025, 0.07, 0.12, 0.09, 0.09, fabric, h);
-    const sleeve = new THREE.Group();
-    sleeve.position.set(0, -0.04, 0.08);
-    h.add(sleeve);
-    h.userData.sleeve = sleeve;
-    box(0, 0, 0.14, 0.115, 0.115, 0.25, fabric, sleeve);
-    box(
-      0,
-      0.008,
-      0.16,
-      0.103,
-      0.105,
-      0.18,
-      material(0xdce3e5, 0, 0.92),
-      sleeve,
-    );
-    box(0, 0.002, 0.025, 0.12, 0.12, 0.045, fabric, sleeve);
+    if (hands) {
+      const sleeve = new THREE.Group();
+      sleeve.position.set(0, -0.04, 0.08);
+      h.add(sleeve);
+      h.userData.sleeve = sleeve;
+      box(0, 0, 0.14, 0.115, 0.115, 0.25, fabric, sleeve);
+      box(
+        0,
+        0.008,
+        0.16,
+        0.103,
+        0.105,
+        0.18,
+        material(0xdce3e5, 0, 0.92),
+        sleeve,
+      );
+      box(0, 0.002, 0.025, 0.12, 0.12, 0.045, fabric, sleeve);
+    }
     // A thumb, knuckle strip and separate finger ridges make a readable grip.
     box(-0.052, -0.025, -0.02, 0.035, 0.06, 0.065, skin, h).rotation.z = -0.35;
     for (let i = 0; i < 3; i++)
@@ -157,7 +158,271 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
     );
   };
 
-  if (id === "bow") {
+  const blade = (shape, x, y, z, mat = silver) => {
+    const geo = new THREE.ExtrudeGeometry(shape, {
+      depth: 0.018,
+      bevelEnabled: true,
+      bevelSegments: 2,
+      bevelSize: 0.003,
+      bevelThickness: 0.003,
+      steps: 1,
+      curveSegments: 20,
+    });
+    return add(geo, mat, x, y, z);
+  };
+  if (data.slot === 2) {
+    const bladeMetal = material(0xbac8d0, 0.85, 0.23),
+      gold = material(0xab8b4a, 0.65, 0.38);
+    if (id === "fists") {
+      hand(0.27, -0.22, -0.58).rotation.z = -0.14;
+      hand(-0.27, -0.24, -0.65).rotation.z = 0.14;
+    } else if (id === "knife") {
+      const shape = new THREE.Shape();
+      shape.moveTo(-0.026, 0);
+      shape.lineTo(0.032, 0);
+      shape.lineTo(0.026, 0.2);
+      shape.lineTo(-0.013, 0.32);
+      shape.lineTo(-0.032, 0.2);
+      shape.closePath();
+      g.userData.blade = blade(shape, 0.28, -0.17, -0.67, bladeMetal);
+      box(0.28, -0.19, -0.66, 0.14, 0.025, 0.085, dark);
+      box(0.28, -0.28, -0.66, 0.055, 0.17, 0.065, grip);
+      for (let i = 0; i < 5; i++)
+        box(0.28, -0.22 - i * 0.028, -0.622, 0.062, 0.009, 0.008, dark);
+      cyl(0.28, -0.37, -0.66, 0.033, 0.018, silver, "y");
+      if (hands) {
+        hand(0.28, -0.29, -0.62);
+        hand(-0.24, -0.31, -0.6);
+      }
+    } else if (id === "katana") {
+      const shape = new THREE.Shape();
+      shape.moveTo(0, 0);
+      shape.lineTo(0.046, 0);
+      shape.quadraticCurveTo(0.025, 0.52, -0.07, 0.76);
+      shape.lineTo(-0.115, 0.79);
+      shape.quadraticCurveTo(-0.016, 0.42, 0, 0);
+      shape.closePath();
+      g.userData.blade = blade(shape, 0.27, -0.14, -0.66, bladeMetal);
+      tube(
+        [
+          [0.283, -0.12, -0.639],
+          [0.289, 0.17, -0.639],
+          [0.258, 0.42, -0.639],
+          [0.19, 0.61, -0.639],
+        ],
+        0.004,
+        silver,
+      );
+      cyl(0.29, -0.16, -0.65, 0.095, 0.018, dark, "y");
+      cyl(0.29, -0.17, -0.65, 0.065, 0.008, gold, "y");
+      box(0.29, -0.31, -0.65, 0.052, 0.27, 0.065, grip);
+      for (let i = 0; i < 7; i++) {
+        const wrap = box(
+          0.29,
+          -0.2 - i * 0.034,
+          -0.612,
+          0.056,
+          0.012,
+          0.008,
+          gold,
+        );
+        wrap.rotation.z = i % 2 ? 0.38 : -0.38;
+      }
+      cyl(0.29, -0.45, -0.65, 0.035, 0.018, gold, "y");
+      if (hands) {
+        hand(0.29, -0.3, -0.61);
+        hand(0.29, -0.43, -0.61);
+      }
+    } else if (id === "scythe") {
+      const shaft = new THREE.Group();
+      shaft.position.set(0.26, -0.03, -0.69);
+      shaft.rotation.z = -0.18;
+      g.add(shaft);
+      cyl(0, 0, 0, 0.026, 1, dark, "y", shaft);
+      for (let i = 0; i < 8; i++)
+        cyl(0, -0.37 + i * 0.065, 0, 0.031, 0.018, grip, "y", shaft);
+      for (const y of [-0.48, 0.4, 0.48])
+        cyl(0, y, 0, 0.036, 0.025, gold, "y", shaft);
+      const shape = new THREE.Shape();
+      shape.moveTo(0, 0);
+      shape.quadraticCurveTo(-0.2, 0.26, -0.67, 0.13);
+      shape.quadraticCurveTo(-0.42, 0.12, -0.2, -0.035);
+      shape.lineTo(0.015, -0.055);
+      shape.closePath();
+      const edge = blade(shape, 0, 0.5, -0.012, bladeMetal);
+      edge.removeFromParent();
+      shaft.add(edge);
+      g.userData.blade = edge;
+      box(0, 0.49, 0, 0.085, 0.11, 0.068, gold, shaft);
+      if (hands) {
+        hand(0.21, -0.3, -0.65);
+        const upperHand = hand(0.26, -0.08, -0.65);
+        upperHand.userData.sleeve.rotation.x = 0.7;
+        upperHand.userData.sleeve.userData.restRotationX = 0.7;
+        g.userData.poseOffset = { x: 0.02, y: -0.07, z: -0.18 };
+      }
+    }
+    if (id === "scythe" || id === "katana") {
+      const trail = add(
+        new THREE.TorusGeometry(0.43, 0.008, 4, 32, Math.PI * 0.9),
+        new THREE.MeshBasicMaterial({
+          color: 0xd9f5ff,
+          transparent: true,
+          opacity: 0,
+          depthWrite: false,
+        }),
+        -0.08,
+        0.04,
+        -0.8,
+      );
+      trail.visible = false;
+      g.userData.slashTrail = trail;
+    }
+  } else if (id === "grenade" || id === "smoke") {
+    const body = material(id === "grenade" ? 0x435749 : 0x71828a, 0.25, 0.72);
+    if (id === "grenade") {
+      const shell = add(
+        new THREE.SphereGeometry(0.078, 16, 12),
+        body,
+        0.27,
+        -0.21,
+        -0.67,
+      );
+      shell.scale.set(1, 1.28, 1);
+      for (const y of [-0.06, -0.02, 0.02, 0.06]) {
+        const ring = add(
+          new THREE.TorusGeometry(
+            Math.sqrt(1 - (y / 0.1) ** 2) * 0.079,
+            0.0035,
+            4,
+            20,
+          ),
+          dark,
+          0.27,
+          -0.21 + y,
+          -0.67,
+        );
+        ring.rotation.x = Math.PI / 2;
+      }
+    } else {
+      cyl(0.27, -0.21, -0.67, 0.066, 0.24, body, "y");
+      cyl(0.27, -0.13, -0.67, 0.068, 0.018, silver, "y");
+      cyl(0.27, -0.29, -0.67, 0.068, 0.018, dark, "y");
+      box(0.27, -0.21, -0.602, 0.105, 0.07, 0.005, material(0xd8dfd9, 0, 0.9));
+      box(0.27, -0.21, -0.598, 0.095, 0.013, 0.004, material(0x4c775f, 0, 0.8));
+    }
+    cyl(0.27, -0.09, -0.67, 0.037, 0.025, dark, "y");
+    box(0.31, -0.15, -0.67, 0.016, 0.145, 0.025, silver).rotation.z = -0.18;
+    add(
+      new THREE.TorusGeometry(0.025, 0.004, 6, 18),
+      silver,
+      0.31,
+      -0.075,
+      -0.635,
+    );
+    if (hands) hand(0.27, -0.3, -0.61);
+  } else if (id === "molotov") {
+    const profile = [
+      [0, -0.28],
+      [0.055, -0.28],
+      [0.073, -0.25],
+      [0.073, -0.07],
+      [0.035, 0],
+      [0.026, 0.09],
+      [0.025, 0.12],
+      [0, 0.12],
+    ].map((p) => new THREE.Vector2(...p));
+    add(
+      new THREE.LatheGeometry(profile, 20),
+      new THREE.MeshPhysicalMaterial({
+        color: 0x354e2d,
+        roughness: 0.17,
+        metalness: 0,
+        clearcoat: 1,
+        clearcoatRoughness: 0.1,
+        transparent: true,
+        opacity: 0.94,
+      }),
+      0.28,
+      -0.15,
+      -0.66,
+    );
+    box(0.28, -0.28, -0.585, 0.105, 0.1, 0.008, material(0xd0c3a3, 0, 0.9));
+    const rag = tube(
+      [
+        [0.28, -0.025, -0.66],
+        [0.27, 0.055, -0.66],
+        [0.31, 0.09, -0.66],
+      ],
+      0.013,
+      material(0xc6baa3, 0, 0.95),
+    );
+    g.userData.rag = rag;
+    const flame = add(
+      new THREE.ConeGeometry(0.021, 0.095, 7),
+      new THREE.MeshBasicMaterial({
+        color: new THREE.Color(3, 1.3, 0.12),
+        transparent: true,
+        opacity: 0.85,
+        depthWrite: false,
+      }),
+      0.31,
+      0.13,
+      -0.66,
+    );
+    g.userData.pilotFlame = flame;
+    if (hands) hand(0.28, -0.31, -0.6);
+  } else if (id === "rpg") {
+    const olive = material(0x5c6a43, 0.3, 0.67);
+    if (hands) {
+      const tube = add(
+        new THREE.CylinderGeometry(0.09, 0.09, 1.7, 20, 1, true),
+        olive,
+        0.28,
+        -0.16,
+        -0.32,
+      );
+      tube.rotation.x = Math.PI / 2;
+      g.userData.poseOffset = { x: 0, y: -0.015, z: -0.06 };
+    } else {
+      cyl(0.28, -0.16, -0.73, 0.09, 0.85, olive);
+      cyl(0.28, -0.16, -0.29, 0.12, 0.085, dark);
+    }
+    for (const z of [-0.4, -0.68, -1.03])
+      add(new THREE.TorusGeometry(0.091, 0.008, 6, 20), dark, 0.28, -0.16, z);
+    box(0.28, -0.33, -0.61, 0.08, 0.24, 0.11, grip);
+    guard(-0.64);
+    box(0.28, 0.025, -0.88, 0.028, 0.22, 0.025, dark);
+    box(0.28, 0.12, -0.88, 0.095, 0.018, 0.025, silver);
+    for (const y of [0.03, 0.07, 0.11])
+      box(0.28, y, -0.88, 0.09, 0.008, 0.026, dark);
+    const rocket = new THREE.Group();
+    g.add(rocket);
+    g.userData.rocket = rememberPart(rocket);
+    cyl(0.28, -0.16, -1.1, 0.055, 0.13, silver, "z", rocket);
+    const profile = [
+      [0, -0.13],
+      [0.06, -0.1],
+      [0.14, 0],
+      [0.145, 0.08],
+      [0.09, 0.22],
+      [0, 0.34],
+    ].map((p) => new THREE.Vector2(...p));
+    const head = add(
+      new THREE.LatheGeometry(profile, 16),
+      olive,
+      0.28,
+      -0.16,
+      -1.16,
+      rocket,
+    );
+    head.rotation.x = -Math.PI / 2;
+    cyl(0.28, -0.16, -1.17, 0.147, 0.025, dark, "z", rocket);
+    if (hands) {
+      hand(0.28, -0.35, -0.55);
+      hand(0.28, -0.28, -0.92);
+    }
+  } else if (id === "bow") {
     g.userData.limbs = tube(
       [
         [0.24, 0.42, -0.86],
@@ -493,8 +758,8 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
     // Readable SCAR-style hardware on both sides, including the side visible in FPS.
     for (const side of [-1, 1]) {
       const x = 0.24 + side * 0.073;
-      box(x, -0.145, -0.69, 0.008, 0.055, 0.12, dark);
-      box(x + side * 0.005, -0.145, -0.695, 0.008, 0.033, 0.075, steel);
+      box(x, -0.145, -0.69, 0.008, 0.029, 0.17, dark);
+      box(x + side * 0.005, -0.145, -0.695, 0.008, 0.013, 0.085, silver);
       for (let i = 0; i < 5; i++)
         box(x, -0.14, -0.87 - i * 0.032, 0.009, 0.027, 0.013, dark);
       cyl(x, -0.182, -0.58, 0.012, 0.01, dark, "x");
@@ -545,7 +810,10 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
   const moving = new Set(
     Object.values(g.userData).filter((x) => x?.isObject3D),
   );
-  for (const h of g.userData.hands || []) mergeStatic(h, new Set());
+  for (const h of g.userData.hands || []) {
+    if (h.userData.sleeve) mergeStatic(h.userData.sleeve, new Set());
+    mergeStatic(h, new Set());
+  }
   mergeStatic(g, moving);
   g.traverse((o) => {
     if (o.isMesh) o.frustumCulled = false;

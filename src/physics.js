@@ -104,14 +104,18 @@ function resolveCircle(body, b) {
     if (into < 0) {
       body.vx -= into * nx;
       body.vz -= into * nz;
+      body.airCarrySpeed = Math.hypot(body.vx, body.vz);
     }
   }
+  return { x: nx, z: nz };
 }
 export function moveBody(body, dx, dz, boxes) {
   const steps = Math.max(1, Math.ceil(Math.hypot(dx, dz) / 0.16));
+  let stepX = dx / steps,
+    stepZ = dz / steps;
   for (let i = 0; i < steps; i++) {
-    body.x += dx / steps;
-    body.z += dz / steps;
+    body.x += stepX;
+    body.z += stepZ;
     // Ground adhesion on continuous slopes prevents downhill micro-falls/jitter.
     if (body.grounded)
       for (const b of boxes)
@@ -131,14 +135,24 @@ export function moveBody(body, dx, dz, boxes) {
           body.y + body.height > b.minY + 0.02 &&
           circleBox(body.x, body.z, body.radius, b)
         ) {
-          if (!tryStep(body, body.x, body.z, b, boxes)) resolveCircle(body, b);
+          if (!tryStep(body, body.x, body.z, b, boxes)) {
+            const normal = resolveCircle(body, b);
+            if (normal) {
+              const into = stepX * normal.x + stepZ * normal.z;
+              if (into < 0) {
+                stepX -= normal.x * into;
+                stepZ -= normal.z * into;
+              }
+            }
+          }
         }
       }
   }
 }
 export const GRAVITY = 30;
 export function verticalStep(body, dt, boxes) {
-  const old = body.y;
+  const old = body.y,
+    wasGrounded = body.grounded;
   body.y += body.vy * dt - GRAVITY * 0.5 * dt * dt;
   body.vy -= GRAVITY * dt;
   body.grounded = false;
@@ -161,11 +175,36 @@ export function verticalStep(body, dt, boxes) {
       }
     }
   }
+  // Descending stairs and the last few centimetres of a ramp stay attached to
+  // the support surface. Airborne jumps/coyote falls never receive this snap.
+  if (wasGrounded && body.vy <= 0) {
+    let snap = old <= 0.4 + EPSILON ? 0 : -Infinity,
+      snapSupport = null;
+    for (const b of boxes)
+      if (circleBox(body.x, body.z, body.radius, b)) {
+        const top = surfaceHeight(b, body.x, body.z);
+        if (
+          top <= old + EPSILON &&
+          old - top <= 0.4 + EPSILON &&
+          top > snap &&
+          canOccupy(body, body.x, top, body.z, boxes)
+        ) {
+          snap = top;
+          snapSupport = b;
+        }
+      }
+    if (snap >= floor && Number.isFinite(snap)) {
+      floor = snap;
+      support = snapSupport;
+      body.y = Math.min(body.y, snap);
+    }
+  }
   if (body.y <= floor) {
     body.y = floor;
     body.vy = 0;
     body.grounded = true;
     body.jumps = 0;
+    body.airCarrySpeed = 0;
     body.groundSlope = support ? rampGradient(support) : null;
   } else body.groundSlope = null;
 }

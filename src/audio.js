@@ -101,6 +101,10 @@ export class GameAudio {
       case "step":
         this.noiseHit(0.07, 0.075 * level, 600);
         break;
+      case "land":
+        this.noiseHit(0.12, 0.12 * level, 550);
+        this.tone(78, 0.1, "sine", 0.075 * level, 42);
+        break;
       case "jump":
         this.noiseHit(0.14, 0.08, 700);
         break;

@@ -62,13 +62,16 @@ export class WeaponAnimator {
       motion = shake ? (1 - ads) * Math.min(speed / 11.5, 1.4) : 0;
     const reloadState = reloadPose(reloading ? reload : 0),
       stride = grounded ? motion : motion * 0.12;
+    const profile = model.userData.poseOffset || {};
     const poseX =
-      0.09 -
+      0.09 +
+      (profile.x || 0) -
       0.277 * ads +
       Math.sin(phase * 0.5) * 0.009 * stride -
       lookX * (1 - ads);
     const poseY =
-      -0.1 -
+      -0.1 +
+      (profile.y || 0) -
       0.015 * ads +
       Math.cos(phase) * 0.006 * stride -
       kick * 0.34 -
@@ -88,7 +91,8 @@ export class WeaponAnimator {
         ? Math.exp(-age * 28) *
           Math.sin(Math.min(1, age / 0.022) * Math.PI * 0.5)
         : 0;
-    const poseZ = -0.16 + ads * 0.14 + kick * 0.35 + impulse * 0.024;
+    const poseZ =
+      -0.16 + (profile.z || 0) + ads * 0.14 + kick * 0.35 + impulse * 0.024;
     model.position.set(
       this.x.step(poseX, dt, 26),
       this.y.step(poseY, dt, 24),
@@ -139,11 +143,28 @@ export class WeaponAnimator {
       h.position.x -= reloadState.extract * 0.045;
       h.rotation.x = -reloadState.extract * 0.4;
       if (h.userData.sleeve)
-        h.userData.sleeve.rotation.x = reloadState.extract * 0.25;
+        h.userData.sleeve.rotation.x =
+          (h.userData.sleeve.userData.restRotationX || 0) +
+          reloadState.extract * 0.25;
       h.rotation.z = -reloadState.lower * 0.25;
       if (parts.pump && age < 0.28)
         h.position.z += Math.max(0, Math.sin((age * Math.PI) / 0.28)) * 0.075;
     }
+    if (parts.rocket) {
+      parts.rocket.position.copy(parts.rocket.userData.restPosition);
+      parts.rocket.position.z -= reloadState.extract * 0.38;
+      parts.rocket.visible =
+        (state.ammo ?? 1) > 0 || (reloading && reload > 0.3);
+      parts.rocket.position.y -= reloadState.extract * 0.09;
+    }
+    if (parts.rag)
+      parts.rag.rotation.z = Math.sin((state.time || 0) * 11) * 0.025;
+    if (parts.pilotFlame)
+      parts.pilotFlame.scale.set(
+        1,
+        1 + Math.sin((state.time || 0) * 23) * 0.13,
+        1,
+      );
     if (parts.rotor) parts.rotor.rotation.z += dt * (state.spin || 0) * 100;
     if (parts.string?.isLine) {
       const p = parts.string.geometry.attributes.position;
@@ -177,11 +198,23 @@ export class WeaponAnimator {
       parts.slashTrail.visible = false;
       parts.slashTrail.material.opacity = 0;
     }
+    if (parts.weaponId === "fists" && parts.hands?.[0]) {
+      const h = parts.hands[0];
+      h.position.copy(h.userData.restPosition);
+    }
+    if (state.dash > 0) {
+      const dash = Math.sin(Math.min(1, state.dash / 0.24) * Math.PI * 0.5);
+      model.rotation.y += dash * 0.28;
+      model.rotation.x -= dash * 0.2;
+      model.position.z += dash * 0.07;
+    }
     if (state.swing > 0) {
       const t = 1 - state.swing / 0.28;
       const cut = smooth(t / 0.48) * (1 - smooth((t - 0.5) / 0.5));
       if (parts.weaponId === "fists" || parts.weaponId === "knife") {
-        model.position.z -= cut * 0.24;
+        model.position.z -= cut * (parts.weaponId === "fists" ? 0.08 : 0.24);
+        if (parts.weaponId === "fists" && parts.hands?.[0])
+          parts.hands[0].position.z -= cut * 0.22;
         model.position.x -= cut * 0.035;
         model.rotation.x -= cut * 0.16;
       } else {

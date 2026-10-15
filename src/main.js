@@ -19,7 +19,7 @@ for (const key of ["sensitivity", "fov", "volume"])
 settings.sensitivity = Math.max(0.3, Math.min(3, settings.sensitivity));
 settings.fov = Math.max(70, Math.min(110, settings.fov));
 settings.volume = Math.max(0, Math.min(100, settings.volume));
-for (const key of ["showFps", "shake", "performance"])
+for (const key of ["showFps", "shake", "dynamicFov", "performance"])
   if (typeof savedSettings[key] === "boolean")
     settings[key] = savedSettings[key];
 const storedLoadout = loadSaved("rivals-loadout", []),
@@ -547,6 +547,7 @@ function syncSettings() {
   $("volume-value").textContent = settings.volume + "%";
   $("show-fps").checked = settings.showFps;
   $("screen-shake").checked = settings.shake;
+  $("dynamic-fov").checked = settings.dynamicFov;
   $("performance-mode").checked = settings.performance;
 }
 function openSettings(paused) {
@@ -569,6 +570,7 @@ for (const [id, key] of [
   ["volume", "volume"],
   ["show-fps", "showFps"],
   ["screen-shake", "shake"],
+  ["dynamic-fov", "dynamicFov"],
   ["performance-mode", "performance"],
 ])
   $(id).addEventListener("input", () => {

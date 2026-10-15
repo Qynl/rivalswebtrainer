@@ -1,7 +1,7 @@
 import * as THREE from "three";
 
-// One depth-aware finishing pass: local ambient occlusion, gentle sharpening,
-// and a very restrained grade. Weapon/HUD are drawn afterwards, so neither is blurred.
+// Depth-aware HDR finishing: local occlusion, quarter-resolution soft bloom,
+// restrained sharpening and grading. Weapons/HUD are drawn afterwards.
 export class ArenaRenderer {
   constructor(renderer) {
     this.renderer = renderer;
@@ -15,6 +15,11 @@ export class ArenaRenderer {
       1,
       THREE.UnsignedIntType,
     );
+    this.bloomA = new THREE.WebGLRenderTarget(1, 1, {
+      type: THREE.HalfFloatType,
+      depthBuffer: false,
+    });
+    this.bloomB = this.bloomA.clone();
     this.scene = new THREE.Scene();
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     this.material = new THREE.ShaderMaterial({
@@ -22,6 +27,8 @@ export class ArenaRenderer {
       depthWrite: false,
       uniforms: {
         colorMap: { value: this.target.texture },
+        bloomMap: { value: this.bloomA.texture },
+        bloomStrength: { value: 0.16 },
         depthMap: { value: this.target.depthTexture },
         resolution: { value: new THREE.Vector2(1, 1) },
         inverseProjection: { value: new THREE.Matrix4() },
@@ -31,7 +38,8 @@ export class ArenaRenderer {
       vertexShader: `varying vec2 screenUv;void main(){screenUv=uv;gl_Position=vec4(position.xy,0.,1.);}`,
       fragmentShader: `
         varying vec2 screenUv;
-        uniform sampler2D colorMap,depthMap;
+        uniform sampler2D colorMap,depthMap,bloomMap;
+        uniform float bloomStrength;
         uniform vec2 resolution;
         uniform mat4 inverseProjection;
         uniform float projectionScale,aoStrength;
@@ -59,21 +67,56 @@ export class ArenaRenderer {
             color=max(vec3(0),color+(color-blur)*.1);
           }
           // Keep the concrete neutral, not glowing white or heavily blue-tinted.
+          color=max(vec3(0.),(color-.18)*1.025+.18);
           color*=vec3(1.015,1.005,.99);
+          color+=texture2D(bloomMap,screenUv).rgb*bloomStrength;
           gl_FragColor=vec4(color,1.);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
         }`,
     });
-    this.scene.add(
-      new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.material),
-    );
+    this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.material);
+    this.scene.add(this.quad);
+    const filterOptions = {
+      depthWrite: false,
+      depthTest: false,
+      toneMapped: false,
+      vertexShader: this.material.vertexShader,
+    };
+    this.brightMaterial = new THREE.ShaderMaterial({
+      ...filterOptions,
+      uniforms: {
+        inputMap: { value: this.target.texture },
+        texel: { value: new THREE.Vector2() },
+      },
+      fragmentShader: `varying vec2 screenUv;uniform sampler2D inputMap;uniform vec2 texel;void main(){vec3 c=(texture2D(inputMap,screenUv+texel*vec2(-1,-1)).rgb+texture2D(inputMap,screenUv+texel*vec2(1,-1)).rgb+texture2D(inputMap,screenUv+texel*vec2(-1,1)).rgb+texture2D(inputMap,screenUv+texel*vec2(1,1)).rgb)*.25;float l=max(c.r,max(c.g,c.b));float knee=clamp(l-1.05,0.,.7);float contribution=max(l-1.4,knee*knee/2.8)/max(l,.001);gl_FragColor=vec4(min(c*contribution,vec3(8.)),1.);}`,
+    });
+    this.blurMaterial = new THREE.ShaderMaterial({
+      ...filterOptions,
+      uniforms: {
+        inputMap: { value: null },
+        direction: { value: new THREE.Vector2() },
+      },
+      fragmentShader: `varying vec2 screenUv;uniform sampler2D inputMap;uniform vec2 direction;void main(){vec3 c=texture2D(inputMap,screenUv).rgb*.227027;c+=(texture2D(inputMap,screenUv+direction*1.384615).rgb+texture2D(inputMap,screenUv-direction*1.384615).rgb)*.316216;c+=(texture2D(inputMap,screenUv+direction*3.230769).rgb+texture2D(inputMap,screenUv-direction*3.230769).rgb)*.070270;gl_FragColor=vec4(c,1.);}`,
+    });
     this.resize();
   }
   resize() {
     const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
     this.target.setSize(Math.max(1, size.x), Math.max(1, size.y));
-    this.material.uniforms.resolution.value.copy(size);
+    this.material.uniforms.resolution.value.set(
+      this.target.width,
+      this.target.height,
+    );
+    this.bloomA.setSize(
+      Math.max(1, Math.floor(size.x / 4)),
+      Math.max(1, Math.floor(size.y / 4)),
+    );
+    this.bloomB.setSize(this.bloomA.width, this.bloomA.height);
+    this.brightMaterial.uniforms.texel.value.set(
+      1 / this.target.width,
+      1 / this.target.height,
+    );
   }
   render(scene, camera) {
     const renderer = this.renderer,
@@ -86,12 +129,29 @@ export class ArenaRenderer {
     renderer.setRenderTarget(this.target);
     renderer.clear();
     renderer.render(scene, camera);
+    this.quad.material = this.brightMaterial;
+    renderer.setRenderTarget(this.bloomA);
+    renderer.render(this.scene, this.camera);
+    this.quad.material = this.blurMaterial;
+    this.blurMaterial.uniforms.inputMap.value = this.bloomA.texture;
+    this.blurMaterial.uniforms.direction.value.set(1 / this.bloomA.width, 0);
+    renderer.setRenderTarget(this.bloomB);
+    renderer.render(this.scene, this.camera);
+    this.blurMaterial.uniforms.inputMap.value = this.bloomB.texture;
+    this.blurMaterial.uniforms.direction.value.set(0, 1 / this.bloomA.height);
+    renderer.setRenderTarget(this.bloomA);
+    renderer.render(this.scene, this.camera);
+    this.quad.material = this.material;
     renderer.setRenderTarget(previous);
     renderer.render(this.scene, this.camera);
   }
   dispose() {
     this.target.dispose();
     this.material.dispose();
-    this.scene.children[0].geometry.dispose();
+    this.brightMaterial.dispose();
+    this.blurMaterial.dispose();
+    this.bloomA.dispose();
+    this.bloomB.dispose();
+    this.quad.geometry.dispose();
   }
 }

@@ -1,3 +1,6 @@
+import { batchFixedMeshes } from "./batching.js";
+import { muzzleFlash } from "./animation.js";
+import { ArenaAtmosphere } from "./atmosphere.js";
 import { ARENA, HALF_COVER } from "./arena-layout.js";
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
@@ -37,6 +40,8 @@ export class ArenaWorld {
     this.solidMeshes = [];
     this.materials = new Map();
     this.graphics = new ArenaGraphics();
+    this.atmosphere = new ArenaAtmosphere();
+    scene.add(this.atmosphere.mesh);
     this.size = 48;
     this.mapId = "compound";
   }
@@ -185,18 +190,30 @@ export class ArenaWorld {
   build(id = "blockout") {
     // Dispose transient signage, not shared procedural textures/materials.
     const sharedMaterials = new Set(this.materials.values());
+    const disposed = new Set();
     while (this.group.children.length) {
-      const c = this.group.children[0];
-      this.group.remove(c);
-      c.geometry?.dispose();
-      if (c.material?.map && !sharedMaterials.has(c.material)) {
-        c.material.map.dispose();
-        c.material.dispose();
-      }
+      const child = this.group.children[0];
+      this.group.remove(child);
+      child.traverse((o) => {
+        if (o.geometry && !disposed.has(o.geometry)) {
+          o.geometry.dispose();
+          disposed.add(o.geometry);
+        }
+        if (
+          o.material?.map &&
+          !sharedMaterials.has(o.material) &&
+          !disposed.has(o.material)
+        ) {
+          o.material.map.dispose();
+          o.material.dispose();
+          disposed.add(o.material);
+        }
+      });
     }
     this.boxes = [];
     this.solidMeshes = [];
     this.mapId = id;
+    this.staticStats = null;
     this.size = 48;
     this.bounds = { minX: -23.1, maxX: 23.1, minZ: -23.1, maxZ: 23.1 };
     if (id === "blockout") {
@@ -205,7 +222,7 @@ export class ArenaWorld {
     }
     const roof = id === "rooftops",
       hangar = id === "hangar";
-    this.scene.background = this.graphics.sky(id);
+    this.scene.background = null;
     this.scene.fog = new THREE.Fog(roof ? 0xb4cbd8 : 0xbcccd3, 62, 145);
     // Only the paving slab has a top at y=0. The foundation ends below it.
     this.box(0, -1.2, 0, 49, 2, 49, 0x6c6484, false);
@@ -456,6 +473,13 @@ export class ArenaWorld {
     const flat = geometry.toNonIndexed();
     geometry.dispose();
     flat.computeVertexNormals();
+    flat.setAttribute(
+      "uv",
+      new THREE.Float32BufferAttribute(
+        new Float32Array(flat.attributes.position.count * 2),
+        2,
+      ),
+    );
     const mesh = new THREE.Mesh(flat, this.blockMaterial);
     mesh.position.set(x, 0, z);
     mesh.castShadow = true;
@@ -511,12 +535,14 @@ export class ArenaWorld {
       minZ: -depth / 2 + 0.44,
       maxZ: depth / 2 - 0.44,
     };
-    this.scene.background = this.graphics.sky("blockout");
+    this.scene.background = null;
     this.scene.fog = new THREE.Fog(0xa7b4be, 65, 125);
     if (!this.blockMaterial) {
       const material = new THREE.MeshStandardMaterial({
-        color: 0x9aa4ac,
-        roughness: 0.96,
+        color: 0xa4a6a5,
+        roughness: 0.92,
+        bumpMap: this.graphics.texture("height"),
+        bumpScale: 0.012,
         map: this.graphics.texture("block-concrete"),
       });
       material.onBeforeCompile = (shader) => {
@@ -536,10 +562,18 @@ export class ArenaWorld {
           )
           .replace(
             "#include <map_fragment>",
-            "vec3 panelNormal=abs(normalize(vPanelNormal));vec2 panelUv=panelNormal.y>max(panelNormal.x,panelNormal.z)?vPanelPosition.xz:panelNormal.x>panelNormal.z?vPanelPosition.zy:vPanelPosition.xy;diffuseColor*=texture2D(map,panelUv/2.4);vec2 slab=floor(panelUv/2.4);diffuseColor.rgb*=.97+.05*fract(sin(dot(slab,vec2(12.9898,78.233)))*43758.5453);",
+            "vec3 panelNormal=abs(normalize(vPanelNormal));vec2 panelUv=panelNormal.y>max(panelNormal.x,panelNormal.z)?vPanelPosition.xz:panelNormal.x>panelNormal.z?vPanelPosition.zy:vPanelPosition.xy;diffuseColor*=texture2D(map,panelUv/2.4);vec2 slab=floor(panelUv/2.4);diffuseColor.rgb*=.94+.09*fract(sin(dot(slab,vec2(12.9898,78.233)))*43758.5453);diffuseColor.rgb*=1.-.055*(1.-panelNormal.y)*exp(-max(vPanelPosition.y,0.)*2.);",
           );
       };
-      material.customProgramCacheKey = () => "concrete-reference-v1";
+      const panelCompile = material.onBeforeCompile;
+      material.onBeforeCompile = (shader) => {
+        panelCompile(shader);
+        shader.fragmentShader = shader.fragmentShader.replace(
+          "#include <normal_fragment_maps>",
+          "float concreteHeight=texture2D(bumpMap,panelUv/.55).r;normal=perturbNormalArb(-vViewPosition,normal,vec2(dFdx(concreteHeight),dFdy(concreteHeight))*bumpScale,faceDirection);",
+        );
+      };
+      material.customProgramCacheKey = () => "concrete-reference-v2";
       this.blockMaterial = material;
       this.materials.set("reference-concrete", material);
     }
@@ -549,9 +583,12 @@ export class ArenaWorld {
       this.materials.set(
         "arena-floor",
         new THREE.MeshStandardMaterial({
-          color: 0x7f8a91,
-          roughness: 1,
-          map: this.graphics.texture("concrete"),
+          color: 0x868b8c,
+          roughness: 0.9,
+          map: this.graphics.texture("floor"),
+          roughnessMap: this.graphics.texture("floor-roughness"),
+          bumpMap: this.graphics.texture("height"),
+          bumpScale: 0.006,
         }),
       );
     floor.material = this.materials.get("arena-floor");
@@ -605,6 +642,9 @@ export class ArenaWorld {
     };
     this.size = width;
     this.nav = new NavGrid(this.boxes, width, 0.8, depth);
+    this.staticStats = batchFixedMeshes(this.group, {
+      rayMeshes: this.solidMeshes,
+    });
     this.group.updateMatrixWorld(true);
   }
   glow(x, y, z, w, h, d, color = 0x88e1eb) {
@@ -717,6 +757,7 @@ export class ArenaWorld {
     this.group.traverse((o) => o.geometry?.dispose());
     for (const m of this.materials.values()) m.dispose();
     this.graphics.dispose();
+    this.atmosphere.dispose();
   }
 }
 export function createCharacter(team, name = "BOT") {
@@ -754,9 +795,9 @@ export function createCharacter(team, name = "BOT") {
   box("gun", 0.15, 0.19, 0.7, dark, 0.37, 1.22, -0.53);
   box("barrel", 0.06, 0.06, 0.3, dark, 0.37, 1.23, -0.95);
   const visorMaterial = new THREE.MeshStandardMaterial({
-    color: team === 0 ? 0x7fe8ec : 0xffbb85,
+    color: team === 0 ? 0x235966 : 0x644936,
     emissive: team === 0 ? 0x59aab7 : 0xbb7543,
-    emissiveIntensity: 0.45,
+    emissiveIntensity: 0.22,
     metalness: 0.4,
     roughness: 0.22,
   });
@@ -806,6 +847,98 @@ export function createCharacter(team, name = "BOT") {
       joint.add(palm);
     }
   }
+  // Two-bone legs: knees fold independently instead of scaling the whole actor.
+  for (const side of ["left", "right"]) {
+    const hip = parts[side + "Leg"],
+      old = hip.children[0];
+    hip.remove(old);
+    old.traverse((o) => o.geometry?.dispose());
+    const thigh = new THREE.Mesh(
+      new RoundedBoxGeometry(0.28, 0.34, 0.3, 1, 0.012),
+      dark,
+    );
+    thigh.position.y = -0.17;
+    hip.add(thigh);
+    const knee = new THREE.Group();
+    knee.position.y = -0.34;
+    hip.add(knee);
+    parts[side + "Knee"] = knee;
+    const shin = new THREE.Mesh(
+      new RoundedBoxGeometry(0.27, 0.32, 0.285, 1, 0.012),
+      dark,
+    );
+    shin.position.y = -0.16;
+    knee.add(shin);
+    const pad = new THREE.Mesh(
+      new RoundedBoxGeometry(0.28, 0.18, 0.075, 1, 0.014),
+      armor,
+    );
+    pad.position.set(0, -0.035, -0.16);
+    knee.add(pad);
+    const boot = hip.children.find((o) => o.isMesh && o !== thigh);
+    if (boot) {
+      hip.remove(boot);
+      boot.position.set(0, -0.325, -0.045);
+      knee.add(boot);
+    }
+    thigh.castShadow = shin.castShadow = pad.castShadow = true;
+  }
+  const headRig = new THREE.Group();
+  headRig.position.copy(parts.head.position);
+  group.add(headRig);
+  for (const name of ["head", "helmet", "visor"]) {
+    const mesh = parts[name];
+    mesh.position.sub(headRig.position);
+    headRig.add(mesh);
+  }
+  parts.head = headRig;
+  const weaponRig = new THREE.Group();
+  weaponRig.position.set(0.37, 1.23, -0.25);
+  group.add(weaponRig);
+  parts.weaponRig = weaponRig;
+  parts.gun.material = new THREE.MeshStandardMaterial({
+    color: 0x8b927a,
+    metalness: 0.35,
+    roughness: 0.6,
+  });
+  for (const name of ["gun", "barrel"]) {
+    const mesh = parts[name];
+    mesh.position.sub(weaponRig.position);
+    weaponRig.add(mesh);
+  }
+  const botFlash = muzzleFlash(
+    new THREE.MeshBasicMaterial({
+      color: new THREE.Color(4, 2.1, 0.45),
+      transparent: true,
+      opacity: 0.9,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    }),
+  );
+  botFlash.position.set(0, 0, -0.88);
+  weaponRig.add(botFlash);
+  parts.muzzleFlash = botFlash;
+  const upper = new THREE.Group();
+  upper.position.y = 1;
+  group.add(upper);
+  parts.upperBody = upper;
+  for (const name of [
+    "torso",
+    "chestPlate",
+    "chestStripe",
+    "pouchLeft",
+    "pouchRight",
+    "head",
+    "leftArm",
+    "rightArm",
+    "weaponRig",
+  ]) {
+    const object = parts[name];
+    object.position.sub(upper.position);
+    upper.add(object);
+  }
+  for (const fixed of [upper, parts.leftKnee, parts.rightKnee])
+    batchFixedMeshes(fixed);
   // Nametag: only shown for allies, so rivals can't be tracked through walls.
   if (team === 0) {
     const tag = new THREE.Sprite(
@@ -821,199 +954,7 @@ export function createCharacter(team, name = "BOT") {
   return { group, parts };
 }
 export function createViewModel(id, data, options) {
-  const detailed = detailedWeapon(id, data, options);
-  if (detailed) return detailed;
-  const g = new THREE.Group(),
-    metal = new THREE.MeshStandardMaterial({
-      color: data.color,
-      roughness: 0.33,
-      metalness: 0.65,
-    }),
-    dark = new THREE.MeshStandardMaterial({ color: 0x2d2e40, roughness: 0.72 }),
-    accent = new THREE.MeshStandardMaterial({
-      color: 0xe9a083,
-      roughness: 0.5,
-    }),
-    skin = new THREE.MeshStandardMaterial({ color: 0xc6a38e, roughness: 0.85 }),
-    sleeve = new THREE.MeshStandardMaterial({
-      color: 0x57536f,
-      roughness: 0.9,
-    });
-  const box = (x, y, z, w, h, d, m) => {
-    const o = new THREE.Mesh(
-      w > 0.08 && h > 0.05 && d > 0.05
-        ? new RoundedBoxGeometry(w, h, d, 1, 0.012)
-        : new THREE.BoxGeometry(w, h, d),
-      m,
-    );
-    o.position.set(x, y, z);
-    g.add(o);
-    return o;
-  };
-  const cylinder = (x, y, z, r, l, m) => {
-    const o = new THREE.Mesh(new THREE.CylinderGeometry(r, r, l, 16), m);
-    o.rotation.x = Math.PI / 2;
-    o.position.set(x, y, z);
-    g.add(o);
-    return o;
-  };
-  const hand = (x, y, z, rot = 0) => {
-    const h = box(x, y, z, 0.12, 0.13, 0.2, skin);
-    h.rotation.z = rot;
-    h.userData.hand = true;
-    box(x, y - 0.15, z + 0.15, 0.14, 0.3, 0.25, sleeve).userData.hand = true;
-  };
-  if (data.type === "melee") {
-    hand(0.29, -0.3, -0.5, -0.3);
-    hand(-0.27, -0.32, -0.48, 0.3);
-    if (id === "knife") {
-      box(0.29, -0.16, -0.65, 0.04, 0.28, 0.12, metal);
-      box(0.29, -0.29, -0.65, 0.18, 0.04, 0.15, dark);
-    }
-    if (id === "scythe") {
-      const pole = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.025, 0.032, 0.92, 16),
-        dark,
-      );
-      pole.position.set(0.26, -0.01, -0.69);
-      pole.rotation.z = -0.22;
-      g.add(pole);
-      for (let y = -0.34; y < 0.1; y += 0.07)
-        box(0.26 + y * 0.22, y, -0.69, 0.07, 0.027, 0.07, accent);
-      const shape = new THREE.Shape();
-      shape.moveTo(0, 0);
-      shape.quadraticCurveTo(-0.18, 0.28, -0.63, 0.18);
-      shape.quadraticCurveTo(-0.44, 0.16, -0.22, 0.04);
-      shape.lineTo(-0.03, -0.04);
-      shape.closePath();
-      const blade = new THREE.Mesh(
-        new THREE.ExtrudeGeometry(shape, {
-          depth: 0.025,
-          bevelEnabled: true,
-          bevelThickness: 0.005,
-          bevelSize: 0.005,
-          bevelSegments: 1,
-          steps: 1,
-          curveSegments: 14,
-        }),
-        metal,
-      );
-      blade.position.set(0.15, 0.37, -0.72);
-      g.add(blade);
-      box(0.13, 0.35, -0.7, 0.09, 0.1, 0.08, accent);
-    }
-    if (id === "katana") {
-      const shape = new THREE.Shape();
-      shape.moveTo(0, 0);
-      shape.lineTo(0.045, 0);
-      shape.quadraticCurveTo(0.025, 0.53, -0.07, 0.76);
-      shape.lineTo(-0.115, 0.79);
-      shape.quadraticCurveTo(-0.015, 0.42, 0, 0);
-      shape.closePath();
-      const blade = new THREE.Mesh(
-        new THREE.ExtrudeGeometry(shape, {
-          depth: 0.018,
-          bevelEnabled: true,
-          bevelThickness: 0.003,
-          bevelSize: 0.003,
-          bevelSegments: 1,
-          steps: 1,
-          curveSegments: 16,
-        }),
-        metal,
-      );
-      blade.position.set(0.27, -0.14, -0.65);
-      g.add(blade);
-      box(0.29, -0.16, -0.65, 0.22, 0.032, 0.1, accent);
-      box(0.29, -0.3, -0.65, 0.05, 0.25, 0.06, dark);
-      for (let i = 0; i < 5; i++) {
-        const wrap = box(
-          0.29,
-          -0.21 - i * 0.04,
-          -0.612,
-          0.055,
-          0.016,
-          0.016,
-          accent,
-        );
-        wrap.rotation.z = 0.3;
-      }
-    }
-  } else if (data.slot === 3) {
-    hand(0.3, -0.3, -0.6);
-    cylinder(0.3, -0.24, -0.7, 0.095, 0.23, metal);
-    box(0.3, -0.12, -0.7, 0.1, 0.1, 0.1, dark);
-  } else if (data.type === "rocket") {
-    hand(0.28, -0.34, -0.6);
-    cylinder(0.3, -0.12, -0.7, 0.14, 0.95, metal);
-    cylinder(0.3, -0.12, -1.24, 0.17, 0.15, dark);
-    box(0.3, -0.36, -0.65, 0.1, 0.24, 0.15, dark);
-    box(0.3, 0.04, -0.85, 0.04, 0.14, 0.05, accent);
-  } else {
-    const pistol = data.slot === 1;
-    hand(0.23, -0.35, -0.45);
-    if (!pistol) hand(-0.06, -0.35, -0.85, 0.25);
-    const z = pistol ? -0.64 : -0.88;
-    box(0.24, -0.19, z, pistol ? 0.17 : 0.19, 0.2, pistol ? 0.36 : 0.64, metal);
-    box(0.24, -0.33, z + 0.13, 0.12, 0.24, 0.14, dark);
-    box(0.24, -0.37, z - 0.04, 0.11, pistol ? 0.12 : 0.28, 0.14, metal);
-    cylinder(
-      0.24,
-      -0.16,
-      z - (pistol ? 0.26 : 0.5),
-      0.027,
-      pistol ? 0.17 : 0.4,
-      dark,
-    );
-    box(0.24, -0.065, z - 0.16, 0.04, 0.06, 0.05, accent);
-    box(0.24, -0.085, z + 0.15, 0.1, 0.06, 0.09, dark);
-    if (!pistol) {
-      box(0.24, -0.2, -0.44, 0.15, 0.17, 0.25, dark);
-      for (let i = 0; i < 4; i++)
-        box(0.24, -0.18, z - 0.24 - i * 0.035, 0.198, 0.018, 0.018, dark);
-    }
-    // Receiver rails, silver fasteners and a readable rear/front sight.
-    for (let i = 0; i < 3; i++)
-      box(0.345, -0.18, z - 0.12 + i * 0.09, 0.013, 0.035, 0.018, accent);
-    box(0.24, -0.054, z + 0.12, 0.13, 0.035, 0.05, dark);
-    box(0.24, -0.062, z - 0.18, 0.065, 0.075, 0.055, metal);
-    if (!pistol) {
-      box(0.24, -0.135, z - 0.28, 0.205, 0.07, 0.25, dark);
-      for (let i = 0; i < 4; i++)
-        box(0.345, -0.18, z - 0.29 - i * 0.045, 0.012, 0.075, 0.022, accent);
-      box(0.24, -0.18, -0.33, 0.18, 0.23, 0.07, metal);
-    }
-    if (id === "sniper") {
-      box(0.24, -0.02, z - 0.1, 0.04, 0.1, 0.045, dark);
-      box(0.24, -0.02, z + 0.1, 0.04, 0.1, 0.045, dark);
-      cylinder(0.24, 0.04, z, 0.056, 0.34, dark);
-      cylinder(0.24, 0.04, z - 0.19, 0.058, 0.03, accent);
-    }
-    if (id === "shotgun") box(0.24, -0.2, -1.09, 0.22, 0.16, 0.26, accent);
-  }
-  g.userData.weaponId = id;
-  if (id === "katana" || id === "scythe") {
-    const trail = new THREE.Mesh(
-      new THREE.TorusGeometry(0.43, 0.009, 4, 32, Math.PI * 0.9),
-      new THREE.MeshBasicMaterial({
-        color: 0xe6f8ff,
-        transparent: true,
-        opacity: 0,
-        depthWrite: false,
-      }),
-    );
-    trail.position.set(-0.08, 0.04, -0.8);
-    trail.visible = false;
-    g.add(trail);
-    g.userData.slashTrail = trail;
-  }
-  g.position.set(0, -0.03, 0);
-  g.traverse((o) => {
-    if (o.isMesh) {
-      o.castShadow = false;
-      o.receiveShadow = false;
-      o.frustumCulled = false;
-    }
-  });
-  return g;
+  const model = detailedWeapon(id, data, options);
+  if (!model) throw new Error("Unknown weapon model: " + id);
+  return model;
 }

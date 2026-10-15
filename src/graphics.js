@@ -66,6 +66,33 @@ export class ArenaGraphics {
       image.data[i + 3] = 255;
     }
     g.putImageData(image, 0, 0);
+    if (kind === "floor" || kind === "floor-roughness") {
+      // Broad, soft trowel patches under fine aggregate, not loud repeated grunge.
+      for (let i = 0; i < 28; i++) {
+        const x = this.random() * 256,
+          y = this.random() * 256,
+          r = 15 + this.random() * 65;
+        const patch = g.createRadialGradient(x, y, 0, x, y, r);
+        patch.addColorStop(
+          0,
+          kind === "floor" ? "rgba(110,115,117,.05)" : "rgba(30,30,30,.12)",
+        );
+        patch.addColorStop(1, "rgba(90,90,90,0)");
+        g.fillStyle = patch;
+        g.fillRect(x - r, y - r, r * 2, r * 2);
+      }
+      for (let i = 0; i < 40; i++) {
+        const x = this.random() * 256,
+          y = this.random() * 256;
+        g.strokeStyle =
+          kind === "floor" ? "rgba(135,140,143,.12)" : "rgba(85,85,85,.18)";
+        g.lineWidth = 0.3;
+        g.beginPath();
+        g.moveTo(x, y);
+        g.lineTo(x + this.random() * 22, y + this.random() * 4);
+        g.stroke();
+      }
+    }
     if (kind === "metal") {
       g.strokeStyle = "#bcc7ce";
       g.lineWidth = 0.5;
@@ -108,7 +135,9 @@ export class ArenaGraphics {
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.repeat.set(kind === "windows" ? 1 : 3, kind === "windows" ? 1 : 3);
     t.anisotropy = 4;
-    if (kind !== "normal") t.colorSpace = THREE.SRGBColorSpace;
+    if (!["normal", "height", "floor-roughness"].includes(kind))
+      t.colorSpace = THREE.SRGBColorSpace;
+    if (kind === "floor" || kind === "floor-roughness") t.repeat.set(8, 10);
     this.textures.set(kind, t);
     return t;
   }

@@ -26,7 +26,7 @@ No trustworthy published dimensions, Roblox stud measurements, collision export 
 | Window cover          | One large arch-like central piece     | Mirrored window walls near spawns and through the centre                |
 | Ramp collision        | Not implemented                       | A continuous heightfield shared by movement, support, clearance and nav |
 | Jump feel             | Gravity 22 / launch 12.3              | Gravity 30 / launch 14.3: similar height, shorter hang time             |
-| Ground slide          | 0.4 seconds                           | Still 0.4 seconds; not lengthened again                                 |
+| Ground slide          | 0.4 seconds                           | Now 0.36 seconds, with slope response and landing buffering             |
 | Weapon reload         | Whole-model fixed tilt                | Timed extraction, insertion, bolt rack and support-hand motion          |
 | Equip / ADS           | Position changes with frame lerp      | Exact critically damped springs                                         |
 | Bot walk cycle        | Rotating meshes around their centres  | Hip/shoulder pivots and distance-driven strides                         |
@@ -35,9 +35,9 @@ No trustworthy published dimensions, Roblox stud measurements, collision export 
 
 - A clearer blue sky, neutral fill, warmer sun, and a separate cool rim light for the weapon overlay rather than strong purple lighting.
 - Darker matte floor, panel seams with subtle slab-to-slab variation, contact shadows and dynamic sun shadows.
-- A single depth-aware finishing pass adds 12-tap local ambient occlusion, restrained sharpening and a neutral grade. The world render target uses two-sample MSAA; weapons are drawn afterwards. Performance mode bypasses the pass entirely.
+- The depth-aware finishing pipeline adds 12-tap local ambient occlusion, restrained sharpening, quarter-resolution soft HDR bloom and a neutral grade. The world render target uses two-sample MSAA; weapons are drawn afterwards. Performance mode bypasses the pipeline.
 - Softer sky wisps instead of repeated hard-edged cloud stamps.
-- Static weapon details are batched by material; moving parts remain separate. The first-person rifle initially fell from 51 to 17 meshes, and the latest pass uses 23 with additional side hardware and articulated black/white sleeves (node traversal measurements). This reduces weapon draw submissions; it is **not** a claim of a threefold frame-rate improvement.
+- Static weapon details are batched by material; moving parts remain separate. The first-person rifle initially fell from 51 to 17 meshes, then 23 with additional side hardware and articulated black/white sleeves; sleeve batching in the latest pass uses 21 (node traversal measurements). This reduces weapon draw submissions; it is **not** a claim of a threefold frame-rate improvement.
 - Compact HUD and pre-match wizard retained; no extra permanent animation/debug panels.
 - All content is generated locally and remains available offline after production caching.
 
@@ -54,3 +54,5 @@ The optional `npm run test:soak -- --minutes 10` repeatedly exercises all 23 loa
 - Fists/knife use forward jabs; Katana/Scythe retain sweeping cuts with a short fading blade trail. Utility throws have a follow-through.
 - Bot deaths ease into a fall over 0.3 seconds at their current platform height, including the round-ending elimination. This is an authored collapse, not a physics ragdoll.
 - A real WebGL regression scene compares occlusion on/off pixel output, checks target resizing and GL errors, and verifies the Performance-mode bypass. Unit tests cover equip/reload recovery, trail cleanup and platform-height death easing.
+
+See [the one-hour implementation pass](hour-pass.md) for the newer movement, batching, procedural sky, skeletal rig, detailed-model and fixed-pool combat-effects changes and their validation.

@@ -234,7 +234,10 @@ test("bot limbs rotate at hip and shoulder joints rather than their centre", () 
   const { parts } = createCharacter(1);
   assert.equal(parts.leftLeg.type, "Group");
   assert.equal(parts.leftLeg.position.y, 0.73);
-  assert.equal(parts.leftArm.position.y, 1.37);
+  assert.ok(
+    Math.abs(parts.leftArm.position.y + parts.upperBody.position.y - 1.37) <
+      1e-10,
+  );
   assert.ok(parts.leftLeg.children.length >= 2);
 });
 
@@ -267,7 +270,7 @@ test("blade trails follow the cut and disappear on recovery; fists use a straigh
   const fists = createViewModel("fists", WEAPONS.fists),
     b = new WeaponAnimator();
   b.update(fists, { dt: 1 / 60, swing: 0.14 });
-  assert.ok(fists.position.z < -0.35);
+  assert.ok(fists.position.z + fists.userData.hands[0].position.z < -0.7);
   assert.ok(Math.abs(fists.rotation.z) < 0.01);
 });
 test("equip starts below the frame and recovers without drifting weapon parts", () => {

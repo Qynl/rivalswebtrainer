@@ -185,3 +185,146 @@ test("fixed simulation is consistent at 30, 60 and 144 render FPS", () => {
     globalThis.requestAnimationFrame = raf;
   }
 });
+
+test("counter-strafing reverses promptly while diagonal input remains normalized", () => {
+  const p = player();
+  p.vx = MOVEMENT.runSpeed;
+  for (let i = 0; i < 5; i++)
+    accelerate(p, { x: -1, z: 0 }, MOVEMENT.runSpeed, 1 / 60);
+  assert.ok(p.vx < 0);
+  for (let i = 0; i < 120; i++)
+    accelerate(p, { x: 1, z: 1 }, MOVEMENT.runSpeed, 1 / 60);
+  assert.ok(Math.abs(Math.hypot(p.vx, p.vz) - MOVEMENT.runSpeed) < 1e-8);
+});
+test("brief landing grace preserves carried momentum, but releasing input brakes it", () => {
+  const p = player();
+  p.vx = 24;
+  p.landingGrace = 0.08;
+  accelerate(p, { x: 1, z: 0 }, MOVEMENT.runSpeed, 1 / 60);
+  assert.equal(p.vx, 24);
+  accelerate(p, { x: 0, z: 0 }, MOVEMENT.runSpeed, 1 / 60);
+  assert.ok(p.vx < 24);
+  p.landingGrace = 0;
+  for (let i = 0; i < 20; i++)
+    accelerate(p, { x: 1, z: 0 }, MOVEMENT.runSpeed, 1 / 60);
+  assert.equal(p.vx, MOVEMENT.runSpeed);
+});
+test("downhill slides gain more speed than flat slides; uphill momentum pays for elevation", () => {
+  const flat = player(),
+    down = player(),
+    up = player();
+  flat.vz = down.vz = -20;
+  up.vz = 20;
+  down.groundSlope = up.groundSlope = { x: 0, z: 0.6875 };
+  steerSlide(flat, { x: 0, z: 0 }, 1 / 60);
+  steerSlide(down, { x: 0, z: 0 }, 1 / 60);
+  steerSlide(up, { x: 0, z: 0 }, 1 / 60);
+  assert.ok(-down.vz > -flat.vz);
+  assert.ok(up.vz < -flat.vz);
+});
+test("reverse air control brakes along the input axis instead of orbiting sideways", () => {
+  const p = player();
+  p.grounded = false;
+  p.vx = 21;
+  accelerate(p, { x: -1, z: 0 }, MOVEMENT.runSpeed, 1 / 60);
+  assert.ok(p.vx < 21 && p.vx > 18);
+  assert.ok(Math.abs(p.vz) < 1e-10);
+  for (let i = 0; i < 25; i++)
+    accelerate(p, { x: -1, z: 0 }, MOVEMENT.runSpeed, 1 / 60);
+  assert.ok(p.vx < -20);
+});
+test("an airborne slide press is buffered into a grounded slide", () => {
+  const g = harness();
+  Object.assign(g.player, {
+    y: 0.04,
+    vy: -2,
+    grounded: false,
+    jumps: 1,
+    vx: 12,
+  });
+  g.keys.add("KeyD");
+  g.slide();
+  assert.ok(g.slideBuffer > 0);
+  assert.equal(g.slideTime, 0);
+  for (let i = 0; i < 3; i++) g.updatePlayer(1 / 60);
+  assert.ok(g.slideTime > 0);
+  assert.equal(g.crouched, true);
+});
+test("short descending stairs stay grounded, but genuine ledges retain coyote falls", () => {
+  const steps = Array.from({ length: 6 }, (_, i) => ({
+    minX: i * 0.8,
+    maxX: (i + 1) * 0.8,
+    minZ: -2,
+    maxZ: 2,
+    minY: 0,
+    maxY: (6 - i) * 0.36,
+  }));
+  const p = player();
+  p.x = 0.4;
+  p.y = 2.16;
+  for (let i = 0; i < 43; i++) {
+    moveBody(p, 0.1, 0, steps);
+    verticalStep(p, 1 / 60, steps);
+    assert.equal(p.grounded, true);
+  }
+  const edge = player();
+  edge.x = 0.5;
+  edge.y = 2;
+  moveBody(edge, 1, 0, [
+    { minX: 0, maxX: 1, minZ: -1, maxZ: 1, minY: 0, maxY: 2 },
+  ]);
+  verticalStep(edge, 1 / 60, []);
+  assert.equal(edge.grounded, false);
+  assert.ok(edge.y > 1.9);
+});
+test("rendered camera direction matches the actual shot even during recoil and sliding", () => {
+  // Reuse the complete camera harness from the refinement suite through real methods.
+  const g = harness();
+  g.settings = { shake: true, fov: 95 };
+  return import("three").then((THREE) => {
+    g.camera = new THREE.PerspectiveCamera(95, 1.6, 0.08, 180);
+    g.weaponCamera = new THREE.PerspectiveCamera();
+    g.pitch = 0.2;
+    g.yaw = 0.4;
+    g.kick = 0.3;
+    g.slideTime = 0.2;
+    g.updateCamera(1 / 60);
+    const direction = g.camera.getWorldDirection(new THREE.Vector3());
+    const expected = new THREE.Vector3(
+      -Math.sin(g.yaw) * Math.cos(g.pitch),
+      Math.sin(g.pitch),
+      -Math.cos(g.yaw) * Math.cos(g.pitch),
+    );
+    assert.ok(direction.distanceTo(expected) < 1e-10);
+  });
+});
+
+test("a wall collision spends the blocked air momentum instead of allowing a free re-acceleration", () => {
+  const p = player();
+  Object.assign(p, { grounded: false, y: 1, vx: 25, vz: 0, airCarrySpeed: 25 });
+  moveBody(p, 2, 0, [
+    { minX: 1, maxX: 2, minZ: -3, maxZ: 3, minY: 0, maxY: 4 },
+  ]);
+  assert.equal(p.vx, 0);
+  assert.equal(p.airCarrySpeed, 0);
+  for (let i = 0; i < 60; i++)
+    accelerate(p, { x: -1, z: 0 }, MOVEMENT.runSpeed, 1 / 60);
+  assert.ok(Math.hypot(p.vx, p.vz) <= MOVEMENT.runSpeed + 1e-8);
+});
+test("forced crouch keeps the rendered eye below the low ceiling even while stance is easing", async () => {
+  const THREE = await import("three"),
+    g = harness();
+  g.settings = { shake: true, fov: 95 };
+  g.camera = new THREE.PerspectiveCamera(95, 1.6, 0.08, 180);
+  g.eyeHeight = 1.66;
+  g.pitch = 0;
+  g.kick = 0;
+  g.world.boxes = [
+    { minX: -3, maxX: 3, minZ: -3, maxZ: 3, minY: 1.3, maxY: 2 },
+  ];
+  g.updatePlayer(1 / 60);
+  g.updateCamera(1 / 60);
+  assert.equal(g.forcedCrouch, true);
+  assert.equal(g.player.height, 1.15);
+  assert.ok(g.camera.position.y <= 1.02 + 1e-10);
+});

@@ -318,10 +318,18 @@ test("ground slide is a short burst with less than six metres of travel", () => 
   g.player.vz = -MOVEMENT.runSpeed;
   g.keys.add("KeyW");
   g.slide();
-  assert.equal(g.slideTime, 0.4);
+  assert.equal(g.slideTime, MOVEMENT.slideDuration);
   const start = g.player.z;
   for (let i = 0; i < 24; i++) g.updatePlayer(1 / 60);
   assert.ok(g.slideTime < 1e-6);
   assert.ok(start - g.player.z < 6);
   assert.ok(start - g.player.z > 3);
+});
+
+test("a projectile cannot spawn on the far side of a wall pressed against its muzzle", () => {
+  const g = game("launcher");
+  wall(g, -0.9); // One-metre slab: near face is 0.4 m from the eye, just outside the capsule.
+  g.firePlayer();
+  assert.equal(g.projectiles.length, 1);
+  assert.ok(g.projectiles[0].pos.z > -0.4);
 });

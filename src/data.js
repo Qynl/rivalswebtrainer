@@ -446,6 +446,7 @@ export const DEFAULT_SETTINGS = {
   volume: 65,
   showFps: true,
   shake: true,
+  dynamicFov: true,
   performance: false,
 };
 const shapes = {

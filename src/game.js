@@ -1,3 +1,4 @@
+import { CombatFX } from "./combat-fx.js";
 import { ArenaRenderer } from "./rendering.js";
 import { WeaponAnimator } from "./animation.js";
 import * as THREE from "three";
@@ -62,8 +63,11 @@ export class Game {
     sun.shadow.radius = 2.5;
     sun.shadow.bias = -0.0003;
     this.scene.add(sun);
+    this.muzzleLight = new THREE.PointLight(0xffd29a, 0, 3, 2);
+    this.scene.add(this.muzzleLight);
     this.world = new ArenaWorld(this.scene);
     this.world.build();
+    this.combatFX = new CombatFX(this.scene);
     this.weaponScene = new THREE.Scene();
     this.weaponScene.environment = this.environmentMap.texture;
     this.weaponScene.environmentIntensity = 0.8;
@@ -74,6 +78,8 @@ export class Game {
     const rim = new THREE.DirectionalLight(0xbadbf2, 1.4);
     rim.position.set(-3, 2, -3);
     this.weaponScene.add(rim);
+    this.weaponFlashLight = new THREE.PointLight(0xffc889, 0, 2.2, 2);
+    this.weaponScene.add(this.weaponFlashLight);
     this.weaponCamera = new THREE.PerspectiveCamera(
       70,
       innerWidth / innerHeight,
@@ -302,6 +308,7 @@ export class Game {
     this.requestLock();
   }
   cleanEntities() {
+    this.combatFX?.clear();
     for (const e of this.entities) {
       if (e.model) {
         this.scene.remove(e.model.group);
@@ -387,6 +394,7 @@ export class Game {
     this.coyoteTime = 0;
     this.jumpBuffer = 0;
     this.walkPhase = 0;
+    this.stepDistance = 0;
     this.stepOffset = 0;
     this.landingDip = 0;
     this.crouched = false;
@@ -520,6 +528,7 @@ export class Game {
       p.jumps = 1;
       this.coyoteTime = 0;
       this.jumpBuffer = 0;
+      p.landingGrace = 0;
       this.audio.play("jump");
       // Carry the slide's actual velocity instead of snapping back to running speed.
       if (this.slideTime > 0) {
@@ -542,10 +551,14 @@ export class Game {
   }
   slide() {
     const p = this.player;
-    if (!p?.alive || !p.grounded || this.slideCooldown > 0) return;
+    if (!p?.alive || this.slideCooldown > 0) return;
+    if (!p.grounded) {
+      this.slideBuffer = MOVEMENT.slideBuffer;
+      return;
+    }
     const speed = Math.hypot(p.vx, p.vz);
     if (speed < 2) {
-      this.slideBuffer = 0.16;
+      this.slideBuffer = MOVEMENT.slideBuffer;
       return;
     }
     this.slideBuffer = 0;
@@ -564,6 +577,7 @@ export class Game {
   dash() {
     if (this.dashCooldown > 0 || !this.player?.alive) return false;
     this.dashCooldown = 3;
+    this.dashTime = 0.24;
     const d = this.moveDirection();
     this.player.vx = (d.length() ? d.x : -Math.sin(this.yaw)) * 28;
     this.player.vz = (d.length() ? d.z : -Math.cos(this.yaw)) * 28;
@@ -701,7 +715,25 @@ export class Game {
     this.lastShotAt = this.clock;
     this.kick = Math.min(0.13, this.kick + 0.045);
     this.audio.play(w.sound);
-    const origin = this.eye(p),
+    if (
+      this.combatFX &&
+      w.slot < 2 &&
+      !["bow", "flame", "rocket", "launcher", "paint"].includes(w.type) &&
+      !w.paint
+    ) {
+      const socket = this.viewModel?.userData.bolt;
+      const local = socket
+        ? socket.getWorldPosition(v3())
+        : v3(0.24, -0.16, -0.65).applyMatrix4(this.viewModel.matrixWorld);
+      const eject = this.weaponPointToWorld(local);
+      this.combatFX.eject(
+        eject,
+        v3(Math.cos(this.yaw), 0, -Math.sin(this.yaw)),
+        v3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)),
+      );
+    }
+    // Visual stance easing must not put the bullet below the visible crosshair.
+    const origin = this.camera ? this.camera.position.clone() : this.eye(p),
       forward = v3(0, 0, -1).applyEuler(
         new THREE.Euler(this.pitch, this.yaw, 0, "YXZ"),
       );
@@ -809,11 +841,18 @@ export class Game {
       }
     }
     this.tracer(
-      origin,
+      nearest > 1.4 ? this.visualMuzzle(shooter, origin) : origin,
       origin.clone().addScaledVector(dir, nearest),
       shooter.team,
       w.paint ? 0xff73a4 : undefined,
     );
+    if (!victim && walls[0] && !w.paint)
+      this.combatFX?.impact(
+        walls[0].point,
+        walls[0].face.normal
+          .clone()
+          .transformDirection(walls[0].object.matrixWorld),
+      );
     if (w.paint) {
       if (victim) {
         this.particles(
@@ -934,7 +973,35 @@ export class Game {
     });
     for (const m of materials) m.dispose();
   }
+  weaponPointToWorld(point) {
+    const ratio =
+      Math.tan(THREE.MathUtils.degToRad(this.camera.fov * 0.5)) /
+      Math.tan(THREE.MathUtils.degToRad(this.weaponCamera.fov * 0.5));
+    return point
+      .clone()
+      .multiply(v3(ratio, ratio, 1))
+      .applyMatrix4(this.camera.matrixWorld);
+  }
+  visualMuzzle(shooter, fallback) {
+    if (
+      shooter.isPlayer &&
+      this.camera &&
+      this.viewModel?.userData.muzzleFlash
+    ) {
+      this.viewModel.updateWorldMatrix(true, true);
+      this.camera.updateMatrixWorld();
+      return this.weaponPointToWorld(
+        this.viewModel.userData.muzzleFlash.getWorldPosition(v3()),
+      );
+    }
+    const socket = shooter.model?.parts.muzzleFlash;
+    return socket ? socket.getWorldPosition(v3()) : fallback;
+  }
   tracer(a, b, team, color) {
+    if (this.combatFX) {
+      this.combatFX.trace(a, b, team, color);
+      return;
+    }
     const geom = new THREE.BufferGeometry().setFromPoints([a, b]),
       mat = new THREE.LineBasicMaterial({
         color: team === 0 ? 0xffe3b1 : 0xff9587,
@@ -946,6 +1013,10 @@ export class Game {
     this.effects.push({ mesh, life: 0.075, max: 0.075 });
   }
   particles(pos, color, count = 14) {
+    if (this.combatFX) {
+      this.combatFX.burst(pos, color, count);
+      return;
+    }
     for (let i = 0; i < count; i++) {
       const mesh = new THREE.Mesh(
         new THREE.BoxGeometry(0.08, 0.08, 0.08),
@@ -1074,7 +1145,16 @@ export class Game {
           emissiveIntensity: 0.8,
         }),
       );
-    const pos = origin.clone().addScaledVector(dir, 0.55);
+    this.ray.set(origin, dir);
+    this.ray.far = 0.7;
+    const muzzleWall = this.ray.intersectObjects(
+      this.world.solidMeshes,
+      false,
+    )[0];
+    const clearance = muzzleWall
+      ? Math.max(0, Math.min(0.55, muzzleWall.distance - 0.16))
+      : 0.55;
+    const pos = origin.clone().addScaledVector(dir, clearance);
     mesh.position.copy(pos);
     if (arrow) {
       const tip = new THREE.Mesh(
@@ -1332,9 +1412,10 @@ export class Game {
     this.coyoteTime = p.grounded
       ? MOVEMENT.coyoteTime
       : Math.max(0, this.coyoteTime - dt);
+    p.landingGrace = Math.max(0, (p.landingGrace || 0) - dt);
     if (this.jumpBuffer > 0) this.tryJump();
-    this.crouched =
-      this.slideTime > 0 || !canOccupy(p, p.x, p.y, p.z, this.world.boxes, 1.9);
+    this.forcedCrouch = !canOccupy(p, p.x, p.y, p.z, this.world.boxes, 1.9);
+    this.crouched = this.slideTime > 0 || this.forcedCrouch;
     p.height = this.crouched ? 1.15 : 1.9;
     p.yaw = this.yaw;
     const dir = this.moveDirection();
@@ -1352,26 +1433,32 @@ export class Game {
     const oldX = p.x,
       oldZ = p.z,
       oldY = p.y,
+      previousSlope = p.groundSlope,
       wasGrounded = p.grounded;
     moveBody(p, p.vx * dt, p.vz * dt, this.world.boxes);
-    const stepRise = p.y - oldY;
-    if (wasGrounded && stepRise > 0) {
-      const expected = p.groundSlope
-        ? Math.max(
-            0,
-            p.groundSlope.x * (p.x - oldX) + p.groundSlope.z * (p.z - oldZ),
-          )
-        : 0;
-      // Ease the extra auto-step at a ramp/platform join, not the continuous slope.
-      const extra = stepRise - expected;
-      if (extra > 0.025) this.stepOffset -= extra;
-    }
     const fallingVelocity = p.vy;
     verticalStep(p, dt, this.world.boxes);
-    if (!wasGrounded && p.grounded && fallingVelocity < -3)
-      this.landingDip = Math.min(0.04, -fallingVelocity * 0.0025);
+    const elevationChange = p.y - oldY;
+    if (wasGrounded && p.grounded && Math.abs(elevationChange) > 0.025) {
+      const expected = previousSlope
+        ? previousSlope.x * (p.x - oldX) + previousSlope.z * (p.z - oldZ)
+        : 0;
+      const extra = elevationChange - expected;
+      if (Math.abs(extra) > 0.025)
+        this.stepOffset = clamp((this.stepOffset || 0) - extra, -0.4, 0.4);
+    }
+    if (!wasGrounded && p.grounded) {
+      p.landingGrace = MOVEMENT.landingGrace;
+      if (fallingVelocity < -3) {
+        this.landingDip = Math.min(0.065, -fallingVelocity * 0.003);
+        this.audio.play("land", Math.min(1, -fallingVelocity / 18));
+        if (fallingVelocity < -10)
+          this.combatFX?.burst(v3(p.x, p.y + 0.07, p.z), 0xb3afa5, 4);
+      }
+    }
     if (p.grounded && (this.jumpBuffer > 0 || this.keys.has("Space")))
       this.tryJump();
+    else if (p.grounded && this.slideBuffer > 0) this.slide();
     if (this.slideTime > 0 && Math.hypot(p.vx, p.vz) < 2) this.slideTime = 0;
     const bounds = this.world.bounds || {
       minX: -23.1,
@@ -1379,17 +1466,27 @@ export class Game {
       minZ: -23.1,
       maxZ: 23.1,
     };
-    p.x = clamp(p.x, bounds.minX, bounds.maxX);
-    p.z = clamp(p.z, bounds.minZ, bounds.maxZ);
+    const boundedX = clamp(p.x, bounds.minX, bounds.maxX),
+      boundedZ = clamp(p.z, bounds.minZ, bounds.maxZ);
+    if (boundedX !== p.x) p.vx = 0;
+    if (boundedZ !== p.z) p.vz = 0;
+    p.x = boundedX;
+    p.z = boundedZ;
     this.walkPhase += Math.hypot(p.x - oldX, p.z - oldZ) * 1.8;
-    this.stepTime = (this.stepTime || 0) + dt;
+    this.stepDistance =
+      (this.stepDistance || 0) + Math.hypot(p.x - oldX, p.z - oldZ);
     if (
       p.grounded &&
-      Math.hypot(p.vx, p.vz) > 2 &&
-      this.stepTime > (this.slideTime > 0 ? 0.7 : 0.38)
+      this.slideTime <= 0 &&
+      this.stepDistance > (this.crouched ? 2.2 : 3.4)
     ) {
-      this.stepTime = 0;
-      this.audio.play("step");
+      this.stepDistance = 0;
+      this.audio.play(
+        "step",
+        this.crouched
+          ? 0.45
+          : Math.min(1, Math.hypot(p.vx, p.vz) / MOVEMENT.runSpeed),
+      );
     }
     this.cooldown = Math.max(0, this.cooldown - dt);
     if (this.reloadTime > 0) {
@@ -1558,6 +1655,7 @@ export class Game {
             )
             .normalize();
           this.bullet(e, origin, aim, weapon);
+          e.lastShotAt = this.clock;
           e.ammo--;
           e.shootTimer = weapon.interval / d.fire;
           const soundLevel = clamp(1 - distance / 55, 0.06, 0.5);
@@ -1643,24 +1741,90 @@ export class Game {
       Math.cos(e.yaw - m.group.rotation.y),
     );
     m.group.rotation.y += turn * (1 - Math.exp(-18 * dt));
-    m.parts.leftLeg.rotation.x = stride;
-    m.parts.rightLeg.rotation.x = -stride;
-    m.parts.leftArm.rotation.x = -0.55 - stride * 0.16;
-    m.parts.rightArm.rotation.x = -0.65;
-    if (e.reload > 0) {
-      m.parts.leftArm.rotation.x = -1.2;
-      m.parts.leftArm.rotation.z = -0.25;
-    } else m.parts.leftArm.rotation.z = 0;
+    const crouch = e.sliding > 0 && e.grounded;
+    const air = !e.grounded;
+    m.parts.leftLeg.rotation.x = crouch ? 0.8 : air ? 0.55 : stride;
+    m.parts.rightLeg.rotation.x = crouch ? 0.8 : air ? 0.3 : -stride;
+    if (m.parts.leftKnee) {
+      const targetLeft = crouch
+        ? -1.4
+        : air
+          ? -0.95
+          : -Math.max(0.05, -Math.sin(phase) * 0.85);
+      const targetRight = crouch
+        ? -1.4
+        : air
+          ? -1.15
+          : -Math.max(0.05, Math.sin(phase) * 0.85);
+      m.parts.leftKnee.rotation.x = THREE.MathUtils.damp(
+        m.parts.leftKnee.rotation.x,
+        targetLeft,
+        24,
+        dt,
+      );
+      m.parts.rightKnee.rotation.x = THREE.MathUtils.damp(
+        m.parts.rightKnee.rotation.x,
+        targetRight,
+        24,
+        dt,
+      );
+      m.parts.leftLeg.position.y = m.parts.rightLeg.position.y =
+        THREE.MathUtils.damp(
+          m.parts.leftLeg.position.y,
+          crouch ? 0.57 : 0.73,
+          22,
+          dt,
+        );
+    }
+    let aimPitch = 0;
     if (e.targetEntity?.alive) {
       const dy = e.targetEntity.y + 1.5 - (e.y + 1.5),
         distance = Math.hypot(e.targetEntity.x - e.x, e.targetEntity.z - e.z);
-      m.parts.head.rotation.x = clamp(-Math.atan2(dy, distance), -0.5, 0.5);
+      aimPitch = clamp(Math.atan2(dy, distance), -0.5, 0.5);
     }
-    m.group.scale.y = THREE.MathUtils.lerp(
-      m.group.scale.y,
-      e.sliding > 0 ? 0.77 : 1,
-      1 - Math.exp(-16 * dt),
+    m.parts.head.rotation.x = THREE.MathUtils.damp(
+      m.parts.head.rotation.x,
+      aimPitch,
+      18,
+      dt,
     );
+    m.parts.head.rotation.y = clamp(turn, -0.4, 0.4);
+    m.parts.leftArm.rotation.x = -1.05 + aimPitch - stride * 0.1;
+    m.parts.rightArm.rotation.x = -1.15 + aimPitch;
+    m.parts.leftArm.rotation.z = e.reload > 0 ? -0.32 : 0.08;
+    if (e.reload > 0)
+      m.parts.leftArm.rotation.x = -0.55 - Math.sin(e.reload * 5) * 0.45;
+    if (m.parts.upperBody) {
+      const lateral = e.vx * Math.cos(e.yaw) - e.vz * Math.sin(e.yaw),
+        forward = -e.vx * Math.sin(e.yaw) - e.vz * Math.cos(e.yaw);
+      m.parts.upperBody.rotation.z = THREE.MathUtils.damp(
+        m.parts.upperBody.rotation.z,
+        clamp(-lateral * 0.012, -0.1, 0.1),
+        16,
+        dt,
+      );
+      m.parts.upperBody.rotation.x = THREE.MathUtils.damp(
+        m.parts.upperBody.rotation.x,
+        clamp(-forward * 0.006, -0.07, 0.07),
+        16,
+        dt,
+      );
+      m.parts.upperBody.position.y = THREE.MathUtils.damp(
+        m.parts.upperBody.position.y,
+        crouch ? 0.84 : 1,
+        20,
+        dt,
+      );
+      const shotAge =
+          e.lastShotAt === undefined ? 10 : this.clock - e.lastShotAt,
+        recoil = Math.exp(-shotAge * 28);
+      m.parts.weaponRig.rotation.x =
+        aimPitch + recoil * 0.07 + (e.reload > 0 ? 0.3 : 0);
+      m.parts.weaponRig.position.z = -0.25 + recoil * 0.035;
+      m.parts.muzzleFlash.visible = shotAge < 0.055;
+      m.parts.muzzleFlash.rotation.z = this.clock * 71;
+    }
+    m.group.scale.y = 1;
   }
   updateEffects(dt) {
     for (let i = this.effects.length - 1; i >= 0; i--) {
@@ -1695,6 +1859,7 @@ export class Game {
     this.deflectTime = Math.max(0, (this.deflectTime || 0) - dt);
     this.deflectCooldown = Math.max(0, (this.deflectCooldown || 0) - dt);
     this.swingTime = Math.max(0, (this.swingTime || 0) - dt);
+    this.dashTime = Math.max(0, (this.dashTime || 0) - dt);
     this.inspectTime = Math.max(0, (this.inspectTime || 0) - dt);
     this.throwTime = Math.max(0, (this.throwTime || 0) - dt);
     this.guardFlash = Math.max(0, (this.guardFlash || 0) - dt);
@@ -1757,6 +1922,7 @@ export class Game {
       }
     }
     this.updateEffects(dt);
+    this.combatFX?.update(dt, this.world.boxes);
   }
   renderWorld() {
     if (this.presentation && !this.settings.performance)
@@ -1795,6 +1961,7 @@ export class Game {
       this.updateCamera(renderDt, this.accumulator / step);
       this.events.tick(this);
     } else this.accumulator = 0;
+    this.world?.atmosphere?.update(t * 0.001, this.settings.performance);
     this.renderer.autoClear = true;
     this.renderWorld();
     if (this.state !== "lobby" && this.player?.alive && this.viewModel) {
@@ -1822,7 +1989,7 @@ export class Game {
         stance,
         1 - Math.exp(-20 * dt),
       );
-      this.stepOffset *= Math.exp(-16 * dt);
+      this.stepOffset *= Math.exp(-20 * dt);
       this.landingDip *= Math.exp(-18 * dt);
       const previous = this.renderPrevious || p;
       const x = THREE.MathUtils.lerp(previous.x, p.x, alpha);
@@ -1830,7 +1997,7 @@ export class Game {
       const y = THREE.MathUtils.lerp(previous.y, p.y, alpha);
       // Interpolate body movement, not gravity: the camera follows jumps immediately.
       // Only stairs/stance get a short ease, preventing the old whole-camera lag.
-      const eyeY = Math.max(
+      let eyeY = Math.max(
         p.y + 0.8,
         y +
           this.eyeHeight +
@@ -1838,13 +2005,9 @@ export class Game {
           bob -
           (this.settings.shake ? this.landingDip : 0),
       );
+      if (this.forcedCrouch) eyeY = Math.min(eyeY, p.y + 1.02);
       this.camera.position.set(x, eyeY, z);
-      this.camera.rotation.set(
-        this.pitch + (this.settings.shake ? this.kick * 0.15 : 0),
-        this.yaw,
-        this.slideTime > 0 ? -0.015 : 0,
-        "YXZ",
-      );
+      this.camera.rotation.set(this.pitch, this.yaw, 0, "YXZ");
     } else {
       const follow =
         this.entities.find((e) => e.alive && e.team === 0) ||
@@ -1863,9 +2026,15 @@ export class Game {
           ? 32
           : this.settings.fov * 0.76
         : this.settings.fov +
-          (this.slideTime > 0
-            ? 6
-            : clamp((Math.hypot(p.vx, p.vz) - MOVEMENT.runSpeed) * 0.35, 0, 6));
+          (this.settings.dynamicFov === false
+            ? 0
+            : this.slideTime > 0
+              ? 6
+              : clamp(
+                  (Math.hypot(p.vx, p.vz) - MOVEMENT.runSpeed) * 0.35,
+                  0,
+                  6,
+                ));
     this.camera.fov = THREE.MathUtils.lerp(
       this.camera.fov,
       fov,
@@ -1886,6 +2055,7 @@ export class Game {
         kick: this.kick,
         swap: this.switchTime || 0,
         reloading: this.reloadTime > 0,
+        ammo: this.ammunition?.[this.slot]?.mag ?? Infinity,
         reload:
           this.reloadTime > 0
             ? 1 - this.reloadTime / (this.reloadTotal || w.reload || 1)
@@ -1901,6 +2071,7 @@ export class Game {
         flash: this.flash > 0,
         heal: this.healTime,
         swing: this.swingTime,
+        dash: this.dashTime,
         guard: this.deflectTime > 0,
         inspect: this.inspectTime,
         throwing: this.throwTime,
@@ -1908,6 +2079,19 @@ export class Game {
         landing: this.landingDip,
         strafe: (p.vx * Math.cos(this.yaw) - p.vz * Math.sin(this.yaw)) / 11.5,
       });
+      if (this.muzzleLight && this.weaponFlashLight) {
+        const socket = activeModel.userData.muzzleFlash,
+          lit = this.flash > 0 && socket && !this.settings.performance;
+        this.muzzleLight.intensity = lit ? 7 : 0;
+        this.weaponFlashLight.intensity = lit ? 1.7 : 0;
+        if (lit) {
+          activeModel.updateWorldMatrix(true, true);
+          const local = socket.getWorldPosition(v3());
+          this.weaponFlashLight.position.copy(local);
+          this.camera.updateMatrixWorld();
+          this.muzzleLight.position.copy(this.weaponPointToWorld(local));
+        }
+      }
       look.x *= Math.exp(-18 * dt);
       look.y *= Math.exp(-18 * dt);
     }

@@ -79,6 +79,11 @@ test("depth-aware world pass really shades contact surfaces, resizes, and bypass
       dimensions,
       resized,
       bypassed: !called,
+      bloomSized:
+        g.presentation.bloomA.width ===
+          Math.max(1, Math.floor(gl.drawingBufferWidth / 4)) &&
+        g.presentation.bloomA.height ===
+          Math.max(1, Math.floor(gl.drawingBufferHeight / 4)),
       glError: gl.getError(),
     };
   });
@@ -87,6 +92,7 @@ test("depth-aware world pass really shades contact surfaces, resizes, and bypass
     dimensions: true,
     resized: true,
     bypassed: true,
+    bloomSized: true,
     glError: 0,
   });
   expect(errors).toEqual([]);

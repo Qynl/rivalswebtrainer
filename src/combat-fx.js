@@ -1,0 +1,301 @@
+import * as THREE from "three";
+import { circleBox, surfaceHeight } from "./physics.js";
+
+// Fixed-size pools: sustained automatic fire never creates a mesh/material per hit.
+export const FX_LIMITS = Object.freeze({
+  particles: 384,
+  traces: 64,
+  decals: 128,
+  casings: 48,
+});
+export class CombatFX {
+  constructor(scene) {
+    this.scene = scene;
+    this.time = 0;
+    this.cursor = { particle: 0, trace: 0, decal: 0, casing: 0 };
+    this.dummy = new THREE.Object3D();
+    this.color = new THREE.Color();
+    this.size = new THREE.Vector2();
+    this.up = new THREE.Vector3(0, 0, 1);
+    this.direction = new THREE.Vector3();
+    this.particleState = Array.from({ length: FX_LIMITS.particles }, () => ({
+      life: 0,
+      v: new THREE.Vector3(),
+    }));
+    this.traceLife = new Float32Array(FX_LIMITS.traces);
+    this.casingState = Array.from({ length: FX_LIMITS.casings }, () => ({
+      life: 0,
+      p: new THREE.Vector3(),
+      v: new THREE.Vector3(),
+      r: new THREE.Euler(),
+      spin: new THREE.Vector3(),
+    }));
+    const geometry = new THREE.BufferGeometry();
+    for (const [name, width] of [
+      ["position", 3],
+      ["color", 3],
+      ["size", 1],
+      ["alpha", 1],
+    ])
+      geometry.setAttribute(
+        name,
+        new THREE.BufferAttribute(
+          new Float32Array(FX_LIMITS.particles * width),
+          width,
+        ).setUsage(THREE.DynamicDrawUsage),
+      );
+    this.points = new THREE.Points(
+      geometry,
+      new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        uniforms: { pointScale: { value: 400 } },
+        vertexShader: `attribute float size,alpha;attribute vec3 color;uniform float pointScale;varying vec3 tint;varying float opacity;void main(){vec4 p=modelViewMatrix*vec4(position,1.);gl_Position=projectionMatrix*p;gl_PointSize=clamp(size*pointScale/max(.1,-p.z),1.,22.);tint=color;opacity=alpha;}`,
+        fragmentShader:
+          `varying vec3 tint;varying float opacity;void main(){float r=length(gl_PointCoord-.5)*2.;float a=(1.-smoothstep(.15,1.,r))*opacity;if(a<.005)discard;gl_FragColor=vec4(tint,a);#include <tonemapping_fragment>\n#include <colorspace_fragment>}`.replace(
+            ";#include",
+            ";\n#include",
+          ),
+      }),
+    );
+    this.points.frustumCulled = false;
+    this.points.onBeforeRender = (renderer, _scene, camera) => {
+      renderer.getDrawingBufferSize(this.size);
+      this.points.material.uniforms.pointScale.value =
+        this.size.y * 0.5 * camera.projectionMatrix.elements[5];
+    };
+    const traceGeometry = new THREE.BufferGeometry();
+    for (const [name, width] of [
+      ["position", 3],
+      ["color", 3],
+      ["alpha", 1],
+    ])
+      traceGeometry.setAttribute(
+        name,
+        new THREE.BufferAttribute(
+          new Float32Array(FX_LIMITS.traces * 2 * width),
+          width,
+        ).setUsage(THREE.DynamicDrawUsage),
+      );
+    this.traces = new THREE.LineSegments(
+      traceGeometry,
+      new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        vertexShader: `attribute vec3 color;attribute float alpha;varying vec3 tint;varying float opacity;void main(){tint=color;opacity=alpha;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+        fragmentShader: `varying vec3 tint;varying float opacity;void main(){gl_FragColor=vec4(tint,opacity);\n#include <tonemapping_fragment>\n#include <colorspace_fragment>}`,
+      }),
+    );
+    this.traces.frustumCulled = false;
+    const decalGeometry = new THREE.PlaneGeometry(0.16, 0.16);
+    decalGeometry.setAttribute(
+      "birth",
+      new THREE.InstancedBufferAttribute(
+        new Float32Array(FX_LIMITS.decals).fill(-1000),
+        1,
+      ).setUsage(THREE.DynamicDrawUsage),
+    );
+    this.decals = new THREE.InstancedMesh(
+      decalGeometry,
+      new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2,
+        uniforms: { time: { value: 0 } },
+        vertexShader: `attribute float birth;uniform float time;varying vec2 hitUv;varying float age;void main(){hitUv=uv;age=time-birth;gl_Position=projectionMatrix*modelViewMatrix*instanceMatrix*vec4(position,1.);}`,
+        fragmentShader: `varying vec2 hitUv;varying float age;void main(){if(age>14.||age<0.)discard;vec2 p=hitUv-.5;float r=length(p),angle=atan(p.y,p.x);float edge=.19+sin(angle*7.)*.018+sin(angle*13.)*.015;float hole=1.-smoothstep(edge-.025,edge+.02,r);float scuff=(1.-smoothstep(.2,.48,r))*.28;float crack=pow(max(0.,cos(angle*5.+r*7.)),22.)*(1.-smoothstep(.2,.48,r))*.25;float opacity=max(hole*.83,max(scuff,crack))*(1.-smoothstep(12.,14.,age));if(opacity<.01)discard;gl_FragColor=vec4(mix(vec3(.31,.32,.33),vec3(.045,.048,.05),hole),opacity);\n#include <tonemapping_fragment>\n#include <colorspace_fragment>}`,
+      }),
+      FX_LIMITS.decals,
+    );
+    this.decals.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.decals.frustumCulled = false;
+    this.decals.renderOrder = 5;
+    this.casings = new THREE.InstancedMesh(
+      new THREE.CylinderGeometry(0.009, 0.009, 0.033, 6),
+      new THREE.MeshStandardMaterial({
+        color: 0xb19a55,
+        metalness: 0.8,
+        roughness: 0.3,
+      }),
+      FX_LIMITS.casings,
+    );
+    this.casings.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.casings.frustumCulled = false;
+    scene.add(this.points, this.traces, this.decals, this.casings);
+    this.clear();
+  }
+  clear() {
+    for (const p of this.particleState) p.life = 0;
+    this.traceLife.fill(0);
+    for (const c of this.casingState) c.life = 0;
+    this.decals.geometry.attributes.birth.array.fill(-1000);
+    this.decals.geometry.attributes.birth.needsUpdate = true;
+    this.decals.count = 0;
+    this.points.geometry.setDrawRange(0, 0);
+    this.traces.geometry.setDrawRange(0, 0);
+    this.casings.count = 0;
+    this.points.geometry.attributes.alpha.array.fill(0);
+    this.traces.geometry.attributes.alpha.array.fill(0);
+    this.points.geometry.attributes.alpha.needsUpdate =
+      this.traces.geometry.attributes.alpha.needsUpdate = true;
+    this.cursor = { particle: 0, trace: 0, decal: 0, casing: 0 };
+  }
+  burst(position, color, count = 10, normal = null) {
+    this.color.set(color);
+    const a = this.points.geometry.attributes;
+    for (let n = 0; n < Math.min(count, FX_LIMITS.particles); n++) {
+      const i = this.cursor.particle++ % FX_LIMITS.particles,
+        p = this.particleState[i];
+      p.life = 0.22 + Math.random() * 0.32;
+      p.v.set(
+        (Math.random() - 0.5) * 3.5,
+        Math.random() * 3,
+        (Math.random() - 0.5) * 3.5,
+      );
+      if (normal) p.v.addScaledVector(normal, 1.8);
+      a.position.setXYZ(i, position.x, position.y, position.z);
+      a.color.setXYZ(i, this.color.r, this.color.g, this.color.b);
+      a.size.setX(i, 0.035 + Math.random() * 0.055);
+      a.alpha.setX(i, 0.75);
+    }
+    for (const name of ["position", "color", "size", "alpha"])
+      a[name].needsUpdate = true;
+    this.points.geometry.setDrawRange(0, FX_LIMITS.particles);
+  }
+  impact(position, normal) {
+    const i = this.cursor.decal++ % FX_LIMITS.decals;
+    this.dummy.position.copy(position).addScaledVector(normal, 0.007);
+    this.dummy.quaternion.setFromUnitVectors(this.up, normal);
+    this.dummy.rotateZ(Math.random() * Math.PI * 2);
+    this.dummy.scale.setScalar(0.7 + Math.random() * 0.5);
+    this.dummy.updateMatrix();
+    this.decals.setMatrixAt(i, this.dummy.matrix);
+    this.decals.instanceMatrix.needsUpdate = true;
+    this.decals.geometry.attributes.birth.setX(i, this.time);
+    this.decals.geometry.attributes.birth.needsUpdate = true;
+    this.decals.count = Math.min(FX_LIMITS.decals, this.cursor.decal);
+    this.burst(position, 0xa6a49a, 5, normal);
+  }
+  trace(a, b, team = 0, color) {
+    const i = this.cursor.trace++ % FX_LIMITS.traces,
+      attrs = this.traces.geometry.attributes;
+    this.color
+      .set(color ?? (team === 0 ? 0xffdfad : 0xffb49d))
+      .multiplyScalar(2.6);
+    attrs.position.setXYZ(i * 2, a.x, a.y, a.z);
+    attrs.position.setXYZ(i * 2 + 1, b.x, b.y, b.z);
+    for (const index of [i * 2, i * 2 + 1]) {
+      attrs.color.setXYZ(index, this.color.r, this.color.g, this.color.b);
+      attrs.alpha.setX(index, 0.75);
+    }
+    this.traceLife[i] = 0.065;
+    for (const key of ["position", "color", "alpha"])
+      attrs[key].needsUpdate = true;
+    this.traces.geometry.setDrawRange(0, FX_LIMITS.traces * 2);
+  }
+  eject(position, right, forward) {
+    const i = this.cursor.casing++ % FX_LIMITS.casings,
+      c = this.casingState[i];
+    c.life = 2.5;
+    c.p.copy(position);
+    c.v
+      .copy(right)
+      .multiplyScalar(1.8 + Math.random() * 1.2)
+      .addScaledVector(forward, 0.4);
+    c.v.y += 1.3 + Math.random();
+    c.r.set(Math.random(), Math.random(), Math.random());
+    c.spin.set(8 + Math.random() * 5, 6, 11);
+    this.casings.count = FX_LIMITS.casings;
+  }
+  update(dt, boxes = []) {
+    this.time += dt;
+    this.decals.material.uniforms.time.value = this.time;
+    const attrs = this.points.geometry.attributes;
+    let particles = 0,
+      traces = 0,
+      casings = 0,
+      particleDirty = false;
+    for (let i = 0; i < this.particleState.length; i++) {
+      const p = this.particleState[i];
+      if (p.life <= 0) continue;
+      p.life = Math.max(0, p.life - dt);
+      particleDirty = true;
+      p.v.y -= 7 * dt;
+      p.v.multiplyScalar(Math.exp(-2 * dt));
+      attrs.position.setXYZ(
+        i,
+        attrs.position.getX(i) + p.v.x * dt,
+        attrs.position.getY(i) + p.v.y * dt,
+        attrs.position.getZ(i) + p.v.z * dt,
+      );
+      attrs.alpha.setX(i, Math.min(0.75, p.life * 5));
+      if (p.life > 0) particles++;
+    }
+    if (particleDirty) {
+      attrs.position.needsUpdate = true;
+      attrs.alpha.needsUpdate = true;
+    }
+    if (!particles) this.points.geometry.setDrawRange(0, 0);
+    for (let i = 0; i < this.traceLife.length; i++)
+      if (this.traceLife[i] > 0) {
+        this.traceLife[i] = Math.max(0, this.traceLife[i] - dt);
+        const alpha = (this.traceLife[i] / 0.065) * 0.75;
+        this.traces.geometry.attributes.alpha.setX(i * 2, alpha);
+        this.traces.geometry.attributes.alpha.setX(i * 2 + 1, alpha);
+        if (alpha > 0) traces++;
+        this.traces.geometry.attributes.alpha.needsUpdate = true;
+      }
+    if (!traces) this.traces.geometry.setDrawRange(0, 0);
+    for (let i = 0; i < this.casingState.length; i++) {
+      const c = this.casingState[i];
+      this.dummy.scale.setScalar(0);
+      if (c.life > 0) {
+        c.life = Math.max(0, c.life - dt);
+        const oldY = c.p.y;
+        c.v.y -= 20 * dt;
+        c.p.addScaledVector(c.v, dt);
+        let floor = 0;
+        for (const b of boxes)
+          if (circleBox(c.p.x, c.p.z, 0.009, b)) {
+            const top = surfaceHeight(b, c.p.x, c.p.z);
+            if (oldY >= top - 0.02 && c.p.y <= top + 0.017)
+              floor = Math.max(floor, top);
+          }
+        if (c.p.y < floor + 0.017) {
+          c.p.y = floor + 0.017;
+          c.v.y = Math.abs(c.v.y) * 0.28;
+          c.v.x *= 0.6;
+          c.v.z *= 0.6;
+          c.spin.multiplyScalar(0.65);
+        }
+        c.r.x += c.spin.x * dt;
+        c.r.y += c.spin.y * dt;
+        c.r.z += c.spin.z * dt;
+        this.dummy.position.copy(c.p);
+        this.dummy.rotation.copy(c.r);
+        this.dummy.scale.setScalar(Math.min(1, c.life / 0.18));
+        casings++;
+      }
+      this.dummy.updateMatrix();
+      this.casings.setMatrixAt(i, this.dummy.matrix);
+    }
+    if (casings) this.casings.instanceMatrix.needsUpdate = true;
+    else this.casings.count = 0;
+    this.active = { particles, traces, casings };
+  }
+  dispose() {
+    for (const object of [
+      this.points,
+      this.traces,
+      this.decals,
+      this.casings,
+    ]) {
+      object.removeFromParent();
+      object.geometry.dispose();
+      object.material.dispose();
+      object.dispose?.();
+    }
+  }
+}
