@@ -36,7 +36,7 @@ Mobile layouts support browsing/configuration, but combat requires desktop point
 - Twenty-three usable weapons/utilities, all unlocked:
   - Primary: Assault Rifle, Shotgun, Sniper, Burst Rifle, SMG, RPG, Bow, Minigun, Paintball Gun, Grenade Launcher, Flamethrower.
   - Secondary: Handgun, Uzi, Shorty.
-  - Melee: Fists, Knife (backstab), Scythe (dash), Katana (bullet deflection).
+  - Melee: Fists, Knife (rear backstab / F quick stab), Scythe (dash), Katana (bullet deflection).
   - Utility: Grenade, Molotov, Smoke, Flashbang, Medkit.
 - Charged ballistic arrows, minigun spin-up with animated barrels, paint splats, arcing impact grenades, close-range flame/afterburn, LOS-aware flashbang blindness, and interruptible 70-HP / quick 25-HP medkit heals. Medkits are one use per round (unlimited in the range).
 - Headshots, pellet falloff, reloads, recoil, scope/ADS, ballistic explosives, fire pools, smoke blocking bot perception, tracers, and hit/kill feedback.
@@ -51,7 +51,7 @@ Mobile layouts support browsing/configuration, but combat requires desktop point
 | Mouse             | Look (capture/recenter spikes are filtered; recoil does not rewrite look pitch)             |
 | Left mouse        | Shoot / melee strike / throw / heal; hold and release to fire Bow                           |
 | Right mouse       | ADS; Scythe dash or Katana guard when equipped; quick Medkit heal                           |
-| F                 | Quick **right-click ability only** from the loadout's melee slot; keeps current weapon/ammo |
+| F                 | Quick melee-slot ability: **Knife stab**, Scythe dash or Katana guard; keeps current slot/ammo |
 | Space             | Jump and cancel slide; hold for bunny hops; Fists/Bow double jump                           |
 | C / Shift / Ctrl  | Short 0.36-second slide; airborne presses buffer on landing; steer or jump to cancel        |
 | 1–4 / mouse wheel | Equip a loadout slot                                                                        |
@@ -60,11 +60,21 @@ Mobile layouts support browsing/configuration, but combat requires desktop point
 | R                 | Reload                                                                                      |
 | Escape            | Pause / release mouse                                                                       |
 
-Scythe dash recharges in **3 seconds**. Katana's frontal guard lasts **1.1 seconds** and has a **3.5-second cooldown**. It reflects bullets back along a real collision-tested ray; rear attacks, melee, and explosives are not blocked. Shooting is disabled during the guard. F never automatically swings/punches; melee without a secondary ability displays a hint instead.
+Scythe dash recharges in **3 seconds**. Katana's frontal guard lasts **1.1 seconds** and has a **3.5-second cooldown**. It reflects bullets back along a real collision-tested ray; rear attacks, melee, and explosives are not blocked. Shooting is disabled during the guard. With Knife in your melee slot, **F** performs a quick stab after a **105 ms windup**, without switching away from your gun. It deals **40 front/side / 150 rear** damage, checks range/cone/cover at impact, and has a separate **0.55-second recovery**, so an RPG firing cooldown does not block an aerial follow-up. Fists still do not automatically punch with F.
 
 Reloads animate magazine extraction/insertion, bolt motion and the support hand. Weapons ease into ADS/equip positions; T inspects them. Bots have connected head/weapon rigs, independently bending knees, body lean, aim pitch and muzzle flashes. Static weapon geometry is batched by material to reduce draw submissions; fixed Arena visuals use nine batches while original ray geometry stays intact.
 
 Graphics use darker panel-seamed concrete, a compact edge HUD, distinct original weapon models and 3D loadout previews, original procedural concrete/metal/window textures, an atmospheric sky, environment-lit metal, rounded geometry, armored bots, building vents/windows, and emissive arena trims. The sky has drifting procedural clouds and a directional sun. Fixed-size combat pools add surface hit marks, debris, bouncing shell casings and muzzle-aligned tracers without allocating a new mesh for each hit. Everything is generated locally. The world is finished with depth-aware contact shading, two-sample MSAA, restrained quarter-resolution HDR bloom, gentle sharpening and a neutral color grade; the weapon overlay stays crisp. Reloads include a raised/banked receiver, magazine extraction, supporting-hand/wrist motion and a bolt rack. Equip, jump/landing inertia, strafing, throw follow-through, blade trails and eased bot deaths provide distinct action feedback. Enable **Performance mode** in Settings to reduce render resolution and bypass post-processing and dynamic shadows on slower hardware.
+
+## Trickshots, Bow and weapon-model pass
+
+- Your own damage cannot reduce your HP, including explosive splash and your Molotov fire; your own Flashbang does not blind you. **RPG, Grenade Launcher and Grenade self-knockback still launches you.** Enemies remain vulnerable to your weapons. Multiplayer applies the same rule on the server.
+- The Bow is a rebuilt compound model with articulated carbon limbs, rotating cams, a sight, two hands, and a string/nock/arrow that move together. Full draw takes **0.8 seconds**; the crosshair has a small draw indicator. Release plucks the string; an empty/reloading bow hides its arrow. Arrows have proper tips/fletching and a short pooled trail; RPG rockets now have noses, fins and a pulsing exhaust, and launcher shells have an ogive and brass base.
+- Gun families have machined receiver panels, rail/vent cuts, controls, fasteners, magazines and deliberately different finishes, plus armored first-person gloves. Moving bolts, pumps, magazines and minigun assemblies remain independent of static batches. Guns have distinct, faster **viewmodel-only** shot impulses and ADS response; this does not move the mouse aim.
+- Player/bot **Striker** rigs have original human faces, hair, goggles, headsets, ceramic shoulder/forearm/chest armor, fabric bump detail, equipment, belt pouches, articulated knees and boots. Team accents remain readable. Both offline bots and online opponents hold the actual detailed gun model, not a generic substitute. Existing joint anchors, hitboxes and IK are unchanged.
+- Hit confirmations appear immediately with a short punch; headshot/elimination priority is preserved under automatic/pellet fire. Damage numbers pop more distinctly, and headshot sounds are sharper. No extra camera kick is added.
+
+Implementation and validation notes: [trickshots and models](docs/trickshots-and-models.md).
 
 ## React, combat feedback and startup pass
 
@@ -150,19 +160,19 @@ See [the combat-readability report](docs/combat-readability-pass.md) for validat
 ## Tests
 
 ```sh
-npm test                   # 193 input, abilities, physics, movement, rigging, audio, rendering and combat tests
+npm test                   # 265 input, abilities, physics, movement, rigging, audio, rendering and combat tests
 npm run build              # Production build + offline cache generation
 npx playwright install chromium
 npm run test:browser       # Browser integration test
 ```
 
-You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tests. Most integration tests validate an actual WebGL frame and pointer lock, then disable rendering to run deterministic combat/AI checks efficiently on machines using software graphics. Dedicated graphics tests retain real rendering for all 23 weapon models, skeletal bots, pooled effects, contact-shading pixel comparisons, bloom resize and the Performance bypass. They exercise loadout selection, shots/headshots, reloads, jumps, grenade/smoke/molotov lifecycles, pause/settings, map selection, team bots, five-round victory, results, and mobile layout. The twenty-two-test browser suite also covers wizard steps, draft cancellation, compact HUD dimensions, tall walls, real Bow/Medkit input, Flashbang throws and rematch selection. Additional browser tests check arena floor layers, actual stair traversal, slide-jump momentum, Shift/F controls, katana reflection, mouse spike filtering, graphics settings, and the production cache/reload with networking disabled.
+You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tests. Most integration tests validate an actual WebGL frame and pointer lock, then disable rendering to run deterministic combat/AI checks efficiently on machines using software graphics. Dedicated graphics tests retain real rendering for all 23 weapon models, skeletal bots, pooled effects, contact-shading pixel comparisons, bloom resize and the Performance bypass. They exercise loadout selection, shots/headshots, reloads, jumps, grenade/smoke/molotov lifecycles, pause/settings, map selection, team bots, five-round victory, results, and mobile layout. The browser suite also covers wizard steps, draft cancellation, compact HUD dimensions, tall walls, real Bow/Medkit input, Flashbang throws and rematch selection. Additional browser tests check arena floor layers, actual stair traversal, slide-jump momentum, Shift/F controls, katana reflection, mouse spike filtering, graphics settings, and the production cache/reload with networking disabled.
 
 ## Structure
 
 - `src/game.js`: game loop, input, combat, bots, round state machine, effects.
-- `src/world.js`: procedural arenas and skeletal block-style actors.
-- `src/weapon-models.js`, `src/weapon-preview.js`: detailed procedural weapons and the static loadout turntable.
+- `src/world.js`: procedural arenas and actor animation; `src/character-model.js`: original articulated Striker character models.
+- `src/weapon-models.js`, `src/weapon-detailing.js`, `src/weapon-preview.js`: detailed procedural weapons and the static loadout turntable; `src/weapon-feel.js`: viewmodel-only impulse and ADS profiles.
 - `src/physics.js`: swept circle/AABB/rotated-cover collision, vertical movement, and rectangular ground-grid A* navigation.
 - `src/arena-layout.js`: Arena dimensions and mirrored half-layout (visual estimates, not verified Roblox measurements).
 - `src/map-layouts.js`: authored Foundry/Courtyard layouts and non-colliding themed dressing.

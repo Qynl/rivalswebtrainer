@@ -160,8 +160,8 @@ export class GameAudio {
   play(name, level = 1) {
     switch (name) {
       case "bow":
-        this.noiseHit(0.16, 0.1, 2400);
-        this.tone(480, 0.15, "triangle", 0.09, 180);
+        this.noiseHit(0.065, 0.15, 4200);
+        this.tone(760, 0.075, "triangle", 0.13, 160);
         break;
       case "flame":
         this.noiseHit(0.17, 0.18, 1700);
@@ -199,7 +199,9 @@ export class GameAudio {
         this.tone(1450, 0.06, "sine", 0.12);
         break;
       case "head":
-        this.tone(1900, 0.11, "sine", 0.18);
+        this.noiseHit(0.025, 0.06, 6500);
+        this.tone(1900, 0.09, "sine", 0.18);
+        this.tone(2850, 0.045, "triangle", 0.065);
         break;
       case "kill":
         this.tone(660, 0.18, "triangle", 0.2);

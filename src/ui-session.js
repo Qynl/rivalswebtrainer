@@ -1,3 +1,4 @@
+import { BOW_DRAW_TIME } from "./combat-rules.js";
 import { createStore } from "./ui-store.js";
 import { loadEnvironment } from "./environment.js";
 import { DEFAULT_SETTINGS, WEAPONS, MAPS, loadSaved, save } from "./data.js";
@@ -101,11 +102,12 @@ function resetMarker() {
   hud.set({ marker: "", markerOpacity: 0 }, true);
 }
 function hit(head = false, elimination = false) {
-  confirmation.add(head, elimination, performance.now());
+  if (confirmation.add(head, elimination, performance.now()) === false) return;
   hud.set(
     {
       marker: ["", "body", "head", "elimination"][confirmation.kind],
       markerOpacity: 1,
+      markerPulse: (hud.get().markerPulse || 0) + 1,
     },
     true,
   );
@@ -131,7 +133,7 @@ function snapshot(g, force = false) {
     g.healTime > 0
       ? "HEALING " + g.healTime.toFixed(1) + "s"
       : g.bowCharge > 0
-        ? "DRAW " + Math.round((g.bowCharge / 1.2) * 100) + "%"
+        ? "DRAW " + Math.round((g.bowCharge / BOW_DRAW_TIME) * 100) + "%"
         : w.spin && g.spinTime > 0 && g.spinTime < 0.55
           ? "SPINNING UP"
           : g.reloadTime > 0
@@ -160,7 +162,9 @@ function snapshot(g, force = false) {
             ? "RMB / F TO DASH"
             : w.deflect
               ? "RMB / F TO DEFLECT"
-              : "GET CLOSE"
+              : g.loadout[2] === "knife"
+                ? "F QUICK STAB · REAR = 150"
+                : "GET CLOSE"
         : g.reloadTime > 0
           ? "RELOADING"
           : a.mag === 0
@@ -177,6 +181,8 @@ function snapshot(g, force = false) {
     timer: g.range
       ? "∞"
       : `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`,
+    bowDraw:
+      w.type === "bow" ? Math.min(1, (g.bowCharge || 0) / BOW_DRAW_TIME) : null,
     scoped,
     crosshair: p.alive && !scoped,
     gap:
@@ -187,7 +193,7 @@ function snapshot(g, force = false) {
       opacity: p.alive ? Math.min(1, s.life / 0.22) * s.strength : 0,
     })),
     ability:
-      melee.dash || melee.deflect
+      melee.dash || melee.deflect || g.loadout[2] === "knife"
         ? {
             name:
               g.guardFlash > 0
@@ -196,8 +202,14 @@ function snapshot(g, force = false) {
                   ? "DEFLECTING"
                   : melee.dash
                     ? "SCYTHE DASH"
-                    : "KATANA DEFLECT",
-            cooldown: melee.deflect ? g.deflectCooldown : g.dashCooldown,
+                    : g.loadout[2] === "knife"
+                      ? "KNIFE QUICK STAB"
+                      : "KATANA DEFLECT",
+            cooldown: melee.deflect
+              ? g.deflectCooldown
+              : melee.dash
+                ? g.dashCooldown
+                : g.knifeQuickCooldown || 0,
             active: melee.deflect && g.deflectTime > 0,
             time: g.deflectTime,
           }

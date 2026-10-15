@@ -223,7 +223,8 @@ test("only genuine player enemy kills award stats and emit one centralized confi
   assert.equal(g.matchStats.kills, 1);
   assert.deepEqual(confirm, [true]);
   g.damage(p, 100, p);
-  assert.equal(g.matchStats.deaths, 1);
+  assert.equal(p.health, 100);
+  assert.equal(g.matchStats.deaths, 0);
   assert.equal(g.matchStats.kills, 1);
   assert.equal(confirm.length, 1);
   const ally = actor({ team: 0, health: 5, alive: true });

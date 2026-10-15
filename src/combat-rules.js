@@ -1,5 +1,6 @@
 export const MAX_HEALTH = 150;
 export const ROUND_COUNTDOWN = 5;
+export const BOW_DRAW_TIME = 0.8;
 // Same rule for player and bot attacks, evaluated from the struck actor's facing.
 export function isBackstab(attacker, victim) {
   const dx = attacker.x - victim.x,

@@ -2,6 +2,7 @@ import { FlameJet } from "./flame-fx.js";
 import {
   MAX_HEALTH,
   ROUND_COUNTDOWN,
+  BOW_DRAW_TIME,
   knifeDamage,
   isBackstab,
 } from "./combat-rules.js";
@@ -510,15 +511,7 @@ export class Game {
     for (const e of this.entities) {
       if (e.model) {
         this.scene.remove(e.model.group);
-        const mats = new Set();
-        e.model.group.traverse((o) => {
-          o.geometry?.dispose();
-          if (o.material) {
-            mats.add(o.material);
-            o.material.map?.dispose();
-          }
-        });
-        mats.forEach((m) => m.dispose());
+        this.disposeVisual(e.model.group);
       }
     }
     this.entities = [];
@@ -622,6 +615,7 @@ export class Game {
     this.dashCooldown = 0;
     this.deflectTime = 0;
     this.deflectCooldown = 0;
+    this.knifeQuickCooldown = 0;
     this.swingTime = 0;
     this.guardFlash = 0;
     this.slideBuffer = 0;
@@ -822,7 +816,32 @@ export class Game {
     const id = quick ? this.loadout[2] : this.loadout[this.slot];
     const weapon = WEAPONS[id];
     let duration = 0.36;
-    if (weapon.dash) {
+    if (quick && id === "knife") {
+      if (
+        this.knifeQuickCooldown > 0 ||
+        this.playerMeleePending ||
+        this.quickMeleeTime > 0 ||
+        this.deflectTime > 0
+      )
+        return false;
+      // Separate recovery permits a rocket/launcher -> F combo, not a gun timer wait.
+      this.knifeQuickCooldown = weapon.interval;
+      this.knifeQuickTime = 0.36;
+      this.cooldown = Math.max(this.cooldown || 0, weapon.interval);
+      this.reloadTime = this.healTime = this.burstCount = this.inspectTime = 0;
+      this.mouseDown = this.trigger = false;
+      this.swingTime = 0.36;
+      this.swingSequence = (this.swingSequence || 0) + 1;
+      this.backstabTime = 0;
+      this.playerMeleePending = {
+        id,
+        remaining: 0.105,
+        quick: true,
+        slot: this.slot,
+      };
+      duration = 0.42;
+      this.audio.play("melee");
+    } else if (weapon.dash) {
       if (!this.dash()) return false;
     } else if (weapon.deflect) {
       if (this.deflectCooldown > 0) return false;
@@ -947,6 +966,7 @@ export class Game {
     this.inspectTime = 0;
     this.flash = 0.055;
     this.lastShotAt = this.clock;
+    this.shotSequence = (this.shotSequence || 0) + 1;
     this.kick = Math.min(0.13, this.kick + 0.045);
     if (w.type !== "flame" || !this.audio.updateFlame) this.audio.play(w.sound);
     if (
@@ -1054,7 +1074,13 @@ export class Game {
     attack.remaining -= dt;
     if (attack.remaining > 1e-8) return;
     this.playerMeleePending = null;
-    if (!this.player?.alive || this.loadout[this.slot] !== attack.id) return;
+    if (
+      !this.player?.alive ||
+      (attack.quick
+        ? this.loadout[2] !== attack.id || this.slot !== attack.slot
+        : this.loadout[this.slot] !== attack.id)
+    )
+      return;
     const p = this.player,
       w = WEAPONS[attack.id],
       origin = this.eye(p);
@@ -1215,6 +1241,8 @@ export class Game {
     this.effects.push({ mesh, life: 7, max: 7 });
   }
   updateSupport(dt) {
+    this.knifeQuickTime = Math.max(0, (this.knifeQuickTime || 0) - dt);
+    this.knifeQuickCooldown = Math.max(0, (this.knifeQuickCooldown || 0) - dt);
     this.blindTime = Math.max(0, (this.blindTime || 0) - dt);
     this.paintTintTime = Math.max(0, (this.paintTintTime || 0) - dt);
     if (this.healTime > 0) {
@@ -1249,12 +1277,28 @@ export class Game {
     return true;
   }
   disposeVisual(object) {
-    const materials = new Set();
+    const materials = new Set(),
+      textures = new Set();
     object.traverse((o) => {
       o.geometry?.dispose();
-      if (o.material) materials.add(o.material);
+      for (const material of Array.isArray(o.material)
+        ? o.material
+        : [o.material])
+        if (material) materials.add(material);
     });
-    for (const m of materials) m.dispose();
+    for (const m of materials) {
+      for (const key of [
+        "map",
+        "normalMap",
+        "bumpMap",
+        "roughnessMap",
+        "metalnessMap",
+        "alphaMap",
+      ])
+        if (m[key]) textures.add(m[key]);
+      m.dispose();
+    }
+    for (const t of textures) t.dispose();
   }
   weaponPointToWorld(point) {
     const ratio =
@@ -1329,7 +1373,7 @@ export class Game {
     backstab = false,
   ) {
     if (this.network) return;
-    if (!e.alive || amount <= 0) return;
+    if (!e.alive || amount <= 0 || e === source) return;
     const applied = Math.min(e.health, amount);
     if (source?.isPlayer && source !== e && source.team !== e.team)
       this.damageNumbers?.add(e, applied, head, this.clock, backstab);
@@ -1454,7 +1498,8 @@ export class Game {
         : 0.55;
     const pos = origin.clone().addScaledVector(dir, clearance);
     mesh.position.copy(pos);
-    if (rocket || arrow) mesh.quaternion.setFromUnitVectors(v3(0, 1, 0), dir);
+    if (rocket || arrow || id === "launcher")
+      mesh.quaternion.setFromUnitVectors(v3(0, 1, 0), dir);
     this.scene.add(mesh);
     this.projectiles.push({
       mesh,
@@ -1463,7 +1508,7 @@ export class Game {
         .clone()
         .multiplyScalar(
           arrow
-            ? 58 + Math.min(1, charge / 1.2) * 27
+            ? 72 + Math.min(1, charge / BOW_DRAW_TIME) * 43
             : rocket
               ? 40
               : id === "launcher"
@@ -1484,7 +1529,7 @@ export class Game {
               : 3,
       arrow,
       charge,
-      damage: w.damage * (arrow ? 1 + Math.min(1, charge / 1.2) : 1),
+      damage: w.damage * (arrow ? 1 + Math.min(1, charge / BOW_DRAW_TIME) : 1),
       rocket,
       bounces: 0,
       spin: THROWN_UTILITIES.has(id)
@@ -1544,7 +1589,7 @@ export class Game {
       this.audio.play("flash");
       this.particles(pos, 0xffffff, 24);
       for (const e of this.entities) {
-        if (!e.alive) continue;
+        if (!e.alive || e === owner) continue;
         const eye = this.eye(e);
         const delta = pos.clone().sub(eye);
         if (delta.length() < 17 && this.hasLOS(pos, eye)) {
@@ -1622,7 +1667,7 @@ export class Game {
       ) {
         let dmg = w.damage * (1 - distance / radius);
         if (distance < 1.6) dmg = w.damage;
-        this.damage(e, dmg * (e === owner ? 0.5 : 1), owner, false, pos);
+        if (e !== owner) this.damage(e, dmg, owner, false, pos);
         if (e === owner) {
           e.vy = 15;
           e.grounded = false;
@@ -1702,8 +1747,26 @@ export class Game {
           p.bounces++;
         }
       }
+      if (p.arrow && !this.headless && this.combatFX) {
+        p.trailTime = (p.trailTime || 0) - dt;
+        if (p.trailTime <= 0) {
+          this.combatFX.trace(p.pos, next, p.owner.team, 0xe8d6a5);
+          p.trailTime = 0.03;
+        }
+      }
       p.pos.copy(next);
       p.mesh.position.copy(next);
+      if ((p.arrow || p.id === "launcher") && p.vel.lengthSq() > 0)
+        p.mesh.quaternion.setFromUnitVectors(
+          v3(0, 1, 0),
+          p.vel.clone().normalize(),
+        );
+      if (p.mesh.userData.exhaust)
+        p.mesh.userData.exhaust.scale.set(
+          1 + Math.sin((this.clock || 0) * 90) * 0.12,
+          1,
+          1 + Math.cos((this.clock || 0) * 90) * 0.12,
+        );
       animateThrown(p, dt, this.clock || 0);
       if (actorHit) p.fuse = 0;
       if (p.fuse <= 0) {
@@ -1734,7 +1797,7 @@ export class Game {
         for (const e of this.entities)
           if (
             e.alive &&
-            (e.team !== fire.owner.team || e === fire.owner) &&
+            e.team !== fire.owner.team &&
             Math.hypot(e.x - fire.pos.x, e.z - fire.pos.z) < 3.2 &&
             Math.abs(e.y - fire.pos.y) < 1.5 &&
             this.hasLOS(fire.pos.clone().add(v3(0, 0.2, 0)), this.eye(e))
@@ -1853,10 +1916,17 @@ export class Game {
         0.65,
       );
     if (w.type === "bow") {
-      if (this.mouseDown)
-        this.bowCharge = Math.min(1.2, (this.bowCharge || 0) + dt);
+      const ready =
+        this.reloadTime <= 0 &&
+        this.cooldown <= 0 &&
+        !(this.quickMeleeTime > 0) &&
+        this.deflectTime <= 0 &&
+        this.ammunition[this.slot].mag > 0;
+      if (this.mouseDown && ready)
+        this.bowCharge = Math.min(BOW_DRAW_TIME, (this.bowCharge || 0) + dt);
       if (this.bowRelease) {
-        this.firePlayer();
+        if (ready && this.bowCharge > 0) this.firePlayer();
+        this.bowCharge = 0;
         this.bowRelease = false;
       }
       this.trigger = false;
@@ -2369,7 +2439,7 @@ export class Game {
       m.parts.muzzleFlash.rotation.z = this.clock * 71;
     }
     m.group.scale.y = 1;
-    updateBotWeapon(m, e);
+    updateBotWeapon(m, e, this.clock);
     if (m.parts.belt)
       m.parts.belt.position.y = THREE.MathUtils.damp(
         m.parts.belt.position.y,
@@ -2685,10 +2755,12 @@ export class Game {
         spin: this.spinTime,
         draw: this.bowCharge,
         time: this.clock,
+        shotSequence: this.shotSequence || 0,
         shotAge:
           this.lastShotAt === undefined ? 10 : this.clock - this.lastShotAt,
         flash: this.flash > 0,
         heal: this.healTime,
+        quickStab: this.knifeQuickTime > 0,
         swing: this.swingTime,
         swingSequence: this.swingSequence,
         backstab: this.backstabTime,

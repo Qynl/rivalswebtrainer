@@ -2705,3 +2705,13 @@ kbd {
     font-size: 8px;
   }
 }
+
+/* Crisp confirmed-hit punctuation; only the tiny SVG restarts, never the game. */
+#hitmarker svg { animation: hit-confirm-pop 130ms cubic-bezier(.16,.8,.25,1) both; }
+@keyframes hit-confirm-pop { from { transform: scale(1.38) rotate(4deg); } to { transform: scale(1) rotate(0); } }
+#hitmarker.headshot { filter: drop-shadow(0 0 5px #c78e4a88); }
+#hitmarker.elimination { filter: drop-shadow(0 0 6px #79d5ad99); }
+#bow-draw { position:absolute;left:50%;top:calc(50% + 27px);width:44px;height:3px;transform:translateX(-50%);background:#17232d88;border-radius:2px;overflow:hidden;pointer-events:none; }
+#bow-draw i { display:block;width:100%;height:100%;transform-origin:left;background:#e4d6ae; }
+#bow-draw.full i { background:#baf5d6;box-shadow:0 0 7px #9fecd3; }
+@media (prefers-reduced-motion: reduce) { #hitmarker svg { animation:none; } }

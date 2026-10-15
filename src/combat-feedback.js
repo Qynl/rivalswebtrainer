@@ -96,8 +96,9 @@ export class HitConfirmation {
   }
   add(head, elimination, now) {
     const next = elimination ? 3 : head ? 2 : 1;
-    if (this.sample(now) > next) return;
+    if (this.sample(now) > next) return false;
     this.kind = next;
     this.until = now + [0, 160, 210, 300][next];
+    return true;
   }
 }

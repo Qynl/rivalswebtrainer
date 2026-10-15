@@ -1,4 +1,6 @@
 import * as THREE from "three";
+import { BOW_DRAW_TIME } from "./combat-rules.js";
+import { weaponFeel } from "./weapon-feel.js";
 
 export const saturate = (x) => Math.max(0, Math.min(1, x));
 export const smooth = (x) => {
@@ -96,7 +98,8 @@ export class WeaponAnimator {
       dt,
       22,
     );
-    const ads = this.aim.step(aim ? 1 : 0, dt, 24),
+    const feel = weaponFeel(model.userData.weaponId);
+    const ads = this.aim.step(aim ? 1 : 0, dt, feel.ads),
       motion = shake ? (1 - ads) * Math.min(speed / 11.5, 1.4) : 0;
     const reloadState = reloadPose(reloading ? reload : 0),
       stride = grounded ? motion : motion * 0.12;
@@ -125,11 +128,7 @@ export class WeaponAnimator {
           ) +
           (state.landing || 0) * 0.6
         : 0);
-    const impulse =
-      age < 0.16
-        ? Math.exp(-age * 28) *
-          Math.sin(Math.min(1, age / 0.022) * Math.PI * 0.5)
-        : 0;
+    const impulse = age < 0.16 ? Math.exp(-age * 38) : 0;
     const poseZ =
       -0.16 + (profile.z || 0) + ads * 0.14 + kick * 0.35 + impulse * 0.024;
     model.position.set(
@@ -155,6 +154,19 @@ export class WeaponAnimator {
         20,
       ),
     );
+    // Sharp initial kick, fast return: don't low-pass the whole shot through a spring.
+    if (
+      model.userData.weaponId &&
+      !state.swing &&
+      !state.throwing &&
+      !state.heal
+    ) {
+      const scale = 1 - ads * 0.55;
+      model.position.z += impulse * feel.kick * scale;
+      model.rotation.x += impulse * feel.pitch * scale;
+      model.rotation.z +=
+        impulse * feel.roll * ((state.shotSequence || 0) % 2 ? 1 : -1) * scale;
+    }
     const parts = model.userData,
       mechanism = mechanismPose(age);
     if (parts.magazine) {
@@ -223,13 +235,35 @@ export class WeaponAnimator {
     }
     if (parts.rotor) parts.rotor.rotation.z += dt * (state.spin || 0) * 100;
     if (parts.string?.isLine) {
-      const p = parts.string.geometry.attributes.position;
-      p.setZ(1, -0.6 + (state.draw || 0) * 0.16);
+      const draw = saturate((state.draw || 0) / BOW_DRAW_TIME),
+        released =
+          age < 0.16 && !reloading
+            ? Math.sin(age * 180) * Math.exp(-age * 32) * 0.018
+            : 0,
+        p = parts.string.geometry.attributes.position;
+      p.setZ(0, -0.88 + draw * 0.04);
+      p.setZ(2, -0.88 + draw * 0.04);
+      p.setZ(1, -0.54 + draw * 0.32 + released);
       p.needsUpdate = true;
-    }
-    if (parts.arrow) {
-      parts.arrow.visible = !reloading;
-      parts.arrow.position.z = (state.draw || 0) * 0.16;
+      if (parts.bowUpper) parts.bowUpper.rotation.x = draw * 0.075;
+      if (parts.bowLower) parts.bowLower.rotation.x = -draw * 0.075;
+      for (const [cam, sign] of [
+        [parts.bowTopCam, 1],
+        [parts.bowBottomCam, -1],
+      ])
+        if (cam) {
+          cam.rotation.x = draw * sign * 0.65;
+          cam.position.z = -0.88 + draw * 0.04;
+        }
+      if (parts.arrow) {
+        parts.arrow.visible = !reloading && (state.ammo ?? 1) > 0;
+        parts.arrow.position.z = draw * 0.32;
+      }
+      if (parts.drawHand) {
+        parts.drawHand.position.copy(parts.drawHand.userData.restPosition);
+        parts.drawHand.position.z += draw * 0.32;
+        parts.drawHand.position.x -= draw * 0.012;
+      }
     }
     if (parts.muzzleFlash) {
       parts.muzzleFlash.visible = !!state.flash;
@@ -284,7 +318,12 @@ export class WeaponAnimator {
         strike = smooth((t - 0.28) / 0.22),
         recover = 1 - smooth((t - 0.55) / 0.45),
         direction = (state.swingSequence || 0) % 2 ? 1 : -1;
-      if (parts.weaponId === "knife") {
+      if (parts.weaponId === "knife" && state.quickStab) {
+        model.position.z += (wind * 0.06 - strike * 0.4) * recover;
+        model.position.y += (wind * 0.025 + strike * 0.04) * recover;
+        model.rotation.x -= strike * recover * 0.75;
+        model.rotation.z += (wind * 0.25 - strike * 0.3) * recover;
+      } else if (parts.weaponId === "knife") {
         model.position.x +=
           (wind * 0.045 - strike * 0.15) * recover * direction;
         model.position.z += (wind * 0.065 - strike * 0.28) * recover;

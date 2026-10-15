@@ -360,7 +360,8 @@ test("NPC melee visuals are cached, hide the rifle during quick abilities and re
   tickBotActions(e, 1.2);
   g.animateBot(e, dt);
   assert.equal(socket.visible, false);
-  assert.equal(model.parts.gun.visible, true);
+  assert.equal(model.parts.gun.visible, false);
+  assert.equal(model.parts.onlineSocket.visible, true);
   g.disposeVisual(model.group);
 });
 

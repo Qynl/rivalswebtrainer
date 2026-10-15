@@ -42,7 +42,7 @@ export class DamageNumbers {
         e = n.entity;
       const target = this.point.set(
         e.alive ? e.x : n.x,
-        (e.alive ? e.y + (e.height || 1.9) + 0.25 : n.y) + age * 0.65,
+        (e.alive ? e.y + (e.height || 1.9) + 0.25 : n.y) + age * 0.85,
         e.alive ? e.z : n.z,
       );
       if (hasLOS && eye && !hasLOS(eye, target)) return [];
@@ -63,7 +63,9 @@ export class DamageNumbers {
           x: (target.x * 0.5 + 0.5) * width,
           y: (0.5 - target.y * 0.5) * height,
           opacity: Math.min(1, (0.85 - age) / 0.25),
-          scale: 1 + 0.18 * Math.exp(-age * 18),
+          scale:
+            1 +
+            (n.backstab ? 0.42 : n.head ? 0.32 : 0.26) * Math.exp(-age * 22),
         },
       ];
     });

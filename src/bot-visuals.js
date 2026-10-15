@@ -4,7 +4,7 @@ import { WEAPONS } from "./data.js";
 
 // One cached world-sized melee per actor, not a fresh model for each ability.
 // All resources remain children of the character and use its normal disposal.
-export function updateBotWeapon(model, e) {
+export function updateBotWeapon(model, e, clock = 0) {
   const p = model.parts,
     melee =
       !!e.meleeId &&
@@ -19,8 +19,9 @@ export function updateBotWeapon(model, e) {
   }
   p.botLeftGrip.set(-0.12, -0.1, -0.17);
   p.botRightGrip.set(0, -0.13, -0.01);
-  if (e.netId && !melee) {
-    p.gun.visible = p.barrel.visible = p.muzzleFlash.visible = false;
+  if (!melee) {
+    p.gun.visible = p.barrel.visible = false;
+    if (p.baseMuzzleFlash) p.baseMuzzleFlash.visible = false;
     if (p.meleeSocket) p.meleeSocket.visible = false;
     if (!p.onlineSocket) {
       p.onlineSocket = new THREE.Group();
@@ -46,9 +47,14 @@ export function updateBotWeapon(model, e) {
     socket.visible = true;
     const weapon = socket.userData.weapon,
       parts = weapon.userData,
-      age = (e.fireFlash || 0) > 0 ? 0 : 1;
+      age = e.netId
+        ? (e.fireFlash || 0) > 0
+          ? 0
+          : 1
+        : Math.max(0, clock - (e.lastShotAt ?? -10));
     if (parts.muzzleFlash) {
-      parts.muzzleFlash.visible = age === 0;
+      p.muzzleFlash = parts.muzzleFlash;
+      parts.muzzleFlash.visible = age < 0.055;
       parts.muzzleFlash.rotation.z = (e.netShot || 0) * 19;
     }
     if (parts.pilotFlame)

@@ -159,7 +159,7 @@ test("bow charges without spending ammo, releases an arrow and automatically rel
   for (let i = 0; i < 72; i++) g.updatePlayer(1 / 60);
   assert.equal(g.ammunition[0].mag, 1);
   assert.equal(g.projectiles.length, 0);
-  assert.ok(g.bowCharge > 1.19);
+  assert.ok(g.bowCharge > 0.79);
   g.mouseDown = false;
   g.bowRelease = true;
   g.updatePlayer(1 / 60);
@@ -230,7 +230,7 @@ test("flashbang blinds exposed players and bots, but not enemies behind cover", 
     covered = actor(1, -12);
   g.entities.push(exposed, covered);
   wall(g, -9);
-  g.explosion(v(0, 1.6, -4), g.player, "flashbang");
+  g.explosion(v(0, 1.6, -4), actor(1, -4), "flashbang");
   assert.ok(g.blindTime > 2);
   assert.ok(exposed.blindedUntil > 2);
   assert.equal(covered.blindedUntil, undefined);
@@ -240,7 +240,7 @@ test("flashbang blinds exposed players and bots, but not enemies behind cover", 
 test("looking away substantially reduces a flashbang effect", () => {
   const g = game();
   g.yaw = Math.PI;
-  g.explosion(v(0, 1.6, -4), g.player, "flashbang");
+  g.explosion(v(0, 1.6, -4), actor(1, -4), "flashbang");
   assert.equal(g.blindTime, 0.7);
 });
 test("medkit has distinct quick and long heals and never overheals", () => {

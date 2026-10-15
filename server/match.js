@@ -353,7 +353,7 @@ export class Match {
       amount <= 0
     )
       return;
-    if (source && source.team === e.team && source !== e) return;
+    if (source && (source === e || source.team === e.team)) return;
     const applied = Math.min(e.health, amount);
     e.health = Math.max(0, e.health - amount);
     e.context.healTime = 0;

@@ -525,6 +525,20 @@ export class MultiplayerSession {
       const t = 1 - Math.exp(-dt * 28);
       p.mesh.position.lerp(p.target, t);
       p.mesh.rotation.set(p.rx, p.ry, p.rz);
+      if (p.weapon === "bow" && g.combatFX) {
+        p.trailTime -= dt;
+        if (p.trailTime <= 0) {
+          g.combatFX.trace(p.trailFrom, p.mesh.position, 0, 0xe8d6a5);
+          p.trailFrom.copy(p.mesh.position);
+          p.trailTime = 0.03;
+        }
+      }
+      if (p.mesh.userData.exhaust)
+        p.mesh.userData.exhaust.scale.set(
+          1 + Math.sin(g.clock * 90) * 0.12,
+          1,
+          1 + Math.cos(g.clock * 90) * 0.12,
+        );
     }
     for (const zone of this.zones.values()) {
       if (zone.type === "fire") animateFire(zone.mesh, g.clock, zone.life);
@@ -546,6 +560,9 @@ export class MultiplayerSession {
         entry = {
           mesh,
           target: new THREE.Vector3(),
+          weapon: p.weapon,
+          trailFrom: mesh.position.clone(),
+          trailTime: 0,
           rx: p.rx,
           ry: p.ry,
           rz: p.rz,

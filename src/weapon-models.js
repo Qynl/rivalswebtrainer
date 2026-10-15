@@ -1,3 +1,4 @@
+import { detailWeapon, WEAPON_FINISHES } from "./weapon-detailing.js";
 import { rememberPart, muzzleFlash } from "./animation.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import * as THREE from "three";
@@ -20,7 +21,7 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
   };
   const dark = material(0x202832, 0.35, 0.6),
     steel = material(
-      id === "rifle" ? 0xb3a582 : 0x596777,
+      WEAPON_FINISHES[id] || 0x596777,
       id === "rifle" ? 0.25 : 0.7,
       id === "rifle" ? 0.65 : 0.3,
     ),
@@ -79,6 +80,12 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
     const skin = material(0xbfa58b, 0, 0.83),
       fabric = material(0x293740, 0, 0.95);
     box(0, 0, 0, 0.11, 0.095, 0.15, skin, h);
+    const pad = material(0xb8c5c4, 0.14, 0.5);
+    box(0, 0.051, -0.003, 0.098, 0.018, 0.085, pad, h);
+    for (let i = 0; i < 3; i++)
+      box(-0.032 + i * 0.032, 0.058, -0.032, 0.025, 0.015, 0.028, fabric, h);
+    box(0, -0.015, 0.104, 0.129, 0.105, 0.035, fabric, h);
+    box(0.048, -0.01, 0.125, 0.033, 0.025, 0.014, pad, h);
     box(0, -0.025, 0.07, 0.12, 0.09, 0.09, fabric, h);
     if (hands) {
       const sleeve = new THREE.Group();
@@ -478,23 +485,59 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
       hand(0.28, -0.28, -0.92);
     }
   } else if (id === "bow") {
-    g.userData.limbs = tube(
-      [
-        [0.24, 0.42, -0.86],
-        [0.31, 0.3, -0.8],
-        [0.34, 0.02, -0.75],
-        [0.31, -0.3, -0.8],
-        [0.24, -0.47, -0.86],
-      ],
-      0.028,
-      wood,
+    const carbon = material(0x263c42, 0.35, 0.48),
+      limbEdge = material(0x90a8a4, 0.45, 0.38);
+    const limbs = new THREE.Group();
+    g.add(limbs);
+    g.userData.limbs = limbs;
+    for (const sign of [-1, 1]) {
+      const pivot = new THREE.Group();
+      pivot.position.set(0.34, 0.015, -0.75);
+      limbs.add(pivot);
+      g.userData[sign > 0 ? "bowUpper" : "bowLower"] = pivot;
+      const points = [
+        [0, sign * 0.08, 0],
+        [-0.01, sign * 0.25, -0.015],
+        [-0.065, sign * 0.39, -0.08],
+        [-0.1, sign * 0.47, -0.13],
+      ];
+      tube(points, 0.027, carbon, pivot);
+      tube(
+        points.map(([x, y, z]) => [x + 0.018, y, z + 0.004]),
+        0.01,
+        limbEdge,
+        pivot,
+      );
+      const cam = new THREE.Group();
+      cam.position.set(0.24, sign > 0 ? 0.485 : -0.455, -0.88);
+      g.add(cam);
+      g.userData[sign > 0 ? "bowTopCam" : "bowBottomCam"] = cam;
+      cyl(0, 0, 0, 0.049, 0.019, dark, "x", cam);
+      cyl(0, 0, 0, 0.019, 0.024, silver, "x", cam);
+      for (let i = 0; i < 4; i++) {
+        const spoke = box(0, 0, 0, 0.012, 0.075, 0.009, limbEdge, cam);
+        spoke.rotation.x = (i * Math.PI) / 4;
+      }
+    }
+    box(0.34, -0.04, -0.75, 0.07, 0.29, 0.095, carbon);
+    for (let i = 0; i < 5; i++)
+      box(0.34, -0.005 - i * 0.024, -0.695, 0.075, 0.01, 0.013, grip);
+    for (const y of [-0.16, 0.1])
+      cyl(0.385, y, -0.75, 0.011, 0.014, silver, "x");
+    const sight = new THREE.Mesh(
+      new THREE.TorusGeometry(0.035, 0.006, 6, 16),
+      silver,
     );
-
+    sight.position.set(0.265, 0.03, -0.86);
+    g.add(sight);
+    box(0.265, 0.03, -0.86, 0.007, 0.007, 0.014, material(0x9ee0b3, 0.3, 0.3));
+    // Aim through the actual sight, not the nock (which lets the pulling hand cover the target).
+    g.userData.adsPoint = sight.position.clone();
     const string = new THREE.Line(
       new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(0.24, 0.42, -0.86),
-        new THREE.Vector3(0.2, -0.04, -0.6),
-        new THREE.Vector3(0.24, -0.47, -0.86),
+        new THREE.Vector3(0.24, 0.485, -0.88),
+        new THREE.Vector3(0.23, -0.055, -0.54),
+        new THREE.Vector3(0.24, -0.455, -0.88),
       ]),
       new THREE.LineBasicMaterial({ color: 0xcad3d5 }),
     );
@@ -520,7 +563,10 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
         a;
     for (const y of [-0.32, 0.29])
       cyl(0.3, y, -0.805, 0.043, 0.022, steel, "x");
-    if (hands) hand(0.34, -0.11, -0.7);
+    if (hands) {
+      hand(0.34, -0.11, -0.7);
+      g.userData.drawHand = hand(0.23, -0.08, -0.52);
+    }
   } else if (id === "minigun") {
     box(0.24, -0.16, -0.57, 0.24, 0.22, 0.31, steel);
     box(0.24, -0.31, -0.46, 0.12, 0.16, 0.09, grip);
@@ -877,6 +923,17 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
     for (let i = 0; i < 5; i++)
       box(0.24, -0.39 + i * 0.018, -0.54, 0.08, 0.006, 0.007, dark);
   }
+  detailWeapon(g, id, data, {
+    box,
+    cyl,
+    tube,
+    material,
+    dark,
+    steel,
+    silver,
+    grip,
+    hands,
+  });
   if (data.slot < 2 && data.type !== "bow" && data.type !== "flame") {
     const flash = muzzleFlash(
       new THREE.MeshBasicMaterial({
@@ -921,6 +978,15 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
       ),
     );
   }
+  for (const part of [
+    g.userData.pump,
+    g.userData.bolt,
+    g.userData.magazine,
+    g.userData.arrow,
+    g.userData.bowTopCam,
+    g.userData.bowBottomCam,
+  ])
+    if (part) mergeStatic(part, new Set());
   const moving = new Set(
     Object.values(g.userData).filter((x) => x?.isObject3D),
   );

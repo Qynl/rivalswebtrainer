@@ -166,7 +166,7 @@ test("authoritative rifle hits consume ammo, apply damage and cannot friendly fi
     assert.ok(b.player.health < 150);
     const health = b.player.health;
     m.damage(b.player, 100, b.player);
-    assert.ok(b.player.health < health);
+    assert.equal(b.player.health, health);
     b.player.health = 150;
     b.player.team = a.player.team;
     const hit = a.bullet(
@@ -803,5 +803,38 @@ test("rocket jumping delivers a server-owned, duplicate-safe and round-bound imp
     assert.equal(local.game.player.vy, 3);
   } finally {
     s.service.dispose();
+  }
+});
+
+test("authoritative RPG/launcher launches never self-damage, and F quick knife can finish the launch combo", () => {
+  for (const id of ["rpg", "launcher"]) {
+    const s = setup([id, "pistol", "knife", "grenade"]);
+    try {
+      const m = start(s);
+      m.phase = "playing";
+      const a = m.contexts.get(s.ids[0]),
+        b = m.contexts.get(s.ids[1]);
+      Object.assign(a.player, { x: 0, y: 0, z: 4 });
+      Object.assign(b.player, { x: 0, y: 0, z: 2, yaw: 0 });
+      a.yaw = 0;
+      a.explosion(new THREE.Vector3(0, 0.1, 4.5), a.player, id);
+      assert.equal(a.player.health, 150);
+      assert.equal(a.player.vy, 15);
+      assert.ok(
+        m.events.some((e) => e.type === "impulse" && e.player === a.player.id),
+      );
+      b.player.health = 150;
+      a.cooldown = 1.2;
+      m.input(s.ids[0], input(1, { actions: [{ id: 1, type: "ability" }] }));
+      assert.equal(a.slot, 0);
+      a.updatePlayerMelee(0.11);
+      assert.equal(b.player.health, 0);
+      assert.ok(m.events.some((e) => e.type === "damage" && e.backstab));
+      assert.ok(
+        !m.events.some((e) => e.type === "damage" && e.victim === a.player.id),
+      );
+    } finally {
+      s.service.dispose();
+    }
   }
 });

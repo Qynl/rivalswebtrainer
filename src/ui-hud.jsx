@@ -121,6 +121,7 @@ export function Hud() {
           }
           style={{
             opacity: h.markerOpacity,
+            transition: h.markerOpacity ? "none" : "opacity 80ms",
             color:
               marker === "elimination"
                 ? "#b5f5d8"
@@ -129,10 +130,23 @@ export function Hud() {
                   : "white",
           }}
         >
-          <svg viewBox="-20 -20 40 40">
+          <svg key={h.markerPulse || 0} viewBox="-20 -20 40 40">
             <path d="M -14 -14 L -7 -7 M 14 -14 L 7 -7 M -14 14 L -7 7 M 14 14 L 7 7" />
           </svg>
         </div>
+        {h.bowDraw !== null && h.bowDraw !== undefined && (
+          <div
+            id="bow-draw"
+            className={h.bowDraw >= 1 ? "full" : ""}
+            aria-label="Bow draw"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(h.bowDraw * 100)}
+          >
+            <i style={{ transform: `scaleX(${h.bowDraw})` }} />
+          </div>
+        )}
         <div id="damage-vignette" style={{ opacity: h.hurt || 0 }} />
         <div id="damage-directions" aria-hidden="true">
           {[0, 1, 2, 3].map((i) => (

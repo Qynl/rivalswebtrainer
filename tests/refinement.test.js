@@ -240,7 +240,7 @@ test("Bow keeps its limbs, nocked arrow and anchored string through a full draw"
   assert.ok(m.userData.arrow);
   a.update(m, { dt: 1 / 60, draw: 1.2 });
   const p = m.userData.string.geometry.attributes.position;
-  assert.ok(Math.abs(p.getZ(0) + 0.86) < 1e-6);
+  assert.ok(Math.abs(p.getZ(0) + 0.84) < 1e-6);
   assert.ok(p.getZ(1) > -0.42);
   assert.ok(m.userData.arrow.position.z > 0.19);
   a.update(m, { dt: 1 / 60, reloading: true, reload: 0.5 });
