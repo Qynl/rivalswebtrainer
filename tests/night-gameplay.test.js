@@ -327,3 +327,22 @@ test("performance smoke halves the instance/shader workload without rebuilding r
   assert.equal(mesh.material, material);
   Game.prototype.disposeVisual.call({}, mesh);
 });
+
+test("a blinded opponent cannot keep or acquire visually perceived explosive knowledge", () => {
+  const a = actor(),
+    p = projectile(),
+    opts = {
+      projectiles: [p],
+      fires: [],
+      world: { boxes: [] },
+      canSee: () => true,
+      reaction: 0.2,
+    };
+  evadeHazards(a, { ...opts, clock: 1 });
+  assert.ok(evadeHazards(a, { ...opts, clock: 1.3 }));
+  a.blindedUntil = 2;
+  assert.equal(evadeHazards(a, { ...opts, clock: 1.31 }), null);
+  assert.equal(a.hazardSeen, null);
+  assert.equal(evadeHazards(a, { ...opts, clock: 2.1 }), null);
+  assert.ok(evadeHazards(a, { ...opts, clock: 2.4 }));
+});

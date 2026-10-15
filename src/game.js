@@ -511,6 +511,7 @@ export class Game {
   }
   cleanEntities() {
     this.cancelThrow(false);
+    this.disposeQuickModels();
     this.damageNumbers?.clear();
     this.combatFX?.clear();
     this.flameFX?.clear();
@@ -690,6 +691,7 @@ export class Game {
     this.playerMeleePending = null;
     this.fireBufferedUntil = 0;
     this.clearQuickMelee();
+    this.trimQuickModels();
     this.deflectTime = 0;
     this.slot = slot;
     this.inspectTime = 0;
@@ -889,7 +891,7 @@ export class Game {
   quickUtility() {
     const id = this.loadout[3],
       w = WEAPONS[id],
-      a = this.ammunition[3];
+      a = this.ammunition?.[3];
     if (
       !this.player?.alive ||
       this.state !== "playing" ||
@@ -954,8 +956,15 @@ export class Game {
     this.quickModelId = id;
     this[utility ? "quickUtilityTime" : "quickMeleeTime"] = duration;
     if (this.headless) return;
-    this.quickModel = createViewModel(id, WEAPONS[id]);
-    this.quickModel.scale.setScalar(0.78);
+    this.trimQuickModels();
+    this.quickModels ||= new Map();
+    this.quickModel = this.quickModels.get(id);
+    if (!this.quickModel) {
+      this.quickModel = createViewModel(id, WEAPONS[id]);
+      this.quickModel.scale.setScalar(0.78);
+      this.quickModels.set(id, this.quickModel);
+    }
+    this.quickModel.visible = true;
     this.weaponScene.add(this.quickModel);
     if (this.viewModel) this.viewModel.visible = false;
     this.weaponAnimator?.quickDraw();
@@ -963,17 +972,27 @@ export class Game {
   clearQuickMelee() {
     if (this.quickModel) {
       this.weaponScene.remove(this.quickModel);
-      const materials = new Set();
-      this.quickModel.traverse((o) => {
-        o.geometry?.dispose();
-        if (o.material) materials.add(o.material);
-      });
-      materials.forEach((m) => m.dispose());
+      if (this.quickModels?.get(this.quickModelId) !== this.quickModel)
+        this.disposeVisual(this.quickModel);
     }
     this.quickModel = null;
     this.quickModelId = null;
     this.quickMeleeTime = this.quickUtilityTime = 0;
     if (this.viewModel) this.viewModel.visible = true;
+  }
+  trimQuickModels() {
+    // At most the currently equipped melee + utility, never the whole roster.
+    for (const [id, model] of this.quickModels || []) {
+      if (id === this.loadout[2] || id === this.loadout[3]) continue;
+      this.disposeVisual(model);
+      this.quickModels.delete(id);
+    }
+  }
+  disposeQuickModels() {
+    this.clearQuickMelee();
+    for (const model of this.quickModels?.values() || [])
+      this.disposeVisual(model);
+    this.quickModels?.clear();
   }
   moveDirection() {
     const dx =

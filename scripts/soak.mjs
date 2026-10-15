@@ -1,6 +1,8 @@
 // Optional endurance validation: npm run test:soak -- --minutes 10
 // Requires the dev preview and a Playwright Chromium (or BROWSER_EXECUTABLE).
+// --unyielding reproduces the old main-thread-starving scheduling for diagnosis.
 import { chromium } from "@playwright/test";
+import { readFile } from "node:fs/promises";
 const arg = process.argv.indexOf("--minutes"),
   minutes = arg < 0 ? 10 : Number(process.argv[arg + 1]);
 if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 120)
@@ -14,8 +16,10 @@ const browser = await chromium.launch({
     "--disable-dev-shm-usage",
     "--use-angle=swiftshader",
     "--enable-unsafe-swiftshader",
+    "--enable-precise-memory-info",
   ],
 });
+const diagnostics = await browser.newBrowserCDPSession();
 const page = await browser.newPage({ viewport: { width: 800, height: 600 } }),
   errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
@@ -49,11 +53,18 @@ console.log(
 try {
   while (Date.now() < deadline) {
     const report = await page.evaluate(
-      async ({ batch }) => {
+      async ({ batch, processUnyielding }) => {
         const { WEAPONS } = await import("/src/data.js");
         const { SIMULATION_STEP } = await import("/src/movement.js");
         const g = window.__arena;
-        let frames = 0;
+        let frames = 0,
+          quickUses = 0;
+        const utility = ["grenade", "molotov", "smoke", "flashbang", "medkit"][
+          batch % 5
+        ];
+        g.loadout[2] = "knife";
+        g.loadout[3] = utility;
+        g.ammunition[3] = { mag: WEAPONS[utility].mag, reserve: 0 };
         const rendered = [];
         for (const [id, w] of Object.entries(WEAPONS)) {
           g.state = "playing";
@@ -92,10 +103,27 @@ try {
               g.bowCharge = 1.2;
               g.bowRelease = i % 80 === 0;
             } else if (i % 16 === 0) g.trigger = true;
+            if (w.slot < 2) {
+              if (i === 80 && g.quickUtility()) quickUses++;
+              if (i === 0 && g.meleeAbility(true)) quickUses++;
+            }
+            if ((g.quickModels?.size || 0) > 2)
+              throw new Error(
+                "Quick-action model cache exceeded two equipped items",
+              );
             g.mouseDown = w.type === "auto" || w.type === "flame";
             if (w.type === "heal") g.player.health = 35;
             g.simulate(SIMULATION_STEP);
             g.updateCamera(SIMULATION_STEP);
+            const body = g.quickModel?.userData.throwableBody;
+            if (
+              g.quickUtilityTime > 0 &&
+              body &&
+              body.visible === g.throwReleased
+            )
+              throw new Error(
+                "Reused quick throwable has a stale release pose: " + id,
+              );
             frames++;
             for (const entity of g.entities)
               if (
@@ -124,10 +152,16 @@ try {
           if (gl.getError() !== gl.NO_ERROR)
             throw new Error("WebGL error while drawing " + id);
           rendered.push(id);
+          // The game normally yields every rendered frame. A single long task
+          // spanning the entire roster starves React commits and browser memory
+          // maintenance, unlike actual play. Yield between equipped weapons.
+          if (!processUnyielding) await new Promise(requestAnimationFrame);
         }
         return {
           frames,
           renderedItems: rendered.length,
+          quickUses,
+          quickModels: g.quickModels?.size || 0,
           geometries: g.renderer.info.memory.geometries,
           textures: g.renderer.info.memory.textures,
           programs: g.renderer.info.programs.length,
@@ -136,10 +170,25 @@ try {
           decals: g.combatFX?.decals.count,
           projectiles: g.projectiles.length,
           heap: performance.memory?.usedJSHeapSize,
+          heapTotal: performance.memory?.totalJSHeapSize,
+          heapLimit: performance.memory?.jsHeapSizeLimit,
         };
       },
-      { batch: batches },
+      {
+        batch: batches,
+        processUnyielding: process.argv.includes("--unyielding"),
+      },
     );
+    try {
+      const { processInfo } = await diagnostics.send(
+        "SystemInfo.getProcessInfo",
+      );
+      const renderer = processInfo.find((p) => p.type === "renderer");
+      const status = await readFile(`/proc/${renderer.id}/status`, "utf8");
+      report.rendererRssKiB = Number(status.match(/VmRSS:\s+(\d+)/)?.[1]);
+    } catch {
+      /* /proc diagnostics are optional on non-Linux hosts. */
+    }
     batches++;
     frames += report.frames;
     samples.push(report);

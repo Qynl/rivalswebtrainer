@@ -135,6 +135,10 @@ export function evadeHazards(
   actor,
   { clock, projectiles, fires, world, canSee, reaction = 0.2 },
 ) {
+  if (actor.blindedUntil > clock) {
+    actor.hazardSeen = actor.hazardWish = null;
+    return null;
+  }
   if (clock < (actor.hazardCheckAt || 0)) return actor.hazardWish || null;
   actor.hazardCheckAt = clock + 0.12;
   const threats = visibleHazards(actor, projectiles, fires, canSee);

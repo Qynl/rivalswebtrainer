@@ -52,7 +52,14 @@ test("real G binding quick-uses all five utilities, shows the actual model and r
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await range(page);
-  for (const id of ["grenade", "molotov", "smoke", "flashbang", "medkit"]) {
+  for (const id of [
+    "grenade",
+    "grenade",
+    "molotov",
+    "smoke",
+    "flashbang",
+    "medkit",
+  ]) {
     await page.evaluate((id) => {
       const g = window.__arena;
       g.cancelThrow();
@@ -92,6 +99,11 @@ test("real G binding quick-uses all five utilities, shows the actual model and r
       id === "medkit" ? "HEALING" : "THROWING",
     );
     expect(await draw(page)).toBe(0);
+    expect(
+      await page.evaluate(
+        () => window.__arena.quickModel.userData.throwableBody?.visible ?? true,
+      ),
+    ).toBe(true);
     const inFrame = await page.evaluate(async () => {
       const g = window.__arena,
         THREE = await import("/node_modules/.vite/deps/three.js");
@@ -111,6 +123,7 @@ test("real G binding quick-uses all five utilities, shows the actual model and r
         count = g.projectiles.length;
       for (let i = 0; i < 110; i++) {
         g.clock += 1 / 120;
+        g.throwTime = Math.max(0, g.throwTime - 1 / 120);
         g.updateSupport(1 / 120);
         g.updatePlayer(1 / 120);
       }
@@ -283,4 +296,51 @@ test("an actual elite opponent reacts to a visible grenade and moves away instea
   expect(report.end).toBeGreaterThan(report.start + 2);
   expect(report.firstReaction).toBeGreaterThan(0.05);
   expect(report.finite).toBe(true);
+});
+
+test("real rendered F/G models reuse a bounded cache and round/lobby cleanup releases it", async ({
+  page,
+}) => {
+  await range(page);
+  const result = await page.evaluate(() => {
+    const g = window.__arena;
+    const models = new Map(),
+      warm = [],
+      baselineChildren = g.weaponScene.children.length;
+    for (let i = 0; i < 80; i++) {
+      const id = i % 2 ? "grenade" : "knife";
+      g.showQuickAction(id, 0.48, id === "grenade");
+      const previous = models.get(id);
+      if (previous && previous !== g.quickModel)
+        throw new Error("Model was rebuilt");
+      models.set(id, g.quickModel);
+      g.updateCamera(1 / 60);
+      if (i < 4 || i % 10 === 0) {
+        g.renderer.autoClear = true;
+        g.renderer.render(g.weaponScene, g.weaponCamera);
+        if (g.renderer.getContext().getError())
+          throw new Error("Quick model GL error");
+        if (i >= 3) warm.push(g.renderer.info.memory.geometries);
+      }
+      g.clearQuickMelee();
+      if (g.weaponScene.children.length !== baselineChildren)
+        throw new Error("Hidden models leaked into scene");
+    }
+    const retained = g.quickModels.size;
+    g.quit();
+    return {
+      retained,
+      after: g.quickModels.size,
+      quick: !!g.quickModel,
+      variation: Math.max(...warm) - Math.min(...warm),
+      slot: g.weaponScene.children.length - baselineChildren,
+    };
+  });
+  expect(result).toEqual({
+    retained: 2,
+    after: 0,
+    quick: false,
+    variation: 0,
+    slot: 0,
+  });
 });

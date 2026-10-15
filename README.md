@@ -73,9 +73,11 @@ Graphics use darker panel-seamed concrete, a compact edge HUD, distinct original
 
 With Medkit equipped, G channels the **25-HP / 0.8-second quick heal** using utility ammo, not gun ammo. Full-health use does nothing. Damage interrupts healing and consumes the Medkit as with a normal heal. Death clears pending throws and quick models rather than leaving ghost actions behind.
 
+Repeated F/G actions lazily reuse at most the two equipped offhand models instead of rebuilding geometry on every press. Changing loadout evicts old items; round/lobby cleanup releases the cache.
+
 A **140 ms single-request firing buffer** catches taps just before recovery/reload ends. It does not create extra shots, replay clicks on another weapon, or fire a stale request after a pause. Empty burst weapons reload on a tap, and bursts do not advance during a blocking utility animation. Compact F/G chips show readiness, remaining utility and active actions; the action bar follows actual simulation progress.
 
-Smoke now grows and dissipates as depth-tested procedural billows, with an interior haze. One instanced draw uses 32 puffs, or 16 with lower shader detail in Performance mode; switching quality does not rebuild resources. Projectiles have short pooled travel traces, thrown fuse markers and positional bounce audio. Remote operators display and animate the actual quick utility before returning to their gun. Bots can react to **visible hostile explosives and fire**, with difficulty-dependent reaction time, legal escape probes and no through-wall hazard perception.
+Smoke now grows and dissipates as depth-tested procedural billows, with an interior haze. One instanced draw uses 32 puffs, or 16 with lower shader detail in Performance mode; switching quality does not rebuild resources. Projectiles have short pooled travel traces, thrown fuse markers and positional bounce audio. Remote operators display and animate the actual quick utility before returning to their gun. Bots can react to **visible hostile explosives and fire**, with difficulty-dependent reaction time, legal escape probes and no through-wall hazard perception. Flashed bots cannot acquire or retain visually perceived hazard knowledge while blinded.
 
 Implementation, validation and actual elapsed time: [work log](docs/night-pass.md).
 
@@ -181,7 +183,7 @@ See [the combat-readability report](docs/combat-readability-pass.md) for validat
 ## Tests
 
 ```sh
-npm test                   # 315 input, abilities, physics, movement, rigging, audio, rendering and combat tests
+npm test                   # 317 input, abilities, physics, movement, rigging, audio, rendering and combat tests
 npm run build              # Production build + offline cache generation
 npx playwright install chromium
 npm run test:browser       # Browser integration test

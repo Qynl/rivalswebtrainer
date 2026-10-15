@@ -222,7 +222,7 @@ test("compact binary snapshots preserve quick utility without expanding the pack
     }
   }
 });
-test("visual quick utility actually hides/restores the selected model and disposes transient geometry", () => {
+test("visual quick utility hides/restores the selected model and releases its bounded cache on cleanup", () => {
   const { m, g } = setup();
   try {
     g.headless = false;
@@ -238,6 +238,10 @@ test("visual quick utility actually hides/restores the selected model and dispos
     g.updateSupport(THROW_DURATION);
     assert.equal(g.quickModel, null);
     assert.equal(g.viewModel.visible, true);
+    assert.equal(disposed, 0); // retained for the next press, not reallocated each time
+    assert.equal(g.quickModels.size, 1);
+    g.disposeQuickModels();
+    assert.equal(g.quickModels.size, 0);
     assert.ok(disposed > 0);
     Game.prototype.disposeVisual.call(g, g.viewModel);
   } finally {
@@ -277,6 +281,52 @@ test("death before quick release clears the pending action, never spawns a ghost
       m.snapshot().players.find((p) => p.id === g.player.id).quickUtility,
       0,
     );
+  } finally {
+    m.dispose();
+  }
+});
+
+test("repeated F/G actions reuse the same two model/geometry sets and never retain old loadout items", () => {
+  const { m, g } = setup();
+  try {
+    g.headless = false;
+    g.viewModel = createViewModel("rifle", WEAPONS.rifle);
+    g.weaponScene.add(g.viewModel);
+    g.showQuickAction("knife", 0.4);
+    const knife = g.quickModel;
+    g.clearQuickMelee();
+    g.showQuickAction("grenade", 0.48, true);
+    const grenade = g.quickModel,
+      geometries = [];
+    grenade.traverse((o) => {
+      if (o.geometry) geometries.push(o.geometry);
+    });
+    g.clearQuickMelee();
+    for (let i = 0; i < 100; i++) {
+      g.showQuickAction(i % 2 ? "knife" : "grenade", 0.4, !(i % 2));
+      assert.equal(g.quickModel, i % 2 ? knife : grenade);
+      assert.equal(g.quickModels.size, 2);
+      g.clearQuickMelee();
+      assert.equal(g.weaponScene.children.length, 1);
+    }
+    const after = [];
+    grenade.traverse((o) => {
+      if (o.geometry) after.push(o.geometry);
+    });
+    assert.deepEqual(after, geometries);
+    let released = 0;
+    grenade.traverse((o) =>
+      o.geometry?.addEventListener("dispose", () => released++),
+    );
+    g.loadout[3] = "smoke";
+    g.showQuickAction("smoke", 0.48, true);
+    assert.ok(released > 0);
+    assert.equal(g.quickModels.has("grenade"), false);
+    assert.equal(g.quickModels.size, 2);
+    g.disposeQuickModels();
+    assert.equal(g.weaponScene.children.length, 1);
+    assert.equal(g.quickModels.size, 0);
+    Game.prototype.disposeVisual.call(g, g.viewModel);
   } finally {
     m.dispose();
   }
