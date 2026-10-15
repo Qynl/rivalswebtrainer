@@ -121,6 +121,7 @@ test("head accessories, weapon and two-bone legs follow their actual skeleton pi
     seed: 0,
     reload: 0,
     lastShotAt: 1.98,
+    visible: true,
     targetEntity: { alive: true, x: 0, y: 3, z: -5 },
   };
   for (let i = 0; i < 30; i++) g.animateBot(e, 1 / 60);

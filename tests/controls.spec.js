@@ -7,6 +7,9 @@ test("Shift/C slides, jump cancels, F quick ability, Katana reflection and mouse
   await page.goto("/");
   await page.waitForFunction(() => window.__arena);
   await page.evaluate(() => {
+    // Explicit velocity fixtures must not decay while separate CDP keyboard
+    // commands are in flight. Live locomotion has its own simulation test.
+    window.__arena.frame = () => {};
     window.__arena.renderer.render = () => {};
   });
   await page.click('[data-tab="loadout"]');

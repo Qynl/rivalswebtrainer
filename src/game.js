@@ -1,3 +1,5 @@
+import { aimArm } from "./rigging.js";
+import { chooseCover, followRoute, selectOpponent } from "./bot-tactics.js";
 import { CombatFX } from "./combat-fx.js";
 import { ArenaRenderer } from "./rendering.js";
 import { WeaponAnimator } from "./animation.js";
@@ -5,7 +7,12 @@ import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { ArenaWorld, createCharacter, createViewModel } from "./world.js";
 import { WEAPONS, DIFFICULTIES, MAPS } from "./data.js";
-import { MOVEMENT, accelerate, steerSlide } from "./movement.js";
+import {
+  MOVEMENT,
+  SIMULATION_STEP,
+  accelerate,
+  steerSlide,
+} from "./movement.js";
 import { clamp, moveBody, verticalStep, canOccupy } from "./physics.js";
 import { MouseLook } from "./input.js";
 import { GameAudio } from "./audio.js";
@@ -385,6 +392,7 @@ export class Game {
   startRound() {
     this.clearQuickMelee();
     this.cleanEntities();
+    this.audio?.clearSpatial?.();
     this.round++;
     this.player = this.createEntity(0, this.world.spawns[0][0], 0, true);
     this.yaw = 0;
@@ -668,7 +676,7 @@ export class Game {
   eye(e) {
     return v3(e.x, e.y + (e.isPlayer && this.crouched ? 1.02 : 1.66), e.z);
   }
-  hasLOS(a, b) {
+  hasLOS(a, b, includeSmoke = true) {
     const d = b.clone().sub(a),
       distance = d.length();
     if (distance < 0.1) return true;
@@ -676,7 +684,7 @@ export class Game {
     this.ray.far = distance;
     const hits = this.ray.intersectObjects(this.world.solidMeshes, false);
     if (hits.length && hits[0].distance < distance - 0.1) return false;
-    for (const s of this.smokes) {
+    for (const s of includeSmoke ? this.smokes : []) {
       const line = new THREE.Line3(a, b),
         p = v3();
       line.closestPointToPoint(s.pos, true, p);
@@ -1039,14 +1047,17 @@ export class Game {
       });
     }
   }
-  damage(e, amount, source, head = false) {
+  damage(e, amount, source, head = false, hitOrigin = source) {
     if (!e.alive || amount <= 0) return;
     e.health = Math.max(0, e.health - amount);
     if (e.isPlayer) {
       this.healTime = 0;
-      this.events.hurt();
+      this.events.hurt(hitOrigin, amount);
       this.audio.play("hurt");
-    } else this.particles(this.eye(e), head ? 0xffe2a1 : 0xeeac97, 3);
+    } else {
+      if (source && source.team !== e.team) e.pressureUntil = this.clock + 0.85;
+      this.particles(this.eye(e), head ? 0xffe2a1 : 0xeeac97, 3);
+    }
     if (e.health <= 0) {
       e.alive = false;
       if (e.model) {
@@ -1259,7 +1270,9 @@ export class Game {
       this.particles(pos, 0xffa44c, 22);
       return;
     }
-    this.audio.play("explosion");
+    if (this.audio.playAt && this.player)
+      this.audio.playAt("explosion", pos, this.eye(this.player), this.yaw);
+    else this.audio.play("explosion");
     this.particles(pos, 0xffbd68, 35);
     const mesh = new THREE.Mesh(
       new THREE.SphereGeometry(0.5, 12, 8),
@@ -1282,7 +1295,7 @@ export class Game {
       ) {
         let dmg = w.damage * (1 - distance / radius);
         if (distance < 1.6) dmg = w.damage;
-        this.damage(e, dmg * (e === owner ? 0.5 : 1), owner);
+        this.damage(e, dmg * (e === owner ? 0.5 : 1), owner, false, pos);
         if (e === owner) {
           e.vy = 15;
           e.grounded = false;
@@ -1397,7 +1410,7 @@ export class Game {
             Math.hypot(e.x - fire.pos.x, e.z - fire.pos.z) < 3.2 &&
             e.y < 1.5
           )
-            this.damage(e, 8, fire.owner);
+            this.damage(e, 8, fire.owner, false, fire.pos);
       }
     }
     this.fires = this.fires.filter((f) => f.effect.life > 0);
@@ -1601,12 +1614,21 @@ export class Game {
     let visible = false;
     if (e.decision <= 0) {
       e.decision = d.think;
+      const selection = selectOpponent(
+        e,
+        enemies,
+        (opponent) =>
+          !(e.blindedUntil > this.clock) &&
+          this.hasLOS(origin, this.eye(opponent)),
+      );
+      target = selection.target;
+      if (target !== e.targetEntity) e.seen = 0;
       e.targetEntity = target;
-      visible =
-        this.hasLOS(origin, this.eye(target)) && !(e.blindedUntil > this.clock);
+      visible = selection.visible;
       e.visible = visible;
       if (visible) {
-        e.lastKnown = { x: target.x, z: target.z };
+        e.lastKnown = { x: target.x, y: target.y, z: target.z };
+        e.lastKnownAt = this.clock;
         if (Math.random() < 0.3) e.strafe *= -1;
       } else e.seen = 0;
     } else {
@@ -1616,8 +1638,12 @@ export class Game {
         this.hasLOS(origin, this.eye(target)) &&
         !(e.blindedUntil > this.clock);
     }
+    e.visible = visible;
+    if (!visible) e.seen = 0;
     const distance = Math.hypot(e.x - target.x, e.z - target.z);
-    e.yaw = Math.atan2(-(target.x - e.x), -(target.z - e.z));
+    if (visible) e.yaw = Math.atan2(-(target.x - e.x), -(target.z - e.z));
+    if (e.lastKnown && this.clock - (e.lastKnownAt ?? this.clock) > 3.5)
+      e.lastKnown = null;
     let dx = 0,
       dz = 0;
     if (visible) {
@@ -1660,8 +1686,16 @@ export class Game {
           e.lastShotAt = this.clock;
           e.ammo--;
           e.shootTimer = weapon.interval / d.fire;
-          const soundLevel = clamp(1 - distance / 55, 0.06, 0.5);
-          this.audio.play("rifle", soundLevel);
+          if (this.audio.playAt && this.player)
+            this.audio.playAt(
+              "rifle",
+              origin,
+              this.eye(this.player),
+              this.yaw,
+              0.7,
+              !this.hasLOS(origin, this.eye(this.player), false),
+            );
+          else this.audio.play("rifle", clamp(1 - distance / 55, 0.06, 0.5));
         }
       }
     } else {
@@ -1692,15 +1726,79 @@ export class Game {
         e.yaw = Math.atan2(-dx, -dz);
       }
     }
+    // Retreat to reachable occlusion, not merely backwards into another lane.
+    const defensive =
+      e.reload > 0 || e.health < 35 || e.pressureUntil > this.clock;
+    if (e.coverPlan && (this.clock >= e.coverUntil || !defensive)) {
+      e.coverPlan = null;
+      e.coverReadyAt = this.clock + 1.1;
+    }
+    if (
+      !e.coverPlan &&
+      defensive &&
+      e.lastKnown &&
+      this.clock >= (e.coverReadyAt || 0)
+    ) {
+      e.coverReadyAt = this.clock + 0.75;
+      const threat = e.lastKnown;
+      const plan = chooseCover(
+        e,
+        threat,
+        this.world,
+        (point) =>
+          !this.hasLOS(
+            v3(threat.x, (threat.y || 0) + 1.66, threat.z),
+            v3(point.x, (point.y || 0) + 1.66, point.z),
+          ),
+        this.entities,
+      );
+      if (plan) {
+        e.coverPlan = plan;
+        e.coverUntil = this.clock + 1.8;
+      }
+    }
+    if (e.coverPlan) {
+      const direction = followRoute(e, e.coverPlan.path);
+      dx = direction.x;
+      dz = direction.z;
+      if (!visible && Math.hypot(dx, dz) > 0) e.yaw = Math.atan2(-dx, -dz);
+    }
+    // Teammates spread out rather than occupying the same firing position.
+    for (const other of this.entities) {
+      if (other === e || !other.alive || other.team !== e.team) continue;
+      const separation = Math.hypot(e.x - other.x, e.z - other.z);
+      if (separation > 0.01 && separation < 1.15) {
+        dx += ((e.x - other.x) / separation) * (1.15 - separation);
+        dz += ((e.z - other.z) / separation) * (1.15 - separation);
+      }
+    }
     const speed = e.reload > 0 ? d.speed * 0.65 : d.speed;
     const norm = Math.max(1, Math.hypot(dx, dz));
-    e.vx = (dx / norm) * speed;
-    e.vz = (dz / norm) * speed;
+    const response = 1 - Math.exp(-(e.grounded ? 18 : 9) * dt);
+    e.vx += ((dx / norm) * speed - e.vx) * response;
+    e.vz += ((dz / norm) * speed - e.vz) * response;
     const oldX = e.x,
       oldZ = e.z;
     moveBody(e, e.vx * dt, e.vz * dt, this.world.boxes);
     const moved = Math.hypot(e.x - oldX, e.z - oldZ);
     e.animationPhase = (e.animationPhase || e.seed) + moved * 2.7;
+    e.footDistance = (e.footDistance || 0) + moved;
+    if (
+      e.grounded &&
+      e.footDistance > 3.4 &&
+      this.audio.playAt &&
+      this.player
+    ) {
+      e.footDistance = 0;
+      if (Math.hypot(e.x - this.player.x, e.z - this.player.z) < 20)
+        this.audio.playAt(
+          "step",
+          this.eye(e),
+          this.eye(this.player),
+          this.yaw,
+          0.65,
+        );
+    }
     e.jumpCooldown = Math.max(0, (e.jumpCooldown || 0) - dt);
     e.stuckTime =
       moved < dt * 0.4 && Math.hypot(dx, dz) > 0.1
@@ -1779,7 +1877,7 @@ export class Game {
         );
     }
     let aimPitch = 0;
-    if (e.targetEntity?.alive) {
+    if (e.visible && e.targetEntity?.alive) {
       const dy = e.targetEntity.y + 1.5 - (e.y + 1.5),
         distance = Math.hypot(e.targetEntity.x - e.x, e.targetEntity.z - e.z);
       aimPitch = clamp(Math.atan2(dy, distance), -0.5, 0.5);
@@ -1827,6 +1925,22 @@ export class Game {
       m.parts.muzzleFlash.rotation.z = this.clock * 71;
     }
     m.group.scale.y = 1;
+    if (m.parts.leftElbow && m.parts.weaponRig && m.parts.upperBody) {
+      const reloadReach = e.reload > 0 ? Math.sin(e.reload * 5) * 0.12 : 0;
+      // Weapon and shoulders share an upper-body parent. Solve directly in
+      // that space instead of updating/inverting the entire skeleton twice.
+      const rig = m.parts.weaponRig;
+      const leftTarget = v3(-0.12, -0.1 - reloadReach, -0.17 + reloadReach)
+        .multiply(rig.scale)
+        .applyQuaternion(rig.quaternion)
+        .add(rig.position);
+      const rightTarget = v3(0, -0.13, -0.01)
+        .multiply(rig.scale)
+        .applyQuaternion(rig.quaternion)
+        .add(rig.position);
+      aimArm(m.parts.leftArm, m.parts.leftElbow, leftTarget, -1);
+      aimArm(m.parts.rightArm, m.parts.rightElbow, rightTarget, 1);
+    }
   }
   updateEffects(dt) {
     for (let i = this.effects.length - 1; i >= 0; i--) {
@@ -1950,7 +2064,7 @@ export class Game {
       this.camera.lookAt(-7, 0, -3);
       this.camera.updateProjectionMatrix();
     } else if (this.state !== "paused" && this.state !== "results") {
-      const step = 1 / 60;
+      const step = SIMULATION_STEP;
       this.accumulator = Math.min(0.2, this.accumulator + elapsed);
       while (this.accumulator + 1e-9 >= step) {
         this.accumulator = Math.max(0, this.accumulator - step);

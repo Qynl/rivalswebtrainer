@@ -63,16 +63,17 @@ export class WeaponAnimator {
     const reloadState = reloadPose(reloading ? reload : 0),
       stride = grounded ? motion : motion * 0.12;
     const profile = model.userData.poseOffset || {};
+    const sight = model.userData.adsPoint;
+    const hipX = 0.09 + (profile.x || 0),
+      hipY = -0.1 + (profile.y || 0);
+    const aimX = sight ? -sight.x * model.scale.x : hipX - 0.277;
+    const aimY = sight ? -sight.y * model.scale.y : hipY - 0.015;
     const poseX =
-      0.09 +
-      (profile.x || 0) -
-      0.277 * ads +
+      THREE.MathUtils.lerp(hipX, aimX, ads) +
       Math.sin(phase * 0.5) * 0.009 * stride -
       lookX * (1 - ads);
     const poseY =
-      -0.1 +
-      (profile.y || 0) -
-      0.015 * ads +
+      THREE.MathUtils.lerp(hipY, aimY, ads) +
       Math.cos(phase) * 0.006 * stride -
       kick * 0.34 -
       swap * 0.65 -

@@ -1,3 +1,4 @@
+import { createArenaDressing } from "./arena-dressing.js";
 import { batchFixedMeshes } from "./batching.js";
 import { muzzleFlash } from "./animation.js";
 import { ArenaAtmosphere } from "./atmosphere.js";
@@ -645,6 +646,7 @@ export class ArenaWorld {
     this.staticStats = batchFixedMeshes(this.group, {
       rayMeshes: this.solidMeshes,
     });
+    this.group.add(createArenaDressing(this.graphics, this.materials));
     this.group.updateMatrixWorld(true);
   }
   glow(x, y, z, w, h, d, color = 0x88e1eb) {
@@ -767,7 +769,7 @@ export function createCharacter(team, name = "BOT") {
     roughness: 0.8,
   });
   const dark = new THREE.MeshStandardMaterial({
-    color: 0x414359,
+    color: 0x293946,
     roughness: 0.8,
   });
   const skin = new THREE.MeshStandardMaterial({
@@ -792,8 +794,8 @@ export function createCharacter(team, name = "BOT") {
   box("rightArm", 0.24, 0.64, 0.26, armor, 0.51, 1.1, -0.13);
   box("leftLeg", 0.28, 0.7, 0.3, dark, -0.23, 0.37, 0);
   box("rightLeg", 0.28, 0.7, 0.3, dark, 0.23, 0.37, 0);
-  box("gun", 0.15, 0.19, 0.7, dark, 0.37, 1.22, -0.53);
-  box("barrel", 0.06, 0.06, 0.3, dark, 0.37, 1.23, -0.95);
+  box("gun", 0.15, 0.19, 0.7, dark, 0.18, 1.22, -0.53);
+  box("barrel", 0.06, 0.06, 0.3, dark, 0.18, 1.23, -0.95);
   const visorMaterial = new THREE.MeshStandardMaterial({
     color: team === 0 ? 0x235966 : 0x644936,
     emissive: team === 0 ? 0x59aab7 : 0xbb7543,
@@ -847,6 +849,50 @@ export function createCharacter(team, name = "BOT") {
       joint.add(palm);
     }
   }
+  // Articulated arms replace the old backward-facing single-piece rotations.
+  for (const side of ["left", "right"]) {
+    const shoulder = parts[side + "Arm"];
+    for (const child of [...shoulder.children]) {
+      shoulder.remove(child);
+      child.traverse((o) => o.geometry?.dispose());
+    }
+    const upperArm = new THREE.Mesh(
+      new RoundedBoxGeometry(0.24, 0.34, 0.26, 1, 0.012),
+      armor,
+    );
+    upperArm.position.y = -0.17;
+    upperArm.castShadow = true;
+    shoulder.add(upperArm);
+    const pad = new THREE.Mesh(
+      new RoundedBoxGeometry(0.28, 0.15, 0.29, 1, 0.018),
+      dark,
+    );
+    pad.position.y = -0.05;
+    pad.castShadow = true;
+    shoulder.add(pad);
+    const elbow = new THREE.Group();
+    elbow.position.y = -0.34;
+    shoulder.add(elbow);
+    parts[side + "Elbow"] = elbow;
+    const forearm = new THREE.Mesh(
+      new RoundedBoxGeometry(0.22, 0.4, 0.24, 1, 0.012),
+      dark,
+    );
+    forearm.position.y = -0.2;
+    forearm.castShadow = true;
+    elbow.add(forearm);
+    const hand = new THREE.Group();
+    hand.position.y = -0.4;
+    elbow.add(hand);
+    parts[side + "Hand"] = hand;
+    const glove = new THREE.Mesh(
+      new RoundedBoxGeometry(0.23, 0.14, 0.25, 1, 0.015),
+      dark,
+    );
+    glove.castShadow = true;
+    hand.add(glove);
+    batchFixedMeshes(shoulder);
+  }
   // Two-bone legs: knees fold independently instead of scaling the whole actor.
   for (const side of ["left", "right"]) {
     const hip = parts[side + "Leg"],
@@ -893,7 +939,7 @@ export function createCharacter(team, name = "BOT") {
   }
   parts.head = headRig;
   const weaponRig = new THREE.Group();
-  weaponRig.position.set(0.37, 1.23, -0.25);
+  weaponRig.position.set(0.18, 1.23, -0.25);
   group.add(weaponRig);
   parts.weaponRig = weaponRig;
   parts.gun.material = new THREE.MeshStandardMaterial({

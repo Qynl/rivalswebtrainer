@@ -2095,3 +2095,87 @@ kbd {
     bottom: 124px;
   }
 }
+
+/* Compact combat feedback: fixed centre dot, physical spread and four pooled arcs. */
+#crosshair {
+  --reticle-gap: 7px;
+}
+#crosshair i:nth-child(1),
+#crosshair i:nth-child(2) {
+  width: 1.5px;
+  height: 5px;
+  left: 12.25px;
+  bottom: auto;
+}
+#crosshair i:nth-child(1) {
+  top: calc(12px - var(--reticle-gap) - 5px);
+}
+#crosshair i:nth-child(2) {
+  top: calc(14px + var(--reticle-gap));
+}
+#crosshair i:nth-child(3),
+#crosshair i:nth-child(4) {
+  height: 1.5px;
+  width: 5px;
+  top: 12.25px;
+  right: auto;
+}
+#crosshair i:nth-child(3) {
+  left: calc(12px - var(--reticle-gap) - 5px);
+}
+#crosshair i:nth-child(4) {
+  left: calc(14px + var(--reticle-gap));
+}
+#hitmarker {
+  width: 34px;
+  height: 34px;
+  filter: drop-shadow(0 1px 2px #1b252c);
+  transition:
+    opacity 0.08s,
+    transform 0.08s;
+}
+#hitmarker svg {
+  width: 100%;
+  height: 100%;
+}
+#hitmarker path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: square;
+}
+#hitmarker.headshot {
+  transform: translate(-50%, -50%) scale(1.15);
+}
+#damage-directions {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 180px;
+  height: 180px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.damage-arc {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  will-change: transform, opacity;
+}
+.damage-arc svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.damage-arc path {
+  fill: none;
+  stroke: #ff8c71;
+  stroke-width: 4;
+  stroke-linecap: round;
+  filter: drop-shadow(0 1px 2px #40251f);
+}
+@media (prefers-reduced-motion: reduce) {
+  #hitmarker {
+    transition: opacity 0.08s;
+  }
+}

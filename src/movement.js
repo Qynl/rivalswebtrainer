@@ -1,5 +1,7 @@
 import { clamp, GRAVITY } from "./physics.js";
 
+export const SIMULATION_STEP = 1 / 120;
+
 export const MOVEMENT = Object.freeze({
   runSpeed: 12.2,
   meleeSpeed: 14.1,

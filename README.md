@@ -63,16 +63,28 @@ Reloads animate magazine extraction/insertion, bolt motion and the support hand.
 
 Graphics use darker panel-seamed concrete, a compact edge HUD, distinct original weapon models and 3D loadout previews, original procedural concrete/metal/window textures, an atmospheric sky, environment-lit metal, rounded geometry, armored bots, building vents/windows, and emissive arena trims. The sky has drifting procedural clouds and a directional sun. Fixed-size combat pools add surface hit marks, debris, bouncing shell casings and muzzle-aligned tracers without allocating a new mesh for each hit. Everything is generated locally. The world is finished with depth-aware contact shading, two-sample MSAA, restrained quarter-resolution HDR bloom, gentle sharpening and a neutral color grade; the weapon overlay stays crisp. Reloads include a raised/banked receiver, magazine extraction, supporting-hand/wrist motion and a bolt rack. Equip, jump/landing inertia, strafing, throw follow-through, blade trails and eased bot deaths provide distinct action feedback. Enable **Performance mode** in Settings to reduce render resolution and bypass post-processing and dynamic shadows on slower hardware.
 
+## Latest movement, tactics and combat-readability pass
+
+- Fixed **120 Hz simulation** with the existing render interpolation; this is a physics update rate, not a claim of 120 rendered FPS.
+- Properly aligned rear-notch/front-fibre ADS on Rifle, SMG, Handgun, Uzi, Shotgun, Shorty and Grenade Launcher, rather than merely zooming the hip-fire pose.
+- Elbow-jointed bot arms use analytic IK to keep both hands on their rifle as it aims and reloads. Corrects the old backward-pointing arm rotations.
+- Bots prefer visible opponents, reset reaction progress on loss of sight, seek reachable cover while reloading/under pressure, and spread away from teammates. Hidden target coordinates no longer drive their head aim.
+- Positional enemy gunfire, nearby footsteps and explosions, with heading-relative stereo, distance attenuation and wall-muffled gunfire. Audio channels are capped and recycled.
+- Four short-lived direction-of-damage arcs, a physical-spread reticle and a cleaner SVG headshot marker. No extra permanent status panels.
+- Offline stencil wayfinding, muted north/south colours, lane arrows and cover base trims. These are visual only; the compact Arena collision layout is unchanged. Dressing is merged into two extra batches.
+
+See [the combat-readability report](docs/combat-readability-pass.md) for validation and limitations.
+
 ## Tests
 
 ```sh
-npm test                   # 110 input, abilities, physics, movement, rendering-lifecycle, effects and combat tests
+npm test                   # 124 input, abilities, physics, movement, rigging, audio, rendering and combat tests
 npm run build              # Production build + offline cache generation
 npx playwright install chromium
 npm run test:browser       # Browser integration test
 ```
 
-You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tests. Most integration tests validate an actual WebGL frame and pointer lock, then disable rendering to run deterministic combat/AI checks efficiently on machines using software graphics. Dedicated graphics tests retain real rendering for all 23 weapon models, skeletal bots, pooled effects, contact-shading pixel comparisons, bloom resize and the Performance bypass. They exercise loadout selection, shots/headshots, reloads, jumps, grenade/smoke/molotov lifecycles, pause/settings, map selection, team bots, five-round victory, results, and mobile layout. The ten-test browser suite also covers wizard steps, draft cancellation, compact HUD dimensions, tall walls, real Bow/Medkit input, Flashbang throws and rematch selection. Additional browser tests check arena floor layers, actual stair traversal, slide-jump momentum, Shift/F controls, katana reflection, mouse spike filtering, graphics settings, and the production cache/reload with networking disabled.
+You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tests. Most integration tests validate an actual WebGL frame and pointer lock, then disable rendering to run deterministic combat/AI checks efficiently on machines using software graphics. Dedicated graphics tests retain real rendering for all 23 weapon models, skeletal bots, pooled effects, contact-shading pixel comparisons, bloom resize and the Performance bypass. They exercise loadout selection, shots/headshots, reloads, jumps, grenade/smoke/molotov lifecycles, pause/settings, map selection, team bots, five-round victory, results, and mobile layout. The eleven-test browser suite also covers wizard steps, draft cancellation, compact HUD dimensions, tall walls, real Bow/Medkit input, Flashbang throws and rematch selection. Additional browser tests check arena floor layers, actual stair traversal, slide-jump momentum, Shift/F controls, katana reflection, mouse spike filtering, graphics settings, and the production cache/reload with networking disabled.
 
 ## Structure
 
@@ -86,6 +98,10 @@ You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tes
 - `src/data.js`: weapons, settings and difficulty parameters.
 - `src/audio.js`: synthesized sound effects.
 - `src/input.js`: pointer-lock mouse-packet validation.
+- `src/bot-tactics.js`: visibility-aware selection, bounded reachable-cover search and route following.
+- `src/rigging.js`: analytic two-bone arm IK.
+- `src/combat-feedback.js`: camera-relative damage bearings, spatial mix and projected reticle spread.
+- `src/arena-dressing.js`: cached offline stencil atlas and non-colliding Arena wayfinding.
 - `src/graphics.js`: offline procedural textures, palette and sky.
 - `src/rendering.js`: depth-aware HDR finishing, antialiasing, soft bloom and render-target lifecycle.
 - `src/atmosphere.js`: analytic procedural sky, clouds and sun.

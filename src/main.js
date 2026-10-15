@@ -1,3 +1,4 @@
+import { DamageCompass, reticleGap } from "./combat-feedback.js";
 import "./style.css";
 import { WeaponPreview } from "./weapon-preview.js";
 import { Game } from "./game.js";
@@ -12,6 +13,16 @@ import {
 } from "./data.js";
 const $ = (id) => document.getElementById(id),
   show = (id, on) => $(id).classList.toggle("hidden", !on);
+const damageCompass = new DamageCompass();
+let feedbackClock = 0;
+const damageArcs = Array.from({ length: 4 }, () => {
+  const arc = document.createElement("div");
+  arc.className = "damage-arc";
+  arc.innerHTML =
+    '<svg viewBox="-90 -90 180 180"><path d="M -24 -67 Q 0 -81 24 -67"/></svg>';
+  document.getElementById("damage-directions").append(arc);
+  return arc;
+});
 const savedSettings = loadSaved("rivals-settings", {});
 const settings = { ...DEFAULT_SETTINGS };
 for (const key of ["sensitivity", "fov", "volume"])
@@ -201,11 +212,29 @@ const events = {
     $("timer").textContent = g.range
       ? "∞"
       : `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
-    show("crosshair", g.player.alive);
     const scoped = g.aiming && g.loadout[g.slot] === "sniper";
+    show("crosshair", g.player.alive && !scoped);
+    const gap = reticleGap(
+      WEAPONS[g.loadout[g.slot]],
+      g.player.grounded,
+      g.aiming,
+      innerHeight,
+      g.camera.fov,
+    );
+    $("crosshair").style.setProperty(
+      "--reticle-gap",
+      `${gap + Math.min(3, g.kick * 12)}px`,
+    );
+    const feedbackDt = Math.max(0, g.clock - feedbackClock);
+    feedbackClock = g.clock;
+    damageCompass.update(feedbackDt, g.player, g.yaw).forEach((slot, i) => {
+      damageArcs[i].style.transform = `rotate(${slot.bearing}rad)`;
+      damageArcs[i].style.opacity = g.player.alive
+        ? Math.min(1, slot.life / 0.22) * slot.strength
+        : 0;
+    });
     show("scope", scoped);
-    $("crosshair").style.transform =
-      `translate(-50%,-50%) scale(${g.aiming ? 0.55 : 1 + g.kick * 3})`;
+    $("crosshair").style.transform = "translate(-50%,-50%)";
     show(
       "reload-indicator",
       g.reloadTime > 0 ||
@@ -230,6 +259,11 @@ const events = {
     show("fps-counter", settings.showFps);
   },
   pause(on) {
+    if (on) {
+      damageCompass.clear();
+      for (const arc of damageArcs) arc.style.opacity = 0;
+      game?.audio.clearSpatial?.();
+    }
     show("pause", on);
     if (on) {
       show("flash-overlay", false);
@@ -238,6 +272,9 @@ const events = {
     show("settings", false);
   },
   lobby() {
+    damageCompass.clear();
+    for (const arc of damageArcs) arc.style.opacity = 0;
+    game?.audio.clearSpatial?.();
     show("flash-overlay", false);
     show("paint-overlay", false);
     clearTimeout(bannerTimeout);
@@ -252,10 +289,12 @@ const events = {
   hit(head) {
     clearTimeout(hitTimeout);
     $("hitmarker").style.color = head ? "#ffcb8f" : "white";
+    $("hitmarker").classList.toggle("headshot", head);
     $("hitmarker").style.opacity = 1;
     hitTimeout = setTimeout(() => ($("hitmarker").style.opacity = 0), 160);
   },
-  hurt() {
+  hurt(source, amount) {
+    if (game.player) damageCompass.add(game.player, source, amount, game.yaw);
     clearTimeout(hurtTimeout);
     $("damage-vignette").style.opacity = 1;
     hurtTimeout = setTimeout(
@@ -278,6 +317,9 @@ const events = {
     setTimeout(() => row.remove(), 6000);
   },
   feedClear() {
+    damageCompass.clear();
+    feedbackClock = game?.clock || 0;
+    for (const arc of damageArcs) arc.style.opacity = 0;
     $("kill-feed").replaceChildren();
     $("damage-vignette").style.opacity = 0;
     $("hitmarker").style.opacity = 0;

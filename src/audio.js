@@ -1,8 +1,23 @@
+import { spatialMix } from "./combat-feedback.js";
+const SPATIAL_LIFETIME = Object.freeze({
+  rifle: 0.16,
+  smg: 0.12,
+  pistol: 0.18,
+  shotgun: 0.36,
+  sniper: 0.36,
+  explosion: 0.8,
+  step: 0.12,
+  land: 0.18,
+  bow: 0.2,
+  flame: 0.23,
+});
 export class GameAudio {
   constructor() {
     this.ctx = null;
     this.volume = 0.65;
     this.noise = null;
+    this.spatialVoices = new Set();
+    this.output = null;
   }
   init() {
     try {
@@ -32,12 +47,12 @@ export class GameAudio {
       );
     g.gain.setValueAtTime(level * this.volume, this.ctx.currentTime);
     g.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
-    o.connect(g).connect(this.ctx.destination);
+    o.connect(g).connect(this.output || this.ctx.destination);
     o.start();
     o.stop(this.ctx.currentTime + duration);
   }
   noiseHit(duration, level, filter = 1000) {
-    if (!this.ctx || !this.noise) return;
+    if (!this.ctx || !this.noise || !this.volume) return;
     const s = this.ctx.createBufferSource(),
       f = this.ctx.createBiquadFilter(),
       g = this.ctx.createGain();
@@ -46,9 +61,54 @@ export class GameAudio {
     f.frequency.value = filter;
     g.gain.setValueAtTime(level * this.volume, this.ctx.currentTime);
     g.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
-    s.connect(f).connect(g).connect(this.ctx.destination);
+    s.connect(f)
+      .connect(g)
+      .connect(this.output || this.ctx.destination);
     s.start(0, Math.random() * 0.5);
     s.stop(this.ctx.currentTime + duration);
+  }
+  playAt(name, position, listener, yaw = 0, level = 1, occluded = false) {
+    if (!this.ctx || !this.volume || !listener || this.spatialVoices.size >= 32)
+      return;
+    const mix = spatialMix(listener, position, yaw, occluded);
+    if (mix.gain * level < 0.015) return;
+    const pan = this.ctx.createStereoPanner(),
+      gain = this.ctx.createGain(),
+      filter = this.ctx.createBiquadFilter();
+    pan.pan.value = mix.pan;
+    gain.gain.value = mix.gain;
+    filter.type = "lowpass";
+    filter.frequency.value = mix.cutoff;
+    pan.connect(filter).connect(gain).connect(this.ctx.destination);
+    const voice = { pan, gain, filter, timer: null };
+    this.spatialVoices.add(voice);
+    const previous = this.output;
+    try {
+      this.output = pan;
+      this.play(name, level);
+    } finally {
+      this.output = previous;
+      voice.timer = setTimeout(
+        () => {
+          pan.disconnect();
+          gain.disconnect();
+          filter.disconnect();
+          this.spatialVoices.delete(voice);
+        },
+        ((SPATIAL_LIFETIME[name] || 0.8) + 0.06) * 1000,
+      );
+      voice.timer.unref?.();
+    }
+  }
+  clearSpatial() {
+    for (const voice of this.spatialVoices) {
+      clearTimeout(voice.timer);
+      voice.pan.disconnect();
+      voice.gain.disconnect();
+      voice.filter.disconnect();
+    }
+    this.spatialVoices.clear();
+    this.output = null;
   }
   play(name, level = 1) {
     switch (name) {

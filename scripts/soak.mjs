@@ -32,6 +32,8 @@ await page.evaluate(() => {
   g.renderer.setPixelRatio(0.5);
   g.renderer.shadowMap.enabled = false;
   g.presentation.resize();
+  g.audio.volume = 0;
+  g.audio.clearSpatial?.();
   g.audio.play = () => {};
   g.audio.noiseHit = () => {};
   g.world.build("blockout");
@@ -49,6 +51,7 @@ try {
     const report = await page.evaluate(
       async ({ batch }) => {
         const { WEAPONS } = await import("/src/data.js");
+        const { SIMULATION_STEP } = await import("/src/movement.js");
         const g = window.__arena;
         let frames = 0;
         const rendered = [];
@@ -80,19 +83,19 @@ try {
           g.blindTime = 0;
           g.keys.clear();
           g.keys.add(batch % 2 ? "KeyW" : "KeyD");
-          for (let i = 0; i < 90; i++) {
-            if (i % 30 === 0) {
+          for (let i = 0; i < 180; i++) {
+            if (i % 60 === 0) {
               g.slide();
-              if (i === 30) g.jump();
+              if (i === 60) g.jump();
             }
             if (w.type === "bow") {
               g.bowCharge = 1.2;
-              g.bowRelease = i % 40 === 0;
-            } else if (i % 8 === 0) g.trigger = true;
+              g.bowRelease = i % 80 === 0;
+            } else if (i % 16 === 0) g.trigger = true;
             g.mouseDown = w.type === "auto" || w.type === "flame";
             if (w.type === "heal") g.player.health = 35;
-            g.simulate(1 / 60);
-            g.updateCamera(1 / 60);
+            g.simulate(SIMULATION_STEP);
+            g.updateCamera(SIMULATION_STEP);
             frames++;
             for (const entity of g.entities)
               if (

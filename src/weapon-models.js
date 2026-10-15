@@ -121,8 +121,36 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
       dark,
     );
   const sights = (zFront, zRear) => {
-    box(0.24, -0.071, zRear, 0.065, 0.04, 0.035, dark);
-    box(0.24, -0.034, zFront, 0.018, 0.055, 0.025, silver);
+    // Proportional open-notch irons, with a genuinely aligned front fibre.
+    const compact = id === "pistol" || id === "uzi";
+    const height = compact ? 0.024 : 0.036,
+      halfWidth = compact ? 0.019 : 0.025;
+    const sightY = -0.061 + height - 0.005;
+    box(0.24, -0.071, zRear, halfWidth * 2 + 0.022, 0.02, 0.04, dark);
+    for (const x of [0.24 - halfWidth, 0.24 + halfWidth])
+      box(
+        x,
+        -0.061 + height / 2,
+        zRear,
+        compact ? 0.009 : 0.012,
+        height,
+        0.035,
+        dark,
+      );
+    box(0.24, -0.065, zFront, 0.055, 0.028, 0.035, dark);
+    const stem = sightY + 0.068;
+    box(0.24, -0.066 + stem / 2, zFront, 0.012, stem, 0.025, silver);
+    box(
+      0.24,
+      sightY,
+      zFront + 0.014,
+      0.008,
+      0.006,
+      0.004,
+      material(0x91bf9d, 0.1, 0.6),
+    );
+    g.userData.adsPoint = new THREE.Vector3(0.24, sightY, zRear + 0.025);
+    g.userData.frontSight = new THREE.Vector3(0.24, sightY, zFront + 0.014);
   };
   const receiver = (length = 0.34) => {
     box(0.24, -0.16, -0.72, 0.14, 0.14, length);

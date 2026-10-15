@@ -54,6 +54,7 @@ try {
       vx: 0,
       vz: 0,
       targetEntity: g.player,
+      visible: true,
       lastShotAt: 0,
     });
     for (let i = 0; i < 40; i++) g.animateBot(bot, 1 / 60);
@@ -74,6 +75,8 @@ try {
         g.swingTime = pose === "slash" ? 0.14 : 0;
         g.deflectTime = pose === "guard" ? 1 : 0;
         g.kick = 0;
+        g.aiming = pose === "ads";
+        g.events.tick(g);
         for (let i = 0; i < 40; i++) g.updateCamera(1 / 60);
         g.world.atmosphere.update(20, false);
         g.renderer.autoClear = true;
@@ -104,6 +107,8 @@ try {
     "sniper",
   ])
     await draw(id);
+  await draw("rifle", "ads");
+  await draw("pistol", "ads");
   await draw("rifle", "reload");
   await draw("katana", "guard");
   const report = await page.evaluate(() => ({
