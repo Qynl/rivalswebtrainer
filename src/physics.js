@@ -139,8 +139,8 @@ export function moveBody(body, dx, dz, boxes) {
     for (let pass = 0; pass < 2; pass++)
       for (const b of boxes) {
         if (
-          body.y < surfaceHeight(b, body.x, body.z) - 0.04 &&
-          body.y + body.height > b.minY + 0.02 &&
+          body.y < surfaceHeight(b, body.x, body.z) - EPSILON &&
+          body.y + body.height > b.minY + EPSILON &&
           circleBox(body.x, body.z, body.radius, b)
         ) {
           if (!tryStep(body, body.x, body.z, b, boxes)) {

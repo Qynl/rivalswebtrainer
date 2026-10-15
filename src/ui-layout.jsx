@@ -1,3 +1,4 @@
+import { OnlineButton } from "./net/Multiplayer.jsx";
 import React from "react";
 import { Hud } from "./ui-hud.jsx";
 // Declarative layout retained from the original UI; content and handlers are React-owned.
@@ -17,7 +18,7 @@ export function Layout({ bind, content }) {
             <span className="brand-mark">{"R"}</span>
             <span>
               {"RIVALS"}
-              <span className="brand-sub">{"OFFLINE ARENA"}</span>
+              <span className="brand-sub">{"OFFLINE + ONLINE"}</span>
             </span>
           </a>
           <nav>
@@ -70,22 +71,20 @@ export function Layout({ bind, content }) {
             {" YOUR ARENA. YOUR RULES.\n        "}
           </div>
           <h1>
-            {"NO LAG."}
+            {"LOCK IN."}
             <br />
             {"JUST "}
             <span>{"RIVALS."}</span>
           </h1>
           <p className="hero-description">
-            {"\n          All the pressure. None of the ping."}
+            {"Train offline. Challenge friends online."}
             <br />
-            {
-              "Sharpen your aim against bots\n          built to fight back.\n        "
-            }
+            {"Sharp aim. Clean movement. Your arena.\n        "}
           </p>
           <div className="hero-tags">
             <span>
               <i className="tag-icon">{"\u25c9"}</i>
-              {" 100% OFFLINE"}
+              {" OFFLINE BOTS + ONLINE LOBBIES"}
             </span>
             <span>
               <i className="tag-icon">{"\u2301"}</i>
@@ -210,6 +209,8 @@ export function Layout({ bind, content }) {
               </span>
               <span className="card-arrow">{"\u2197"}</span>
             </button>
+            <OnlineButton />
+
             <div className="loadout-summary">
               <span className="mini-label">{"YOUR LOADOUT"}</span>
               <div id="loadout-mini" {...bind["loadout-mini"]}>

@@ -143,7 +143,7 @@ function snapshot(g, force = false) {
     slots: g.loadout,
     slot: g.slot,
     team: g.entities
-      .filter((e) => e.team === 0)
+      .filter((e) => e.team === p.team)
       .map((e) => ({
         name: e.name,
         health: Math.ceil(e.health),
@@ -238,6 +238,7 @@ export const events = {
     hud.set({ flash: 0, paint: 0 });
   },
   round(n, score, range) {
+    if (game?.network) ui.set({ setup: null });
     hud.set({
       round: range ? "PRACTICE" : "ROUND " + n,
       score: [...score],
@@ -311,7 +312,8 @@ export const events = {
   },
   results(g) {
     clearTimeout(bannerTimer);
-    const won = g.score[0] > g.score[1],
+    const team = g.network ? g.player.team : 0;
+    const won = g.score[team] > g.score[1 - team],
       stats = { ...g.matchStats };
     ui.set({
       screen: "results",
@@ -444,3 +446,23 @@ export const actions = {
     ui.set({ settingsOpen: false, paused: !!ui.get().settingsFromPause });
   },
 };
+
+export async function startOnlineMatch(client, map, snapshot) {
+  const engine = game;
+  if (!engine) throw Error("Game is still loading");
+  const { MultiplayerSession } = await import("./net/session.js");
+  if (!client.connection || client.activeMatchId !== snapshot.matchId)
+    throw Error("Match is no longer active");
+  const session = new MultiplayerSession(engine, client, map, snapshot);
+  ui.set({
+    screen: "game",
+    setup: null,
+    paused: engine.state === "paused",
+    result: null,
+  });
+  return session;
+}
+
+export function backToLobby() {
+  game?.quit();
+}

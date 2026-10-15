@@ -19,6 +19,45 @@ export function updateBotWeapon(model, e) {
   }
   p.botLeftGrip.set(-0.12, -0.1, -0.17);
   p.botRightGrip.set(0, -0.13, -0.01);
+  if (e.netId && !melee) {
+    p.gun.visible = p.barrel.visible = p.muzzleFlash.visible = false;
+    if (p.meleeSocket) p.meleeSocket.visible = false;
+    if (!p.onlineSocket) {
+      p.onlineSocket = new THREE.Group();
+      p.weaponRig.add(p.onlineSocket);
+    }
+    const socket = p.onlineSocket,
+      id = e.activeWeapon || "rifle";
+    if (socket.userData.id !== id) {
+      const mats = new Set();
+      socket.traverse((o) => {
+        o.geometry?.dispose();
+        if (o.material) mats.add(o.material);
+      });
+      for (const m of mats) m.dispose();
+      socket.clear();
+      const weapon = createViewModel(id, WEAPONS[id], { hands: false });
+      weapon.scale.setScalar(0.85);
+      weapon.position.set(-0.24 * 0.85, 0.24 * 0.85, 0.62 * 0.85);
+      socket.add(weapon);
+      socket.userData.id = id;
+      socket.userData.weapon = weapon;
+    }
+    socket.visible = true;
+    const weapon = socket.userData.weapon,
+      parts = weapon.userData,
+      age = (e.fireFlash || 0) > 0 ? 0 : 1;
+    if (parts.muzzleFlash) {
+      parts.muzzleFlash.visible = age === 0;
+      parts.muzzleFlash.rotation.z = (e.netShot || 0) * 19;
+    }
+    if (parts.pilotFlame)
+      parts.pilotFlame.scale.y = 1 + Math.sin((e.netShot || 0) * 31) * 0.13;
+    if (parts.nozzleGlow)
+      parts.nozzleGlow.material.emissiveIntensity = age === 0 ? 1.8 : 0.15;
+    return;
+  }
+  if (p.onlineSocket) p.onlineSocket.visible = false;
   if (!melee) {
     if (p.meleeSocket) p.meleeSocket.visible = false;
     return;

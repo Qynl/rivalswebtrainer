@@ -274,14 +274,12 @@ test("new map roster adds two genuinely different authored layouts", () => {
     assert.ok(MAPS.find((m) => m.id === id));
   assert.notDeepEqual(EXTRA_COURTS.foundry.cover, EXTRA_COURTS.courtyard.cover);
 });
-test("Arena rebalance sits between the cramped/towering and previous large layouts", () => {
-  assert.equal(ARENA.width, 30);
-  assert.equal(ARENA.depth, 38);
+test("Arena expansion has substantial floor area and lower second-storey galleries", () => {
+  assert.equal(ARENA.width, 40);
+  assert.equal(ARENA.depth, 50);
   assert.equal(ARENA.wallHeight, 14);
-  assert.equal(ARENA.rampRise, 4.4);
-  assert.ok(
-    ARENA.width * ARENA.depth > 832 && ARENA.width * ARENA.depth < 1344,
-  );
+  assert.equal(ARENA.rampRise, 3.2);
+  assert.ok(ARENA.width * ARENA.depth > 1900 && ARENA.galleries.length === 2);
 });
 test("all court decks meet ramps and perimeter without leaving inaccessible gaps", () => {
   for (const a of [ARENA, ...Object.values(EXTRA_COURTS)]) {

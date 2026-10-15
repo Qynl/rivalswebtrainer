@@ -34,9 +34,9 @@ test("compact mirrored Arena has real ramp surfaces, grounded traversal, window 
     };
   });
   expect(layout).toEqual({
-    width: 30,
-    depth: 38,
-    ramps: 2,
+    width: 40,
+    depth: 50,
+    ramps: 6,
     mirrored: true,
     shadow: true,
   });
@@ -55,8 +55,8 @@ test("compact mirrored Arena has real ramp surfaces, grounded traversal, window 
     g.keys.add("KeyW");
     g.yaw = Math.PI;
     Object.assign(p, {
-      x: 10.5,
-      z: 9.8,
+      x: g.world.layout.rampX,
+      z: g.world.layout.rampZ - g.world.layout.rampLength / 2 - 0.4,
       y: 0,
       vx: 0,
       vz: 0,
@@ -79,6 +79,8 @@ test("compact mirrored Arena has real ramp surfaces, grounded traversal, window 
     const downhillFrames = [];
     for (let i = 0; i < 64; i++) {
       g.updatePlayer(1 / 60);
+      if (p.z <= g.world.layout.rampZ - g.world.layout.rampLength / 2 - 0.45)
+        break;
       if (!p.grounded) {
         downhillAirborne++;
         downhillFrames.push({
@@ -103,7 +105,7 @@ test("compact mirrored Arena has real ramp surfaces, grounded traversal, window 
     };
   });
   console.log(JSON.stringify({ traversal }));
-  expect(traversal.up.y).toBeCloseTo(4.4);
+  expect(traversal.up.y).toBeCloseTo(3.2);
   expect(traversal.up.airborne).toBe(0);
   expect(traversal.up.maxRise).toBeLessThan(0.4);
   expect(traversal.down.y).toBeLessThan(0.2);

@@ -209,6 +209,18 @@ export class WeaponAnimator {
         1 + Math.sin((state.time || 0) * 23) * 0.13,
         1,
       );
+    if (parts.weaponId === "flame") {
+      const pressure = age < 0.14 && !reloading ? 1 : 0;
+      if (parts.pressureValve)
+        parts.pressureValve.rotation.x = (state.time || 0) * pressure * 2;
+      if (parts.nozzleGlow)
+        parts.nozzleGlow.material.emissiveIntensity =
+          pressure * 1.6 + Math.min(0.4, Math.max(0, 1 - age) * 0.4);
+      if (pressure) {
+        model.position.z += Math.sin((state.time || 0) * 55) * 0.0025;
+        model.rotation.z += Math.sin((state.time || 0) * 23) * 0.004;
+      }
+    }
     if (parts.rotor) parts.rotor.rotation.z += dt * (state.spin || 0) * 100;
     if (parts.string?.isLine) {
       const p = parts.string.geometry.attributes.position;

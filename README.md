@@ -1,4 +1,4 @@
-# Rivals Offline Arena
+# Rivals Arena — Offline + Multiplayer
 
 A React + Vite application with a framework-independent Three.js simulation: a standalone, fan-made browser FPS inspired by the four-slot, first-to-five duel format of Roblox RIVALS. **Not an exact recreation, an official Roblox client, or an affiliated product.** Maps, meshes, interface, sounds, and implementation are original. No Roblox assets or extracted code are included.
 
@@ -11,7 +11,7 @@ npm ci
 npm run dev
 ```
 
-Open the address printed by Vite. Select an arena, team size, difficulty, then **Enter Arena**. Choose **Primary → Secondary → Melee → Utility** in the compact pre-match picker and click **Deploy**. Rematches use the same picker; cancelling it leaves your saved loadout unchanged. Click **Warm Up in the Range** for moving targets and unlimited ammunition reserves. Every teammate and opponent other than you is a local bot.
+Open the address printed by Vite. Select an arena, team size, difficulty, then **Enter Arena**. Choose **Primary → Secondary → Melee → Utility** in the compact pre-match picker and click **Deploy**. Rematches use the same picker; cancelling it leaves your saved loadout unchanged. Click **Warm Up in the Range** for moving targets and unlimited ammunition reserves. In offline modes, every teammate and opponent other than you is a local bot. Choose **Multiplayer** for human-only online lobbies: create/join by code, pick teams and weapons, ready up, then let the host start 1v1–3v3. `npm run dev` now starts the match server automatically as well as Vite. See [multiplayer setup and hosting](docs/multiplayer.md).
 
 ### Production / disconnected use
 
@@ -20,14 +20,14 @@ npm run build
 npm run preview
 ```
 
-Production builds include a service worker that precaches the application. Open the production site once while connected and wait for the assets to cache; subsequent visits and reloads work offline on that same browser/origin. Service workers require HTTPS or localhost. Development mode does not install a service worker. You can also run the local server with your internet disconnected after dependencies are installed. No gameplay traffic, external fonts, analytics, account, or backend are required.
+Production builds include a service worker that precaches the application. Open the production site once while connected and wait for the assets to cache; subsequent visits and reloads work offline on that same browser/origin. Service workers require HTTPS or localhost. Development mode does not install a service worker. You can also run the local server with your internet disconnected after dependencies are installed. Offline training needs no gameplay traffic, external fonts, analytics, account, or backend. Multiplayer is optional and requires a connection to the match server. API and WebRTC signalling responses are excluded from the offline cache.
 
 Mobile layouts support browsing/configuration, but combat requires desktop pointer lock, mouse, and keyboard. A browser embedding the app must allow pointer lock (`allow="..."` / sandbox `allow-pointer-lock`); opening in a new browser tab is an alternative.
 
 ## Included
 
 - Five original arenas: **Concrete Arena**, **Skyline**, **Hangar 09**, **Foundry**, **Courtyard**; elevated cover, walkable stairs, and collision.
-- Default Concrete Arena: a 30 × 38-metre gray-concrete layout inspired by the supplied references, with 14-metre perimeter walls, collision-matched diagonal slabs, opposing continuous ramp banks, mirrored window cover and 4.2–4.8-metre interior cover.
+- Default Concrete Arena: a 40 × 50-metre gray-concrete layout inspired by the supplied references, with 14-metre perimeter walls, collision-matched diagonal slabs, opposing ramp banks, mirrored window cover, 4.2–4.8-metre interior cover, and two long 3.2-high playable upper galleries with four access ramps.
 - **1v1**, **2v2**, **3v3** team elimination, first to five rounds; five-second preparation countdowns, health-based timeout resolution, spectators, results, and rematches.
 - Four bot levels: **Rookie**, **Regular**, **Veteran**, **Elite**. A* navigation, line-of-sight perception, last-known positions, aim/reaction errors, strafing, jumps, and reload retreats. Bots use rifles plus rotating Scythe/Katana/Fists/Knife melee loadouts; they are not machine-learned replicas of real players.
 - **150 HP** for players, bots and range targets; capped healing, normalized health bars and confirmed-hit floating damage numbers above opponents. Knife front/side hits deal **40**; behind-facing backstabs deal **150**.
@@ -62,7 +62,7 @@ Mobile layouts support browsing/configuration, but combat requires desktop point
 
 Scythe dash recharges in **3 seconds**. Katana's frontal guard lasts **1.1 seconds** and has a **3.5-second cooldown**. It reflects bullets back along a real collision-tested ray; rear attacks, melee, and explosives are not blocked. Shooting is disabled during the guard. F never automatically swings/punches; melee without a secondary ability displays a hint instead.
 
-Reloads animate magazine extraction/insertion, bolt motion and the support hand. Weapons ease into ADS/equip positions; T inspects them. Bots have connected head/weapon rigs, independently bending knees, body lean, aim pitch and muzzle flashes. Static weapon geometry is batched by material to reduce draw submissions; fixed Arena visuals use six batches while original ray geometry stays intact.
+Reloads animate magazine extraction/insertion, bolt motion and the support hand. Weapons ease into ADS/equip positions; T inspects them. Bots have connected head/weapon rigs, independently bending knees, body lean, aim pitch and muzzle flashes. Static weapon geometry is batched by material to reduce draw submissions; fixed Arena visuals use nine batches while original ray geometry stays intact.
 
 Graphics use darker panel-seamed concrete, a compact edge HUD, distinct original weapon models and 3D loadout previews, original procedural concrete/metal/window textures, an atmospheric sky, environment-lit metal, rounded geometry, armored bots, building vents/windows, and emissive arena trims. The sky has drifting procedural clouds and a directional sun. Fixed-size combat pools add surface hit marks, debris, bouncing shell casings and muzzle-aligned tracers without allocating a new mesh for each hit. Everything is generated locally. The world is finished with depth-aware contact shading, two-sample MSAA, restrained quarter-resolution HDR bloom, gentle sharpening and a neutral color grade; the weapon overlay stays crisp. Reloads include a raised/banked receiver, magazine extraction, supporting-hand/wrist motion and a bolt rack. Equip, jump/landing inertia, strafing, throw follow-through, blade trails and eased bot deaths provide distinct action feedback. Enable **Performance mode** in Settings to reduce render resolution and bypass post-processing and dynamic shadows on slower hardware.
 
@@ -78,9 +78,18 @@ Graphics use darker panel-seamed concrete, a compact edge HUD, distinct original
 
 See [the React and combat report](docs/react-combat-startup.md) for the full checklist, validation and limits.
 
-## Roomier Arena, new courts and utility presentation
+## Multiplayer, upper Arena and Flamethrower
 
-- Arena is now **30 × 38**, with a **14-high perimeter**, **4.2–4.8-high cover** and **4.4-high ramp decks**. This supersedes the earlier tight/tall rebuild: 37% more floor area and substantially lower walls, without changing player scale or movement speed.
+- Public/private six-player lobbies, invite codes/links, team/readiness/loadout controls, host migration, first-to-five rounds, forfeits and rematches.
+- Actual geckos.io client/server adapters plus automatic WebSocket compatibility transport; 120 Hz authoritative simulation, compact binary frames, local prediction, interpolation and capped hitscan rewind. **The preview is tested over WebSocket; native UDP requires a suitable host and has not been tested end to end here.**
+- Arena floor area grows **75.4%**, with **200 m² of actual upper-floor lanes**, low upper cover and four accessible ramps.
+- Flamethrower gains a continuous turbulent shader jet, blue ignition, detached wisps, animated heated nozzle/valve/pilot, pressure vibration and smoothly looping audio in bounded GPU/audio pools.
+
+See [architecture, hosting, visual changes and limits](docs/multiplayer.md).
+
+## Earlier court/utility pass
+
+- Before the multiplayer expansion, Arena was **30 × 38**, with a **14-high perimeter**, **4.2–4.8-high cover** and **4.4-high ramp decks**. That pass superseded the earlier tight/tall rebuild: 37% more floor area and substantially lower walls, without changing player scale or movement speed.
 - **Foundry** (34 × 42) has cool industrial concrete, bronze markings, overhead gantries and offset firing lanes. **Courtyard** (36 × 40) has warm stone, green planted islands, low cover and wall lamps. Both use the same offline rendering kit, mirrored protected spawns and physically reachable ramp decks.
 - Grenade, Molotov, Smoke and Flashbang now fly as their recognizable detailed models, not generic balls. Throws wind up, release at 160 ms and recover over 480 ms; the held item disappears at release. Projectiles tumble and inherit some lateral movement. Switching before release cancels/refunds the throw.
 - Molotov fire has animated flames and a softly irregular ember/scorch patch on the actual impact support height, with height/line-of-sight-aware damage and recursive resource cleanup.

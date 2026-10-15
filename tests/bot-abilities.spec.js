@@ -35,7 +35,7 @@ test("AI chooses quick dash/guard, chains slide-jump/double-jump, equips melee a
     // Outer lane stays clear of the revised side slabs and ramp footprint.
     const reset = (id) => {
       Object.assign(p, {
-        x: 13.8,
+        x: 18.5,
         y: 0,
         z: -0.5,
         vx: 0,
@@ -50,7 +50,7 @@ test("AI chooses quick dash/guard, chains slide-jump/double-jump, equips melee a
         target: false,
         meleeId: id,
         activeWeapon: "rifle",
-        x: 13.8,
+        x: 18.5,
         y: 0,
         z: 14,
         vx: 0,
@@ -133,7 +133,7 @@ test("AI chooses quick dash/guard, chains slide-jump/double-jump, equips melee a
     draw();
     const health = bot.health,
       playerHealth = p.health;
-    g.bullet(p, new THREE.Vector3(13.8, 1, -0.5), new THREE.Vector3(0, 0, 1), {
+    g.bullet(p, new THREE.Vector3(18.5, 1, -0.5), new THREE.Vector3(0, 0, 1), {
       damage: 13,
       head: 1.65,
       range: 100,
@@ -152,7 +152,7 @@ test("AI chooses quick dash/guard, chains slide-jump/double-jump, equips melee a
     bot.activeWeapon = "fists";
     p.x = -11.5;
     p.z = -11.5;
-    bot.path = [12, 10, 8, 6, 4, 2].map((z) => ({ x: 13.8, z }));
+    bot.path = [12, 10, 8, 6, 4, 2].map((z) => ({ x: 18.5, z }));
     let sawLow = false,
       sawAir = false;
     for (let i = 0; i < 160; i++) {

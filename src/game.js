@@ -1,3 +1,4 @@
+import { FlameJet } from "./flame-fx.js";
 import {
   MAX_HEALTH,
   ROUND_COUNTDOWN,
@@ -9,7 +10,6 @@ import {
   THROWN_UTILITIES,
   THROW_DURATION,
   THROW_RELEASE,
-  createThrownModel,
   animateThrown,
   createFirePatch,
   animateFire,
@@ -33,6 +33,7 @@ import { CombatFX } from "./combat-fx.js";
 import { ArenaRenderer } from "./rendering.js";
 import { WeaponAnimator } from "./animation.js";
 import * as THREE from "three";
+import { createProjectileModel } from "./projectile-model.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { ArenaWorld, createCharacter, createViewModel } from "./world.js";
 import { WEAPONS, DIFFICULTIES, MAPS } from "./data.js";
@@ -134,6 +135,7 @@ export class Game {
     this.world = new ArenaWorld(this.scene);
     this.world.build();
     this.combatFX = new CombatFX(this.scene);
+    this.flameFX = new FlameJet(this.scene);
     this.weaponScene = new THREE.Scene();
     this.weaponScene.environment = this.environmentMap.texture;
     this.weaponScene.environmentIntensity = 0.8;
@@ -298,6 +300,8 @@ export class Game {
         return;
       }
       this.keys.add(e.code);
+      if (!e.repeat && this.state === "playing")
+        this.network?.keyAction(e.code);
       if (e.repeat || this.state !== "playing") return;
       if (e.code === "Space") this.jump();
       if (
@@ -322,8 +326,10 @@ export class Game {
       if (e.button === 0) {
         this.mouseDown = true;
         this.trigger = true;
+        this.network?.action("fire");
       }
       if (e.button === 2) {
+        this.network?.secondary();
         this.inspectTime = 0;
         const w = WEAPONS[this.loadout[this.slot]];
         if (w.type === "heal") this.beginHeal(true);
@@ -342,6 +348,7 @@ export class Game {
           this.state === "playing"
         )
           this.bowRelease = true;
+        this.network?.action("release");
       }
       if (e.button === 2) this.aiming = false;
     });
@@ -439,6 +446,7 @@ export class Game {
     capture(this.rawMouseSupported !== false);
   }
   start(config) {
+    if (config.capture !== false) this.requestLock();
     this.config = { ...config };
     this.loadout = [...config.loadout];
     this.score = [0, 0];
@@ -449,7 +457,6 @@ export class Game {
     this.clock = 0;
     this.events.start();
     this.startRound();
-    this.requestLock();
   }
   beginSelection() {
     if (
@@ -459,6 +466,7 @@ export class Game {
     )
       return false;
     this.selectingLoadout = true;
+    this.network?.beginSelection();
     this.mouseDown = this.trigger = this.aiming = false;
     this.keys.clear();
     document.exitPointerLock?.();
@@ -486,6 +494,7 @@ export class Game {
       this.slot = -1;
       this.equip(0);
     }
+    this.network?.finishSelection(loadout ? this.loadout : null);
     this.selectingLoadout = false;
     this.keys.clear();
     this.events.update(this);
@@ -497,6 +506,7 @@ export class Game {
     this.cancelThrow(false);
     this.damageNumbers?.clear();
     this.combatFX?.clear();
+    this.flameFX?.clear();
     for (const e of this.entities) {
       if (e.model) {
         this.scene.remove(e.model.group);
@@ -525,14 +535,23 @@ export class Game {
     this.smokes = [];
     this.fires = [];
   }
-  createEntity(team, position, index, isPlayer = false, target = false) {
+  createEntity(
+    team,
+    position,
+    index,
+    isPlayer = false,
+    target = false,
+    displayName = null,
+  ) {
     const e = {
       team,
-      name: isPlayer
-        ? "YOU"
-        : target
-          ? "TARGET"
-          : botNames[index % botNames.length],
+      name:
+        displayName ||
+        (isPlayer
+          ? "YOU"
+          : target
+            ? "TARGET"
+            : botNames[index % botNames.length]),
       x: position.x,
       z: position.z,
       y: 0,
@@ -665,6 +684,7 @@ export class Game {
   }
   equip(slot) {
     if (slot === this.slot || !this.player?.alive) return;
+    if (!this.network?.applying) this.network?.action("slot" + slot);
     this.cancelThrow();
     this.playerMeleePending = null;
     this.clearQuickMelee();
@@ -682,6 +702,10 @@ export class Game {
     this.aiming = false;
     this.cooldown = Math.max(this.cooldown, 0.2);
     this.trigger = false;
+    if (this.headless) {
+      this.switchTime = 0.22;
+      return;
+    }
     if (this.viewModel) {
       this.weaponScene.remove(this.viewModel);
       const mats = new Set();
@@ -924,7 +948,7 @@ export class Game {
     this.flash = 0.055;
     this.lastShotAt = this.clock;
     this.kick = Math.min(0.13, this.kick + 0.045);
-    this.audio.play(w.sound);
+    if (w.type !== "flame" || !this.audio.updateFlame) this.audio.play(w.sound);
     if (
       this.combatFX &&
       w.slot < 2 &&
@@ -960,7 +984,7 @@ export class Game {
         const delta = this.eye(enemy).sub(origin);
         if (
           delta.length() < w.range &&
-          delta.normalize().dot(forward) > 0.88 &&
+          delta.normalize().dot(forward) > 0.98 &&
           this.hasLOS(origin, this.eye(enemy))
         ) {
           this.damage(enemy, w.damage, p);
@@ -969,14 +993,24 @@ export class Game {
           hit = true;
         }
       }
-      if (hit) {
+      if (hit && !this.network) {
         this.matchStats.hits++;
         this.events.hit(false);
       }
-      this.particles(
-        origin.clone().addScaledVector(forward, 4 + Math.random() * 4),
-        0xffad52,
-        5,
+      const socket = this.viewModel?.userData.flameSocket;
+      this.viewModel?.updateWorldMatrix(true, true);
+      this.camera?.updateMatrixWorld();
+      const muzzle =
+        socket && this.camera
+          ? this.weaponPointToWorld(socket.getWorldPosition(v3()))
+          : origin;
+      this.flameFX?.emit(
+        muzzle,
+        forward,
+        this.world.solidMeshes,
+        10,
+        "local",
+        origin,
       );
     } else if (w.type === "rocket" || w.type === "launcher" || w.slot === 3) {
       if (THROWN_UTILITIES.has(id)) {
@@ -1051,8 +1085,10 @@ export class Game {
         p,
         backstab,
       );
-      this.events.hit(false);
-      this.audio.play("hit");
+      if (!this.network) {
+        this.events.hit(false);
+        this.audio.play("hit");
+      }
       break;
     }
   }
@@ -1099,7 +1135,8 @@ export class Game {
           0xff6ba7,
           5,
         );
-        if (victim.isPlayer) this.paintTintTime = 0.65;
+        if (victim.context) victim.context.paintTintTime = 0.65;
+        else if (victim === this.player) this.paintTintTime = 0.65;
       } else if (walls[0])
         this.paintSplat(
           walls[0].point,
@@ -1109,10 +1146,11 @@ export class Game {
         );
     }
     if (victim && victim.team !== shooter.team) {
-      const guarding = victim.isPlayer
+      const localVictim = victim === this.player;
+      const guarding = localVictim
         ? this.deflectTime > 0
         : victim.deflectTime > 0;
-      const facing = victim.isPlayer ? this.yaw : victim.yaw;
+      const facing = localVictim ? this.yaw : victim.yaw;
       const guardDirection = v3(-Math.sin(facing), 0, -Math.cos(facing));
       const incoming = dir.clone().negate();
       incoming.y = 0;
@@ -1148,7 +1186,7 @@ export class Game {
         shooter,
         head,
       );
-      if (shooter.isPlayer) {
+      if (shooter.isPlayer && !this.network) {
         this.events.hit(head);
         this.audio.play(head ? "head" : "hit");
         if (head) this.matchStats.headshots++;
@@ -1290,6 +1328,7 @@ export class Game {
     hitOrigin = source,
     backstab = false,
   ) {
+    if (this.network) return;
     if (!e.alive || amount <= 0) return;
     const applied = Math.min(e.health, amount);
     if (source?.isPlayer && source !== e && source.team !== e.team)
@@ -1378,6 +1417,7 @@ export class Game {
     this.bowCharge = 0;
     this.bowRelease = false;
     this.aiming = false;
+    this.network?.sendInput();
     document.exitPointerLock?.();
     this.events.pause(true);
   }
@@ -1385,6 +1425,8 @@ export class Game {
     this.requestLock();
   }
   quit() {
+    this.network?.leave();
+    this.network = null;
     this.state = "lobby";
     document.exitPointerLock?.();
     this.clearQuickMelee();
@@ -1394,23 +1436,11 @@ export class Game {
     this.events.lobby();
   }
   spawnProjectile(owner, origin, dir, id, charge = 0) {
+    if (this.network) return;
     const w = WEAPONS[id],
       rocket = w.type === "rocket",
       arrow = w.type === "bow",
-      mesh = THROWN_UTILITIES.has(id)
-        ? createThrownModel(id)
-        : new THREE.Mesh(
-            arrow
-              ? new THREE.CylinderGeometry(0.025, 0.025, 0.8, 6)
-              : rocket
-                ? new THREE.CylinderGeometry(0.07, 0.07, 0.4, 8)
-                : new THREE.IcosahedronGeometry(0.13, 0),
-            new THREE.MeshStandardMaterial({
-              color: rocket ? 0xffc99a : w.color,
-              emissive: rocket ? 0xe96920 : 0,
-              emissiveIntensity: 0.8,
-            }),
-          );
+      mesh = this.headless ? new THREE.Object3D() : createProjectileModel(id);
     this.ray.set(origin, dir);
     this.ray.far = 0.7;
     const muzzleWall = this.ray.intersectObjects(
@@ -1424,18 +1454,6 @@ export class Game {
         : 0.55;
     const pos = origin.clone().addScaledVector(dir, clearance);
     mesh.position.copy(pos);
-    if (arrow) {
-      const tip = new THREE.Mesh(
-        new THREE.ConeGeometry(0.065, 0.16, 6),
-        new THREE.MeshStandardMaterial({
-          color: 0xbbccd3,
-          metalness: 0.65,
-          roughness: 0.25,
-        }),
-      );
-      tip.position.y = 0.48;
-      mesh.add(tip);
-    }
     if (rocket || arrow) mesh.quaternion.setFromUnitVectors(v3(0, 1, 0), dir);
     this.scene.add(mesh);
     this.projectiles.push({
@@ -1547,7 +1565,9 @@ export class Game {
           opacity: 0.83,
           roughness: 1,
         }),
-        mesh = new THREE.Mesh(new THREE.IcosahedronGeometry(radius, 2), mat);
+        mesh = this.headless
+          ? new THREE.Object3D()
+          : new THREE.Mesh(new THREE.IcosahedronGeometry(radius, 2), mat);
       mesh.position.copy(pos);
       mesh.position.y = Math.max(1.5, pos.y);
       this.scene.add(mesh);
@@ -1566,7 +1586,7 @@ export class Game {
         false,
       )[0];
       grounded.y = support ? support.point.y : Math.max(0, pos.y - 0.2);
-      const mesh = createFirePatch();
+      const mesh = this.headless ? new THREE.Object3D() : createFirePatch();
       mesh.position.copy(grounded);
       this.scene.add(mesh);
       const effect = { mesh, life: 5, max: 5, fire: true };
@@ -1579,14 +1599,16 @@ export class Game {
       this.audio.playAt("explosion", pos, this.eye(this.player), this.yaw);
     else this.audio.play("explosion");
     this.particles(pos, 0xffbd68, 35);
-    const mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(0.5, 12, 8),
-      new THREE.MeshBasicMaterial({
-        color: 0xffdd9a,
-        transparent: true,
-        opacity: 0.6,
-      }),
-    );
+    const mesh = this.headless
+      ? new THREE.Object3D()
+      : new THREE.Mesh(
+          new THREE.SphereGeometry(0.5, 12, 8),
+          new THREE.MeshBasicMaterial({
+            color: 0xffdd9a,
+            transparent: true,
+            opacity: 0.6,
+          }),
+        );
     mesh.position.copy(pos);
     this.scene.add(mesh);
     this.effects.push({ mesh, life: 0.3, max: 0.3, expand: true });
@@ -2289,8 +2311,8 @@ export class Game {
       m.parts.rightKnee.rotation.x = pose.rightKnee;
       m.parts.leftLeg.position.y = m.parts.rightLeg.position.y = pose.hipY;
     }
-    let aimPitch = 0;
-    if (e.visible && e.targetEntity?.alive) {
+    let aimPitch = e.netId ? e.pitch || 0 : 0;
+    if (!e.netId && e.visible && e.targetEntity?.alive) {
       const dy = this.eye(e.targetEntity).y - this.eye(e).y,
         distance = Math.hypot(e.targetEntity.x - e.x, e.targetEntity.z - e.z);
       aimPitch = clamp(Math.atan2(dy, distance), -0.5, 0.5);
@@ -2401,6 +2423,17 @@ export class Game {
     }
   }
   simulate(dt) {
+    if (this.network) {
+      if (this.player)
+        this.renderPrevious = {
+          x: this.player.x,
+          y: this.player.y,
+          z: this.player.z,
+        };
+      this.clock += dt;
+      this.network.step(dt);
+      return;
+    }
     if (["lobby", "paused", "results"].includes(this.state)) return;
     if (this.player)
       this.renderPrevious = {
@@ -2478,6 +2511,7 @@ export class Game {
     }
     this.updateEffects(dt);
     this.combatFX?.update(dt, this.world.boxes);
+    this.flameFX?.update(dt);
   }
   renderWorld() {
     if (this.presentation && !this.settings.performance)
@@ -2507,12 +2541,12 @@ export class Game {
         // court. Keep the Arena overview inside the enclosure, above cover.
         const layout = this.world.layout || ARENA;
         this.camera.position.set(
-          layout.width * 0.38 * Math.sin(a),
+          layout.width * 0.31 * Math.sin(a),
           layout.wallHeight * 0.9,
-          layout.depth * 0.4 * Math.cos(a),
+          layout.depth * 0.31 * Math.cos(a),
         );
         this.camera.fov = 70;
-        this.camera.lookAt(-layout.width * 0.1, 2, -layout.depth * 0.08);
+        this.camera.lookAt(-layout.width * 0.1, 0, -layout.depth * 0.08);
       } else {
         this.camera.position.set(43 * Math.sin(a), 31, 43 * Math.cos(a));
         this.camera.fov = 48;
@@ -2533,6 +2567,14 @@ export class Game {
       this.updateCamera(renderDt, this.accumulator / step);
       this.events.tick(this);
     } else this.accumulator = 0;
+    this.audio?.updateFlame?.(
+      this.state === "playing" &&
+        this.player?.alive &&
+        this.loadout[this.slot] === "flame" &&
+        this.mouseDown &&
+        this.clock - (this.lastShotAt ?? -10) < 0.18 &&
+        this.reloadTime <= 0,
+    );
     this.world?.atmosphere?.update(t * 0.001, this.settings.performance);
     this.renderer.autoClear = true;
     this.renderWorld();
@@ -2659,11 +2701,47 @@ export class Game {
         landing: this.landingDip,
         strafe: (p.vx * Math.cos(this.yaw) - p.vz * Math.sin(this.yaw)) / 11.5,
       });
+      if (
+        activeModel.userData.weaponId === "flame" &&
+        activeModel.userData.flameSocket
+      ) {
+        const active =
+          this.state === "playing" &&
+          this.mouseDown &&
+          this.clock - (this.lastShotAt ?? -10) < 0.18 &&
+          this.reloadTime <= 0;
+        if (active) {
+          activeModel.updateWorldMatrix(true, true);
+          this.camera.updateMatrixWorld();
+          this.flameFX?.track(
+            "local",
+            this.weaponPointToWorld(
+              activeModel.userData.flameSocket.getWorldPosition(v3()),
+            ),
+            v3(0, 0, -1).applyEuler(
+              new THREE.Euler(this.pitch, this.yaw, 0, "YXZ"),
+            ),
+            this.world.solidMeshes,
+            this.camera.position,
+          );
+        } else this.flameFX?.stop("local");
+      } else this.flameFX?.stop("local");
       if (this.muzzleLight && this.weaponFlashLight) {
-        const socket = activeModel.userData.muzzleFlash,
-          lit = this.flash > 0 && socket && !this.settings.performance;
-        this.muzzleLight.intensity = lit ? 7 : 0;
-        this.weaponFlashLight.intensity = lit ? 1.7 : 0;
+        const flame = activeModel.userData.weaponId === "flame";
+        const socket = flame
+            ? activeModel.userData.flameSocket
+            : activeModel.userData.muzzleFlash,
+          lit =
+            (flame
+              ? this.clock - (this.lastShotAt ?? -10) < 0.16
+              : this.flash > 0) &&
+            socket &&
+            !this.settings.performance;
+        const flicker = flame ? 1 + Math.sin(this.clock * 31) * 0.12 : 1;
+        this.muzzleLight.intensity = lit ? (flame ? 3 : 7) * flicker : 0;
+        this.weaponFlashLight.intensity = lit
+          ? (flame ? 0.8 : 1.7) * flicker
+          : 0;
         if (lit) {
           activeModel.updateWorldMatrix(true, true);
           const local = socket.getWorldPosition(v3());

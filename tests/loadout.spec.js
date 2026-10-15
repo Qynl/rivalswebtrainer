@@ -17,7 +17,7 @@ test("reference arena, four-step picker, draft cancellation, new weapons and med
       angled: window.__arena.world.boxes.filter((b) => b.angle).length,
       depth: window.__arena.world.nav.sizeZ,
     })),
-  ).toEqual({ map: "blockout", angled: 4, depth: 38 });
+  ).toEqual({ map: "blockout", angled: 4, depth: 50 });
   const walls = await page.evaluate(() =>
     window.__arena.world.boxes.filter((b) => b.maxY > 10),
   );

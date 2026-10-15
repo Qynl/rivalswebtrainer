@@ -19,8 +19,20 @@ test("production assets support a disconnected reload and range session", async 
   await page.evaluate(() => {
     window.__arena.renderer.render = () => {};
   });
+  await page.bringToFront();
   await page.click("#range-button");
-  await page.waitForFunction(() => document.pointerLockElement !== null);
+  // Chromium can reject initial capture after a disconnected navigation. The
+  // real, visible resume button provides a fresh gesture; never fake the lock.
+  await page.waitForFunction(
+    () =>
+      document.pointerLockElement !== null || window.__arena.state === "paused",
+    { timeout: 10000 },
+  );
+  if (!(await page.evaluate(() => !!document.pointerLockElement)))
+    await page.locator("#resume-button").click();
+  await page.waitForFunction(() => document.pointerLockElement !== null, {
+    timeout: 10000,
+  });
   expect(await page.evaluate(() => window.__arena.state)).toBe("playing");
   expect(
     await page.evaluate(() => window.__arena.camera.position.z),

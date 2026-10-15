@@ -101,6 +101,15 @@ export class GameAudio {
     }
   }
   clearSpatial() {
+    if (this.flameVoice) {
+      try {
+        this.flameVoice.source.stop();
+      } catch {}
+      this.flameVoice.source.disconnect();
+      this.flameVoice.filter.disconnect();
+      this.flameVoice.gain.disconnect();
+      this.flameVoice = null;
+    }
     for (const voice of this.spatialVoices) {
       clearTimeout(voice.timer);
       voice.pan.disconnect();
@@ -109,6 +118,44 @@ export class GameAudio {
     }
     this.spatialVoices.clear();
     this.output = null;
+  }
+  updateFlame(active) {
+    if (!this.ctx || !this.noise || !this.volume) active = false;
+    if (active && !this.flameVoice) {
+      const source = this.ctx.createBufferSource(),
+        filter = this.ctx.createBiquadFilter(),
+        gain = this.ctx.createGain();
+      source.buffer = this.noise;
+      source.loop = true;
+      filter.type = "lowpass";
+      filter.frequency.value = 1550;
+      gain.gain.value = 0.001;
+      source.connect(filter).connect(gain).connect(this.ctx.destination);
+      source.start();
+      this.flameVoice = { source, filter, gain, last: this.ctx.currentTime };
+    }
+    const voice = this.flameVoice;
+    if (!voice) return;
+    const time = this.ctx.currentTime;
+    if (active) voice.last = time;
+    voice.gain.gain.cancelScheduledValues(time);
+    voice.gain.gain.setTargetAtTime(
+      active ? this.volume * 0.2 : 0.001,
+      time,
+      0.035,
+    );
+    voice.filter.frequency.setTargetAtTime(
+      1550 + Math.sin(time * 13) * 160,
+      time,
+      0.06,
+    );
+    if (!active && time - voice.last > 0.18) {
+      voice.source.stop();
+      voice.source.disconnect();
+      voice.filter.disconnect();
+      voice.gain.disconnect();
+      this.flameVoice = null;
+    }
   }
   play(name, level = 1) {
     switch (name) {

@@ -38,8 +38,8 @@ const body = (z = -3.4) => ({
   alive: true,
 });
 
-test("Arena is compact with tall perimeter and mirrored half-cover definitions", () => {
-  assert.equal(ARENA.width * ARENA.depth, 1140);
+test("Arena is expanded with tall perimeter and mirrored half-cover definitions", () => {
+  assert.equal(ARENA.width * ARENA.depth, 2000);
   assert.equal(ARENA.wallHeight, 14);
   assert.ok(
     Math.abs(ARENA.platformZ + ARENA.platformLength / 2 - ARENA.depth / 2) <
@@ -54,7 +54,9 @@ test("Arena is compact with tall perimeter and mirrored half-cover definitions",
     ) < 1e-8,
   );
   assert.ok(HALF_COVER.every((b) => b.h >= 4.2));
-  assert.ok(ARENA.width * ARENA.depth < (48 * 64) / 2);
+  assert.ok(
+    ARENA.width * ARENA.depth > 1140 && ARENA.width * ARENA.depth < 48 * 64,
+  );
   assert.ok(ARENA.wallHeight < 16.8);
   assert.equal(HALF_COVER.length, 3);
   assert.ok(HALF_COVER.filter((x) => x.angle).length === 2);

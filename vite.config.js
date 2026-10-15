@@ -26,7 +26,7 @@ function offlineCache() {
 const ASSETS=${JSON.stringify(assets)};
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting()));});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('offline-arena-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
-self.addEventListener('fetch',e=>{if(e.request.method!=='GET'||new URL(e.request.url).origin!==self.location.origin)return;
+self.addEventListener('fetch',e=>{if(e.request.method!=='GET'||new URL(e.request.url).origin!==self.location.origin||new URL(e.request.url).pathname.startsWith('/api/')||new URL(e.request.url).pathname.startsWith('/.wrtc/'))return;
 if(e.request.mode==='navigate'){e.respondWith(fetch(e.request).catch(()=>caches.match('./index.html')));return;}
 e.respondWith(caches.match(e.request,{ignoreVary:true}).then(cached=>cached||fetch(e.request)));});`,
       });
@@ -35,8 +35,22 @@ e.respondWith(caches.match(e.request,{ignoreVary:true}).then(cached=>cached||fet
 }
 export default defineConfig({
   plugins: [react(), offlineCache()],
-  server: { host: "0.0.0.0", allowedHosts: [".e2b.app"] },
-  preview: { host: "0.0.0.0", allowedHosts: [".e2b.app"] },
+  server: {
+    host: "0.0.0.0",
+    allowedHosts: [".e2b.app"],
+    proxy: {
+      "/api": { target: "http://127.0.0.1:3001", ws: true },
+      "/.wrtc": { target: "http://127.0.0.1:3001" },
+    },
+  },
+  preview: {
+    host: "0.0.0.0",
+    allowedHosts: [".e2b.app"],
+    proxy: {
+      "/api": { target: "http://127.0.0.1:3001", ws: true },
+      "/.wrtc": { target: "http://127.0.0.1:3001" },
+    },
+  },
   build: {
     rollupOptions: { output: { manualChunks: { three: ["three"] } } },
     chunkSizeWarningLimit: 600,

@@ -10,8 +10,9 @@ test("roomier lower Arena keeps protected spawns, connected lanes and physically
   const report = await page.evaluate(async () => {
     const g = window.__arena;
     g.frame = () => {};
-    const { moveBody, verticalStep, canOccupy } =
-      await import("/src/physics.js");
+    const { moveBody, verticalStep, canOccupy } = await import(
+      "/src/physics.js"
+    );
     const { ARENA, HALF_COVER } = await import("/src/arena-layout.js");
     const w = g.world,
       shape = { radius: 0.38, height: 1.9 };
@@ -73,6 +74,9 @@ test("roomier lower Arena keeps protected spawns, connected lanes and physically
         z: ARENA.platformZ * side,
       }),
     );
+    const galleries = ARENA.galleries.flatMap((deck) =>
+      [-8, 0, 8].map((z) => walk(w.spawns[0][0], { x: deck.x, z })),
+    );
     const a = g.eye({ ...w.spawns[0][0], y: 0 }),
       b = g.eye({ ...w.spawns[1][0], y: 0 });
     return {
@@ -84,10 +88,11 @@ test("roomier lower Arena keeps protected spawns, connected lanes and physically
       spawnLOS: g.hasLOS(a, b),
       routes,
       summits,
+      galleries,
     };
   });
   console.log(JSON.stringify({ revisedArena: report }));
-  expect(report.area).toBe(1140);
+  expect(report.area).toBe(2000);
   expect(report.walls).toEqual([14, 14, 14, 14]);
   expect(Math.min(...report.coverHeights)).toBeGreaterThanOrEqual(4.2);
   expect(report.spawnClear).toBe(true);
@@ -97,10 +102,10 @@ test("roomier lower Arena keeps protected spawns, connected lanes and physically
     expect(r.endpoint).toBeLessThan(1.2);
     expect(r.invalid).toBe(0);
   }
-  for (const r of report.summits) {
+  for (const r of [...report.summits, ...report.galleries]) {
     expect(r.complete).toBe(true);
     expect(r.invalid).toBe(0);
-    expect(r.y).toBeCloseTo(4.4);
+    expect(r.y).toBeCloseTo(3.2);
   }
   expect(errors).toEqual([]);
 });

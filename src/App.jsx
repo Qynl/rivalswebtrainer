@@ -1,3 +1,4 @@
+import { Multiplayer } from "./net/Multiplayer.jsx";
 import React, { useEffect, useSyncExternalStore } from "react";
 import { Layout } from "./ui-layout.jsx";
 import { Icon } from "./ui-hud.jsx";
@@ -234,7 +235,9 @@ export function App() {
   click("quit-button", () => game.quit());
   click("results-lobby", () => game.quit());
   click("rematch-button", () =>
-    actions.openSetup({ ...game.config, range: false }),
+    game.network
+      ? game.network.returnToLobby()
+      : actions.openSetup({ ...game.config, range: false }),
   );
   for (const [id, paused] of [
     ["settings-open", false],
@@ -301,5 +304,14 @@ export function App() {
       </div>
     ));
   }
-  return <Layout bind={bind} content={content} />;
+  return (
+    <>
+      <Layout bind={bind} content={content} />
+      <Multiplayer
+        ready={s.ready}
+        playing={s.screen === "game"}
+        loadout={s.loadout}
+      />
+    </>
+  );
 }

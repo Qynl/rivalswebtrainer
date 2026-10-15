@@ -641,6 +641,29 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
       -1.23,
     );
     pilot.rotation.x = -Math.PI / 2;
+    g.userData.pilotFlame = pilot;
+    const glowMaterial = material(0x302c2a, 0.65, 0.3).clone();
+    glowMaterial.emissive.setHex(0xff5b15);
+    g.userData.nozzleGlow = cyl(
+      0.24,
+      -0.16,
+      -1.225,
+      0.052,
+      0.018,
+      glowMaterial,
+    );
+    cyl(0.24, -0.16, -1.238, 0.036, 0.006, dark);
+    for (let i = 0; i < 4; i++)
+      cyl(0.24, -0.16, -1.05 - i * 0.04, 0.055, 0.012, silver);
+    const valve = new THREE.Group();
+    valve.position.set(0.38, -0.25, -0.68);
+    g.add(valve);
+    cyl(0, 0, 0, 0.034, 0.012, accent, "x", valve);
+    box(0.008, 0, 0, 0.012, 0.065, 0.01, silver, valve);
+    g.userData.pressureValve = valve;
+    g.userData.flameSocket = new THREE.Object3D();
+    g.userData.flameSocket.position.set(0.24, -0.16, -1.26);
+    g.add(g.userData.flameSocket);
     if (hands) {
       hand(0.24, -0.34, -0.5);
       hand(0.3, -0.27, -0.9);

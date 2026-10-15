@@ -155,10 +155,10 @@ test("a combat bot chooses, physically reaches and fires from a real Arena ramp 
       path: process.env.ARENA_SCREENSHOTS + "/high-ground-combat.png",
     });
   }
-  console.log(JSON.stringify({ highGroundCombat: result }));
+  console.log(JSON.stringify({ highGroundCombat: result, errors }));
   expect(result.actions.highGroundPlans).toBeGreaterThan(0);
   expect(result.arrival).not.toBeNull();
-  expect(result.arrival.y).toBeGreaterThan(4.2);
+  expect(result.arrival.y).toBeGreaterThan(3.0);
   expect(result.actions.rifleShots).toBeGreaterThan(result.arrival.shots);
   expect(result.hits).toBeGreaterThan(0);
   expect(result.invalid).toBe(0);

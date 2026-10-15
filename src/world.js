@@ -1,3 +1,4 @@
+import { addElevations } from "./elevation-layout.js";
 import { EXTRA_COURTS, dressCourt } from "./map-layouts.js";
 import { createArenaDressing } from "./arena-dressing.js";
 import { batchFixedMeshes } from "./batching.js";
@@ -680,6 +681,7 @@ export class ArenaWorld {
         1,
       );
     }
+    addElevations(this, layout);
     for (let x = -width / 2 + 2.4; x < width / 2; x += 4.8)
       this.floorMark(x, 0, 0.014, depth - 0.1, 0x5c6971, 1);
     for (let z = -depth / 2 + 2.4; z < depth / 2; z += 4.8)
