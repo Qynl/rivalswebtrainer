@@ -22,7 +22,7 @@ Compact mirrored Arena reconstruction with taller cover, real ramp collision/sup
 1. Initial accelerated development run: Chromium's tab crashed after about **496 seconds**, during concurrent browser-suite activity. Last completed batch: **71**, or **146,970 simulation frames**. Last resource sample: **194 geometries, 11 textures, 17 shader programs**. This was **not a pass**; the cause was not conclusively established.
 2. Isolated 120-minute run: **cancelled at the user’s request after 103 seconds**, 19 batches / 39,330 simulation frames. Browser closure followed the explicit stop; this was not a spontaneous application failure or a completed pass.
 3. A first ten-minute attempt after the visual pass was intentionally restarted after 50 seconds / four batches when review found that consecutive same-slot items did not force a model refresh. The harness now resets the slot and asserts the actual model ID before rendering, and checks WebGL errors after every weapon draw.
-4. Corrected isolated ten-minute run started **2026-10-15T06:00:10.730Z**. No concurrent browser suite or application hot reloads. **Result pending.**
+4. Corrected isolated ten-minute run: **PASSED**, from **2026-10-15T06:00:10.730Z** to **2026-10-15T06:10:16.412Z**. Elapsed **606 seconds** (the last batch finished six seconds after the ten-minute deadline). **52 complete batches, 107,640 simulation frames, all 23 actual weapon models rendered per batch (1,196 weapon draws), no reported page/console/WebGL errors**. No concurrent browser suite or application hot reloads. Final sampled resources: **209 geometries, 13 textures, 18 programs**, sampled JS heap **31.2 MB**. Counts remained bounded; this is not proof of total VRAM usage or a hardware FPS benchmark.
 
 The endurance check is not a hardware-FPS benchmark and cannot establish exact Roblox equivalence.
 
@@ -33,3 +33,5 @@ The endurance check is not a hardware-FPS benchmark and cannot establish exact R
 - Production build passed.
 - The latest pass adds depth-aware contact shading, MSAA, richer lighting/panels, SCAR-style side hardware, sleeved arms, improved equip/reload/pump/recoil/movement action, blade trails, throw follow-through and eased bot death animation.
 - Endurance uses software-rendered Chromium at half resolution with audio/shadows disabled and post-processing enabled; it is not a real-hardware FPS measurement.
+
+- Graphics/animation code pushed as **adb4393** while the corrected ten-minute validation was running. Final firing-stance and mid-reload WebGL screenshots were inspected after the run; no shader/page errors were reported.
