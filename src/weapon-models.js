@@ -486,6 +486,12 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
       hand(0.28, -0.28, -0.92);
     }
   } else if (id === "bow") {
+    g.userData.hipYaw = -0.08;
+    g.userData.bowOrientation = "right-handed-forward-v3";
+    g.userData.bowGripPoint = new THREE.Vector3(-0.34, -0.11, -0.7);
+    g.userData.bowPullPoint = new THREE.Vector3(-0.23, -0.08, -0.52);
+    g.userData.arrowTip = new THREE.Vector3(-0.23, -0.055, -1.3025);
+    g.userData.arrowNock = new THREE.Vector3(-0.23, -0.055, -0.54);
     const carbon = material(0x263c42, 0.35, 0.48),
       limbEdge = material(0x90a8a4, 0.45, 0.38);
     const limbs = new THREE.Group();
@@ -493,24 +499,26 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
     g.userData.limbs = limbs;
     for (const sign of [-1, 1]) {
       const pivot = new THREE.Group();
-      pivot.position.set(0.34, 0.015, -0.75);
+      pivot.position.set(-0.34, 0.015, -0.75);
       limbs.add(pivot);
       g.userData[sign > 0 ? "bowUpper" : "bowLower"] = pivot;
       const points = [
         [0, sign * 0.08, 0],
-        [-0.01, sign * 0.25, -0.015],
-        [-0.065, sign * 0.39, -0.08],
-        [-0.1, sign * 0.47, -0.13],
+        [0.01, sign * 0.25, 0.015],
+        [0.065, sign * 0.39, 0.08],
+        [0.1, sign * 0.47, 0.13],
       ];
+      pivot.userData.tipPosition = new THREE.Vector3(...points.at(-1));
       tube(points, 0.027, carbon, pivot);
+      cyl(0, sign * 0.08, 0, 0.034, 0.045, silver, "x", pivot);
       tube(
-        points.map(([x, y, z]) => [x + 0.018, y, z + 0.004]),
+        points.map(([x, y, z]) => [x - 0.018, y, z + 0.004]),
         0.01,
         limbEdge,
         pivot,
       );
       const cam = new THREE.Group();
-      cam.position.set(0.24, sign > 0 ? 0.485 : -0.455, -0.88);
+      cam.position.set(-0.24, sign > 0 ? 0.485 : -0.455, -0.62);
       g.add(cam);
       g.userData[sign > 0 ? "bowTopCam" : "bowBottomCam"] = cam;
       cyl(0, 0, 0, 0.049, 0.019, dark, "x", cam);
@@ -520,53 +528,54 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
         spoke.rotation.x = (i * Math.PI) / 4;
       }
     }
-    box(0.34, -0.04, -0.75, 0.07, 0.29, 0.095, carbon);
+    box(-0.34, -0.04, -0.75, 0.07, 0.29, 0.095, carbon);
     for (let i = 0; i < 5; i++)
-      box(0.34, -0.005 - i * 0.024, -0.695, 0.075, 0.01, 0.013, grip);
+      box(-0.34, -0.005 - i * 0.024, -0.695, 0.075, 0.01, 0.013, grip);
     for (const y of [-0.16, 0.1])
-      cyl(0.385, y, -0.75, 0.011, 0.014, silver, "x");
+      cyl(-0.385, y, -0.75, 0.011, 0.014, silver, "x");
     const sight = new THREE.Mesh(
       new THREE.TorusGeometry(0.035, 0.006, 6, 16),
       silver,
     );
-    sight.position.set(0.265, 0.03, -0.86);
+    sight.position.set(-0.265, 0.03, -0.86);
+    box(-0.304, -0.01, -0.8, 0.09, 0.014, 0.12, silver);
     g.add(sight);
-    box(0.265, 0.03, -0.86, 0.007, 0.007, 0.014, material(0x9ee0b3, 0.3, 0.3));
+    box(-0.265, 0.03, -0.86, 0.007, 0.007, 0.014, material(0x9ee0b3, 0.3, 0.3));
     // Aim through the actual sight, not the nock (which lets the pulling hand cover the target).
     g.userData.adsPoint = sight.position.clone();
     const string = new THREE.Line(
       new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(0.24, 0.485, -0.88),
-        new THREE.Vector3(0.23, -0.055, -0.54),
-        new THREE.Vector3(0.24, -0.455, -0.88),
+        new THREE.Vector3(-0.24, 0.485, -0.62),
+        new THREE.Vector3(-0.23, -0.055, -0.54),
+        new THREE.Vector3(-0.24, -0.455, -0.62),
       ]),
       new THREE.LineBasicMaterial({ color: 0xcad3d5 }),
     );
     string.frustumCulled = false;
     g.add(string);
     g.userData.string = string;
-    box(0.34, -0.07, -0.75, 0.055, 0.16, 0.06, grip);
+    box(-0.34, -0.07, -0.75, 0.055, 0.16, 0.06, grip);
     const arrow = new THREE.Group();
     g.add(arrow);
     g.userData.arrow = arrow;
-    cyl(0.23, -0.055, -0.9, 0.006, 0.7, wood, "z", arrow);
+    cyl(-0.23, -0.055, -0.9, 0.006, 0.7, wood, "z", arrow);
     const tip = add(
       new THREE.ConeGeometry(0.021, 0.065, 4),
       silver,
-      0.23,
+      -0.23,
       -0.055,
       -1.27,
       arrow,
     );
     tip.rotation.x = -Math.PI / 2;
     for (const a of [0, Math.PI / 2])
-      box(0.23, -0.055, -0.62, 0.045, 0.004, 0.085, silver, arrow).rotation.z =
+      box(-0.23, -0.055, -0.62, 0.045, 0.004, 0.085, silver, arrow).rotation.z =
         a;
-    for (const y of [-0.32, 0.29])
-      cyl(0.3, y, -0.805, 0.043, 0.022, steel, "x");
     if (hands) {
-      hand(0.34, -0.11, -0.7);
-      g.userData.drawHand = hand(0.23, -0.08, -0.52);
+      hand(-0.34, -0.11, -0.7);
+      g.userData.drawHand = hand(-0.23, -0.08, -0.52);
+      g.userData.drawHand.rotation.y = 1;
+      g.userData.drawHand.userData.sleeve.scale.z = 0.72;
     }
   } else if (id === "minigun") {
     box(0.24, -0.16, -0.57, 0.24, 0.22, 0.31, steel);

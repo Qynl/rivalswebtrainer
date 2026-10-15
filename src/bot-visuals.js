@@ -40,7 +40,11 @@ export function updateBotWeapon(model, e, clock = 0) {
       socket.clear();
       const weapon = createViewModel(id, WEAPONS[id], { hands: false });
       weapon.scale.setScalar(0.85);
-      weapon.position.set(-0.24 * 0.85, 0.24 * 0.85, 0.62 * 0.85);
+      weapon.position.set(
+        id === "bow" ? 0 : -0.24 * 0.85,
+        0.24 * 0.85,
+        0.62 * 0.85,
+      );
       socket.add(weapon);
       socket.userData.id = id;
       socket.userData.weapon = weapon;
@@ -53,6 +57,16 @@ export function updateBotWeapon(model, e, clock = 0) {
           ? 0
           : 1
         : Math.max(0, clock - (e.lastShotAt ?? -10));
+    if (id === "bow") {
+      p.botLeftGrip
+        .copy(parts.bowGripPoint)
+        .multiplyScalar(0.85)
+        .add(weapon.position);
+      p.botRightGrip
+        .copy(parts.bowPullPoint)
+        .multiplyScalar(0.85)
+        .add(weapon.position);
+    }
     if (parts.muzzleFlashes) {
       selectShotSide(weapon, (e.shotSide || 0) + 1);
       p.botLeftGrip.set(-0.408, -0.1, -0.03);

@@ -152,7 +152,9 @@ export class WeaponAnimator {
         swap * 0.6 +
         lookY * (1 - ads) -
         carry * 0.12,
-      reloadState.lower * 0.38 + 0.08 * (1 - ads) + carry * 0.08,
+      reloadState.lower * 0.38 +
+        (model.userData.hipYaw ?? 0.08) * (1 - ads) +
+        carry * 0.08,
       this.roll.step(
         carry * 0.1 -
           reloadState.lower * 0.3 -
@@ -300,20 +302,23 @@ export class WeaponAnimator {
             ? Math.sin(age * 180) * Math.exp(-age * 32) * 0.018
             : 0,
         p = parts.string.geometry.attributes.position;
-      p.setZ(0, -0.88 + draw * 0.04);
-      p.setZ(2, -0.88 + draw * 0.04);
       p.setZ(1, -0.54 + draw * 0.32 + released);
-      p.needsUpdate = true;
       if (parts.bowUpper) parts.bowUpper.rotation.x = draw * 0.075;
       if (parts.bowLower) parts.bowLower.rotation.x = -draw * 0.075;
-      for (const [cam, sign] of [
-        [parts.bowTopCam, 1],
-        [parts.bowBottomCam, -1],
+      for (const [cam, limb, index, sign] of [
+        [parts.bowTopCam, parts.bowUpper, 0, 1],
+        [parts.bowBottomCam, parts.bowLower, 2, -1],
       ])
-        if (cam) {
+        if (cam && limb) {
+          // The string attaches to the actual moving limb tip, not a guessed Z offset.
+          cam.position
+            .copy(limb.userData.tipPosition)
+            .applyEuler(limb.rotation)
+            .add(limb.position);
           cam.rotation.x = draw * sign * 0.65;
-          cam.position.z = -0.88 + draw * 0.04;
+          p.setXYZ(index, cam.position.x, cam.position.y, cam.position.z);
         }
+      p.needsUpdate = true;
       if (parts.arrow) {
         parts.arrow.visible = !reloading && (state.ammo ?? 1) > 0;
         parts.arrow.position.z = draw * 0.32;
@@ -321,7 +326,7 @@ export class WeaponAnimator {
       if (parts.drawHand) {
         parts.drawHand.position.copy(parts.drawHand.userData.restPosition);
         parts.drawHand.position.z += draw * 0.32;
-        parts.drawHand.position.x -= draw * 0.012;
+        parts.drawHand.position.x += draw * 0.012;
       }
     }
     if (parts.muzzleFlash) {

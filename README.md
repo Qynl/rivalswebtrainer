@@ -77,7 +77,7 @@ Drawing a secondary takes **0.14 seconds**. A primary's remaining firing delay n
 ## Trickshots, Bow and weapon-model pass
 
 - Your own damage cannot reduce your HP, including explosive splash and your Molotov fire; your own Flashbang does not blind you. **RPG, Grenade Launcher and Grenade self-knockback still launches you.** Enemies remain vulnerable to your weapons. Multiplayer applies the same rule on the server.
-- The Bow is a rebuilt compound model with articulated carbon limbs, rotating cams, a sight, two hands, and a string/nock/arrow that move together. Full draw takes **0.8 seconds**; the crosshair has a small draw indicator. Release plucks the string; an empty/reloading bow hides its arrow. Arrows have proper tips/fletching and a short pooled trail; RPG rockets now have noses, fins and a pulsing exhaust, and launcher shells have an ogive and brass base.
+- Bow orientation is corrected to a **left-hand grip / right-hand draw**, rearward-swept limbs and an inward-facing hip pose; the sight bracket and limb/string endpoints stay attached. The Bow is a rebuilt compound model with articulated carbon limbs, rotating cams, a sight, two hands, and a string/nock/arrow that move together. Full draw takes **0.8 seconds**; the crosshair has a small draw indicator. Release plucks the string; an empty/reloading bow hides its arrow. Arrows have proper tips/fletching and a short pooled trail; RPG rockets now have noses, fins and a pulsing exhaust, and launcher shells have an ogive and brass base.
 - Gun families have machined receiver panels, rail/vent cuts, controls, fasteners, magazines and deliberately different finishes, plus armored first-person gloves. Moving bolts, pumps, magazines and minigun assemblies remain independent of static batches. Guns have distinct, faster **viewmodel-only** shot impulses and ADS response; this does not move the mouse aim.
 - Player/bot **Striker** rigs have original human faces, hair, goggles, headsets, ceramic shoulder/forearm/chest armor, fabric bump detail, equipment, belt pouches, articulated knees and boots. Team accents remain readable. Both offline bots and online opponents hold the actual detailed gun model, not a generic substitute. Existing joint anchors, hitboxes and IK are unchanged.
 - Hit confirmations appear immediately with a short punch; headshot/elimination priority is preserved under automatic/pellet fire. Damage numbers pop more distinctly, and headshot sounds are sharper. No extra camera kick is added.
@@ -168,7 +168,7 @@ See [the combat-readability report](docs/combat-readability-pass.md) for validat
 ## Tests
 
 ```sh
-npm test                   # 276 input, abilities, physics, movement, rigging, audio, rendering and combat tests
+npm test                   # 279 input, abilities, physics, movement, rigging, audio, rendering and combat tests
 npm run build              # Production build + offline cache generation
 npx playwright install chromium
 npm run test:browser       # Browser integration test
@@ -244,3 +244,5 @@ node scripts/movement-audit.mjs <revision>  # requires that revision's local Git
 ```
 
 This samples both controllers and their own physics constants at 600 Hz without checking out another branch. It reports acceleration, stopping, reversal drift and flat slide travel in trainer units—not measured Roblox values or hardware FPS. The latest values and trade-offs are in [the implementation report](docs/hour-pass.md).
+
+Bow direction regression notes: [forward-facing Bow correction](docs/bow-direction.md).

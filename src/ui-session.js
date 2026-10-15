@@ -156,7 +156,9 @@ function snapshot(g, force = false) {
     ammoState:
       a.mag === 0
         ? "empty"
-        : Number.isFinite(w.mag) && a.mag <= Math.ceil(w.mag * 0.2)
+        : Number.isFinite(w.mag) &&
+            a.mag < w.mag &&
+            a.mag <= Math.ceil(w.mag * 0.2)
           ? "low"
           : "",
     reserve: g.range || !Number.isFinite(a.reserve) ? "∞" : a.reserve,
