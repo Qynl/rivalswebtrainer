@@ -398,6 +398,8 @@ export class Game {
     this.stepOffset = 0;
     this.landingDip = 0;
     this.crouched = false;
+    this.forcedCrouch = false;
+    this.dashTime = 0;
     this.renderPrevious = null;
     this.accumulator = 0;
     this.dashCooldown = 0;

@@ -65,7 +65,7 @@ export function accelerate(body, wish, speed, dt) {
       target = Math.atan2(wz, wx),
       delta = angleDelta(current, target);
     // Direct reverse input is a brake, not an arbitrary left/right orbit.
-    if (Math.abs(delta) > 2.65 && length > 0.5) {
+    if (Math.abs(delta) > 2.65 && length > 1e-5) {
       const dx = wx * cruise - body.vx,
         dz = wz * cruise - body.vz,
         distance = Math.hypot(dx, dz),

@@ -66,7 +66,7 @@ Graphics use darker panel-seamed concrete, a compact edge HUD, distinct original
 ## Tests
 
 ```sh
-npm test                   # 98 input, abilities, physics, movement, navigation, animation, effects and combat tests
+npm test                   # 110 input, abilities, physics, movement, rendering-lifecycle, effects and combat tests
 npm run build              # Production build + offline cache generation
 npx playwright install chromium
 npm run test:browser       # Browser integration test
@@ -117,3 +117,12 @@ npm run audit:visual -- /tmp/arena-visuals
 ```
 
 This uses the development preview and the same `BROWSER_EXECUTABLE` override. Images go outside Git; the paused audit is not an FPS benchmark. Settings also include an independent **speed-based field of view** toggle.
+
+For a reproducible numerical comparison against the previous local movement revision:
+
+```sh
+node scripts/movement-audit.mjs             # defaults to d40fdb1
+node scripts/movement-audit.mjs <revision>  # requires that revision's local Git history
+```
+
+This samples both controllers and their own physics constants at 600 Hz without checking out another branch. It reports acceleration, stopping, reversal drift and flat slide travel in trainer units—not measured Roblox values or hardware FPS. The latest values and trade-offs are in [the implementation report](docs/hour-pass.md).
