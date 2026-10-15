@@ -4,8 +4,9 @@
 
 - User requested **one hour of real implementation work**, not an hour-long endurance timer.
 - Started **2026-10-15T06:12:48Z**, on top of `d40fdb1`.
-- Work is still in progress. Final elapsed time and validation results will be recorded before completion.
-- Validation remains limited to a **ten-minute** isolated soak, with implementation, visual inspection, regression work and review making up the rest of the pass.
+- Implementation, visual iteration and regression review continued through **2026-10-15T07:12:53Z**, beyond the requested hour. Final validation/reporting completed **2026-10-15T07:19:21Z** (**66 minutes 33 seconds** total elapsed).
+- The remaining time completed the already-running short soak and reran the complete browser suite on the final source; the hour was not an endurance timer.
+- Continuous stability validation was a **ten-minute** isolated soak, not the rejected two-hour endurance run. Short earlier attempts were interrupted for fixes as noted below.
 
 ## Implemented
 
@@ -39,11 +40,12 @@ These are original trainer-space tuning values, not claimed Roblox frame-perfect
 ## Verification
 
 - **110 unit tests passed**, including pooling bounds/lifetime, casing support, exact ray surfaces after batching, all 23 full/showroom models, camera/muzzle projection, stair descent and slide buffering.
-- The **10-test browser suite passed** in a single full run after the full-air-reversal fix; controls and locomotion also passed again after the final round-state reset. A final full-suite rerun remains pending until the isolated soak has finished.
+- The final **10/10 browser suite passed** in a full isolated rerun on the final app source, finishing **2026-10-15T07:18:57Z** (2.7 minutes). Controls and locomotion had also passed separately after the round-state reset.
 - Those ten browser tests include the new live locomotion/aim check and actual WebGL rendering of all 23 models, bot rigs and combat shaders.
 - WebGL stress check: 500 pooled impact/burst updates left allocated geometry unchanged (**44 → 44**) in its controlled test scene.
 - First manual visual audit inspected 11 full-size frames; no page/shader errors. Inspection then identified and corrected Scythe support-arm framing and the RPG's oversized near-camera rear cap.
-- Final production build passed. Isolated ten-minute validation of the final app source started **2026-10-15T07:05:47.485Z**; result pending.
+- Final production build passed. The isolated final-source soak **passed** from **2026-10-15T07:05:47.485Z** to **07:15:55.545Z** (**608 seconds**), exited 0, with **no page/console/WebGL errors**.
+- That soak completed **46 full 23-item batches**, **95,220 fixed simulation updates** and **1,058 actual world/weapon render pairs**. These update counts are not rendered FPS. GPU geometry stayed **117–118**, textures **14**, and shader programs **25** throughout the reported batches.
 - Two earlier short runs were intentionally interrupted for a low-speed air-reversal correction and a round-camera/dash-state reset, not counted as completed validations.
 - Additional deterministic checks cover 1,000 seeded fast angled-wall approaches (including long, thin no-tunneling slabs), 30 complete ramp round trips, slide steering at 30/60/144 Hz, full airborne reversals at 60/120/600 Hz, round camera/input resets, sky matrix/depth/disposal contracts, and HDR pass order/target ownership/resize/disposal.
 
@@ -61,7 +63,9 @@ Run `node scripts/movement-audit.mjs` with local history for baseline `d40fdb1` 
 | Slide duration | 0.40 s | 0.36 s |
 | Flat slide travel | 5.0158 | 5.5411 |
 
-Stopping is about 22% faster and ground reversal about 24% faster in this controller comparison. Slides end sooner but the stronger opening burst covers about 10% more flat distance—shorter duration does **not** mean shorter travel. Ramp slope, collisions and jumping change in-game results.
+Stopping time is about 22% lower and ground-reversal time about 24% lower in this controller comparison. Slides end sooner but the stronger opening burst covers about 10% more flat distance—shorter duration does **not** mean shorter travel. Ramp slope, collisions and jumping change in-game results.
+
+The audit was also checked against `HEAD`, which produced identical baseline/current measurements, and an unavailable revision, which exits with a readable error rather than switching branches.
 
 The comparison exposed a small-speed transition bug that a first-frame reversal test missed: the final fraction of forward speed could re-enter angular steering and initiate an unwanted orbit. The fix keeps the braking branch active through that transition; the new test follows the entire reversal at three update rates.
 
