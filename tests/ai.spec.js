@@ -53,8 +53,24 @@ test("3v3 bots navigate the compact Arena and keep fighting during a two-minute 
       invalid,
       maxY,
       bots: bots.length,
+      roles: bots.map((e) => e.meleeId),
+      actions: bots.map((e) => e.actionCounts),
     };
   });
+  console.log(JSON.stringify({ botMovement: result }));
+  const total = (key) => result.actions.reduce((n, a) => n + (a[key] || 0), 0);
+  for (const key of [
+    "dashes",
+    "slides",
+    "slideJumps",
+    "doubleJumps",
+    "switches",
+    "meleeSwings",
+    "meleeHits",
+    "rifleShots",
+  ])
+    expect(total(key), key).toBeGreaterThan(0);
+  expect(new Set(result.roles).size).toBe(4);
   expect(result.bots).toBe(5);
   expect(result.invalid).toBe(0);
   expect(result.hits).toBeGreaterThan(50);

@@ -1,3 +1,13 @@
+import { updateBotWeapon } from "./bot-visuals.js";
+import {
+  BOT_MELEES,
+  initBotActions,
+  tickBotActions,
+  botCanShoot,
+  decideBotAction,
+  moveBotVelocity,
+  botJump,
+} from "./bot-actions.js";
 import { aimArm } from "./rigging.js";
 import { chooseCover, followRoute, selectOpponent } from "./bot-tactics.js";
 import { CombatFX } from "./combat-fx.js";
@@ -18,6 +28,14 @@ import { MouseLook } from "./input.js";
 import { GameAudio } from "./audio.js";
 const v3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const botNames = ["VEX", "NOVA", "GHOST", "ACE", "ECHO", "BLITZ"];
+const botActionSounds = {
+  guard: "guard",
+  dash: "double",
+  swing: "melee",
+  slide: "step",
+  doubleJump: "double",
+  jump: "jump",
+};
 export class Game {
   constructor(canvas, settings, events) {
     this.canvas = canvas;
@@ -381,6 +399,13 @@ export class Game {
       decision: 0,
       sliding: 0,
     };
+    if (!isPlayer && !target)
+      initBotActions(
+        e,
+        BOT_MELEES[
+          (index + Math.max(0, (this.round || 1) - 1)) % BOT_MELEES.length
+        ],
+      );
     if (!isPlayer) {
       e.model = createCharacter(team, e.name);
       this.scene.add(e.model.group);
@@ -674,7 +699,12 @@ export class Game {
     this.events.update(this);
   }
   eye(e) {
-    return v3(e.x, e.y + (e.isPlayer && this.crouched ? 1.02 : 1.66), e.z);
+    const height = e.isPlayer
+      ? this.crouched
+        ? 1.02
+        : 1.66
+      : Math.min(1.66, (e.height || 1.9) - 0.17);
+    return v3(e.x, e.y + height, e.z);
   }
   hasLOS(a, b, includeSmoke = true) {
     const d = b.clone().sub(a),
@@ -892,6 +922,12 @@ export class Game {
         const contact = origin.clone().addScaledVector(dir, nearest);
         this.particles(contact, 0x89e5ff, 10);
         this.audio.play("parry");
+        if (!victim.isPlayer) {
+          victim.guardFlash = 0.2;
+          if (victim.actionCounts)
+            victim.actionCounts.deflections =
+              (victim.actionCounts.deflections || 0) + 1;
+        }
         if (victim.isPlayer) {
           this.guardFlash = 0.2;
           this.matchStats.deflections = (this.matchStats.deflections || 0) + 1;
@@ -1597,12 +1633,13 @@ export class Game {
       this.animateBot(e, dt);
       return;
     }
+    const impact = tickBotActions(e, dt);
+    if (impact) this.resolveBotMelee(e, impact);
     const d = DIFFICULTIES[this.config.difficulty];
     e.pathTimer -= dt;
     e.shootTimer -= dt;
     e.decision -= dt;
-    e.reload = Math.max(0, e.reload - dt);
-    e.sliding = Math.max(0, e.sliding - dt);
+    e.sliding = e.slideTime;
     const enemies = this.entities.filter((x) => x.alive && x.team !== e.team);
     if (!enemies.length) return;
     let target = enemies.reduce((a, b) =>
@@ -1650,53 +1687,25 @@ export class Game {
       e.seen += dt;
       const tx = (target.x - e.x) / Math.max(0.1, distance),
         tz = (target.z - e.z) / Math.max(0.1, distance);
-      const approach = distance > 16 ? 0.8 : distance < 7 ? -0.65 : 0.12;
-      dx = tx * approach + tz * e.strafe * 0.75;
-      dz = tz * approach - tx * e.strafe * 0.75;
+      const rushing =
+        e.activeWeapon === e.meleeId ||
+        (e.meleeId === "scythe" && e.dashCooldown > 1.8 && distance < 12) ||
+        (distance < 6 && e.health > 35);
+      const approach = rushing
+        ? distance > 2.3
+          ? 1
+          : 0
+        : distance > 16
+          ? 0.8
+          : distance < 7
+            ? -0.65
+            : 0.12;
+      const strafe = rushing ? 0.23 : 0.75;
+      dx = tx * approach + tz * e.strafe * strafe;
+      dz = tz * approach - tx * e.strafe * strafe;
       if (e.health < 35 || e.reload > 0) {
         dx = -tx * 0.9 + tz * e.strafe * 0.5;
         dz = -tz * 0.9 - tx * e.strafe * 0.5;
-      }
-      if (e.grounded && Math.random() < d.jump * dt && distance < 25) {
-        e.vy = MOVEMENT.jumpSpeed;
-        e.grounded = false;
-        e.sliding = 0.4;
-      }
-      if (e.seen > d.reaction && e.shootTimer <= 0 && e.reload <= 0) {
-        if (e.ammo === 0) {
-          e.reload = 1.65;
-          e.ammo = 20;
-        } else {
-          const weapon = WEAPONS.rifle,
-            aim = this.eye(target)
-              .add(v3(0, -0.12, 0))
-              .sub(origin)
-              .normalize();
-          const spread = d.spread * (e.grounded ? 1 : 1.4);
-          aim
-            .add(
-              v3(
-                (Math.random() - 0.5) * spread * 2,
-                (Math.random() - 0.5) * spread * 2,
-                (Math.random() - 0.5) * spread * 2,
-              ),
-            )
-            .normalize();
-          this.bullet(e, origin, aim, weapon);
-          e.lastShotAt = this.clock;
-          e.ammo--;
-          e.shootTimer = weapon.interval / d.fire;
-          if (this.audio.playAt && this.player)
-            this.audio.playAt(
-              "rifle",
-              origin,
-              this.eye(this.player),
-              this.yaw,
-              0.7,
-              !this.hasLOS(origin, this.eye(this.player), false),
-            );
-          else this.audio.play("rifle", clamp(1 - distance / 55, 0.06, 0.5));
-        }
       }
     } else {
       if (e.pathTimer <= 0) {
@@ -1772,11 +1781,41 @@ export class Game {
         dz += ((e.z - other.z) / separation) * (1.15 - separation);
       }
     }
-    const speed = e.reload > 0 ? d.speed * 0.65 : d.speed;
-    const norm = Math.max(1, Math.hypot(dx, dz));
-    const response = 1 - Math.exp(-(e.grounded ? 18 : 9) * dt);
-    e.vx += ((dx / norm) * speed - e.vx) * response;
-    e.vz += ((dz / norm) * speed - e.vz) * response;
+    const norm = Math.max(1, Math.hypot(dx, dz)),
+      wish = { x: dx / norm, z: dz / norm };
+    const skill = ["rookie", "regular", "veteran", "elite"].indexOf(
+      this.config.difficulty,
+    );
+    const lastShot = target.isPlayer ? this.lastShotAt : target.lastShotAt;
+    const underFire =
+      visible &&
+      (e.pressureUntil > this.clock ||
+        (lastShot !== undefined && this.clock - lastShot < 0.32));
+    const action = decideBotAction(e, {
+      visible,
+      target,
+      distance,
+      world: this.world,
+      wish,
+      skill,
+      reaction: d.reaction,
+      reacted: e.seen > d.reaction,
+      underFire,
+      defensive,
+      speed: d.speed,
+    });
+    if (botActionSounds[action]) this.playBotAction(e, botActionSounds[action]);
+    if (visible && e.seen > d.reaction && e.shootTimer <= 0 && botCanShoot(e))
+      this.fireBotRifle(e, target, d, distance);
+    const speed =
+      d.speed *
+      (e.reload > 0 ? 0.65 : 1) *
+      (e.activeWeapon === e.meleeId
+        ? MOVEMENT.meleeSpeed / MOVEMENT.runSpeed
+        : 1);
+    const groundedBeforeAction = e.grounded;
+    moveBotVelocity(e, wish, speed, dt, this.world);
+    if (groundedBeforeAction && !e.grounded) this.playBotAction(e, "jump");
     const oldX = e.x,
       oldZ = e.z;
     moveBody(e, e.vx * dt, e.vz * dt, this.world.boxes);
@@ -1805,23 +1844,117 @@ export class Game {
         ? (e.stuckTime || 0) + dt
         : 0;
     if (e.grounded && e.jumpCooldown <= 0 && e.stuckTime > 0.28) {
-      e.vy = MOVEMENT.jumpSpeed;
-      e.grounded = false;
+      if (botJump(e, this.world)) this.playBotAction(e, "jump");
       e.jumpCooldown = 1.2;
       e.stuckTime = 0;
       e.pathTimer = 0;
     }
 
+    const wasGrounded = e.grounded;
     verticalStep(e, dt, this.world.boxes);
+    if (!wasGrounded && e.grounded) {
+      e.slideJumpCombo = false;
+      e.jumpAge = 0;
+    }
     const bounds = this.world.bounds || {
       minX: -23.1,
       maxX: 23.1,
       minZ: -23.1,
       maxZ: 23.1,
     };
-    e.x = clamp(e.x, bounds.minX, bounds.maxX);
-    e.z = clamp(e.z, bounds.minZ, bounds.maxZ);
+    const boundedX = clamp(e.x, bounds.minX, bounds.maxX),
+      boundedZ = clamp(e.z, bounds.minZ, bounds.maxZ);
+    if (boundedX !== e.x) e.vx = 0;
+    if (boundedZ !== e.z) e.vz = 0;
+    e.x = boundedX;
+    e.z = boundedZ;
     this.animateBot(e, dt);
+  }
+  playBotAction(e, sound) {
+    if (this.player && this.audio?.playAt)
+      this.audio.playAt(
+        sound,
+        this.eye(e),
+        this.eye(this.player),
+        this.yaw,
+        0.5,
+      );
+  }
+  fireBotRifle(e, target, d, distance) {
+    if (e.ammo === 0) {
+      e.reload = WEAPONS.rifle.reload;
+      return;
+    }
+    const weapon = WEAPONS.rifle,
+      origin = this.eye(e),
+      aim = this.eye(target)
+        .add(v3(0, -0.12, 0))
+        .sub(origin)
+        .normalize();
+    const spread = d.spread * (e.grounded ? 1 : 1.4);
+    aim
+      .add(
+        v3(
+          (Math.random() - 0.5) * spread * 2,
+          (Math.random() - 0.5) * spread * 2,
+          (Math.random() - 0.5) * spread * 2,
+        ),
+      )
+      .normalize();
+    this.bullet(e, origin, aim, weapon);
+    e.lastShotAt = this.clock;
+    e.ammo--;
+    e.shootTimer = weapon.interval / d.fire;
+    e.actionCounts.rifleShots = (e.actionCounts.rifleShots || 0) + 1;
+    if (this.audio.playAt && this.player)
+      this.audio.playAt(
+        "rifle",
+        origin,
+        this.eye(this.player),
+        this.yaw,
+        0.7,
+        !this.hasLOS(origin, this.eye(this.player), false),
+      );
+    else this.audio.play("rifle", clamp(1 - distance / 55, 0.06, 0.5));
+  }
+  resolveBotMelee(e, attack) {
+    if (
+      !e.alive ||
+      e.activeWeapon !== attack.id ||
+      e.deflectTime > 0 ||
+      e.quickMeleeTime > 0
+    )
+      return;
+    const w = WEAPONS[attack.id],
+      origin = this.eye(e),
+      forward = v3(-Math.sin(attack.yaw), 0, -Math.cos(attack.yaw));
+    const enemies = this.entities
+      .filter((t) => t.alive && t.team !== e.team)
+      .sort(
+        (a, b) =>
+          Math.hypot(a.x - e.x, a.z - e.z) - Math.hypot(b.x - e.x, b.z - e.z),
+      );
+    for (const victim of enemies) {
+      const delta = this.eye(victim).sub(origin),
+        length = delta.length();
+      if (
+        length > w.range ||
+        (length > 0.1 && delta.normalize().dot(forward) < 0.45) ||
+        !this.hasLOS(origin, this.eye(victim))
+      )
+        continue;
+      let damage = w.damage;
+      if (
+        attack.id === "knife" &&
+        v3(-Math.sin(victim.yaw || 0), 0, -Math.cos(victim.yaw || 0)).dot(
+          v3(e.x - victim.x, 0, e.z - victim.z).normalize(),
+        ) < -0.45
+      )
+        damage = 100;
+      this.damage(victim, damage, e);
+      e.actionCounts.meleeHits = (e.actionCounts.meleeHits || 0) + 1;
+      break;
+    }
   }
   animateBot(e, dt = 1 / 60) {
     const m = e.model;
@@ -1841,18 +1974,18 @@ export class Game {
       Math.cos(e.yaw - m.group.rotation.y),
     );
     m.group.rotation.y += turn * (1 - Math.exp(-18 * dt));
-    const crouch = e.sliding > 0 && e.grounded;
+    const crouch = e.height < 1.4;
     const air = !e.grounded;
-    m.parts.leftLeg.rotation.x = crouch ? 0.8 : air ? 0.55 : stride;
-    m.parts.rightLeg.rotation.x = crouch ? 0.8 : air ? 0.3 : -stride;
+    m.parts.leftLeg.rotation.x = crouch ? 1.2 : air ? 0.55 : stride;
+    m.parts.rightLeg.rotation.x = crouch ? 0.35 : air ? 0.3 : -stride;
     if (m.parts.leftKnee) {
       const targetLeft = crouch
-        ? -1.4
+        ? -0.25
         : air
           ? -0.95
           : -Math.max(0.05, -Math.sin(phase) * 0.85);
       const targetRight = crouch
-        ? -1.4
+        ? -1.3
         : air
           ? -1.15
           : -Math.max(0.05, Math.sin(phase) * 0.85);
@@ -1871,20 +2004,20 @@ export class Game {
       m.parts.leftLeg.position.y = m.parts.rightLeg.position.y =
         THREE.MathUtils.damp(
           m.parts.leftLeg.position.y,
-          crouch ? 0.57 : 0.73,
+          crouch ? 0.58 : 0.73,
           22,
           dt,
         );
     }
     let aimPitch = 0;
     if (e.visible && e.targetEntity?.alive) {
-      const dy = e.targetEntity.y + 1.5 - (e.y + 1.5),
+      const dy = this.eye(e.targetEntity).y - this.eye(e).y,
         distance = Math.hypot(e.targetEntity.x - e.x, e.targetEntity.z - e.z);
       aimPitch = clamp(Math.atan2(dy, distance), -0.5, 0.5);
     }
     m.parts.head.rotation.x = THREE.MathUtils.damp(
       m.parts.head.rotation.x,
-      aimPitch,
+      aimPitch - (m.parts.upperBody?.rotation.x || 0),
       18,
       dt,
     );
@@ -1905,13 +2038,17 @@ export class Game {
       );
       m.parts.upperBody.rotation.x = THREE.MathUtils.damp(
         m.parts.upperBody.rotation.x,
-        clamp(-forward * 0.006, -0.07, 0.07),
+        crouch
+          ? -0.55
+          : e.dashTime > 0
+            ? -0.18
+            : clamp(-forward * 0.006, -0.07, 0.07),
         16,
         dt,
       );
       m.parts.upperBody.position.y = THREE.MathUtils.damp(
         m.parts.upperBody.position.y,
-        crouch ? 0.84 : 1,
+        crouch ? 0.3 : 1,
         20,
         dt,
       );
@@ -1919,22 +2056,46 @@ export class Game {
           e.lastShotAt === undefined ? 10 : this.clock - e.lastShotAt,
         recoil = Math.exp(-shotAge * 28);
       m.parts.weaponRig.rotation.x =
-        aimPitch + recoil * 0.07 + (e.reload > 0 ? 0.3 : 0);
+        aimPitch -
+        m.parts.upperBody.rotation.x +
+        recoil * 0.07 +
+        (e.reload > 0 &&
+        e.activeWeapon !== "fists" &&
+        !(e.quickMeleeTime > 0) &&
+        !(e.activeWeapon === e.meleeId)
+          ? 0.3
+          : 0);
       m.parts.weaponRig.position.z = -0.25 + recoil * 0.035;
       m.parts.muzzleFlash.visible = shotAge < 0.055;
       m.parts.muzzleFlash.rotation.z = this.clock * 71;
     }
     m.group.scale.y = 1;
+    updateBotWeapon(m, e);
+    if (m.parts.belt)
+      m.parts.belt.position.y = THREE.MathUtils.damp(
+        m.parts.belt.position.y,
+        crouch ? 0.61 : 0.73,
+        20,
+        dt,
+      );
     if (m.parts.leftElbow && m.parts.weaponRig && m.parts.upperBody) {
-      const reloadReach = e.reload > 0 ? Math.sin(e.reload * 5) * 0.12 : 0;
+      const showingMelee =
+        e.activeWeapon === e.meleeId ||
+        e.quickMeleeTime > 0 ||
+        e.deflectTime > 0;
+      const reloadReach =
+        e.reload > 0 && !showingMelee ? Math.sin(e.reload * 5) * 0.12 : 0;
       // Weapon and shoulders share an upper-body parent. Solve directly in
       // that space instead of updating/inverting the entire skeleton twice.
       const rig = m.parts.weaponRig;
-      const leftTarget = v3(-0.12, -0.1 - reloadReach, -0.17 + reloadReach)
+      const leftTarget = m.parts.botLeftGrip
+        .clone()
+        .add(v3(0, -reloadReach, reloadReach))
         .multiply(rig.scale)
         .applyQuaternion(rig.quaternion)
         .add(rig.position);
-      const rightTarget = v3(0, -0.13, -0.01)
+      const rightTarget = m.parts.botRightGrip
+        .clone()
         .multiply(rig.scale)
         .applyQuaternion(rig.quaternion)
         .add(rig.position);

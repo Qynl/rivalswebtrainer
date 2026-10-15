@@ -29,7 +29,7 @@ Mobile layouts support browsing/configuration, but combat requires desktop point
 - Three original arenas: **Concrete Arena**, **Skyline**, **Hangar 09**; elevated cover, walkable stairs, and collision.
 - Default Concrete Arena: a 32 × 42-metre compact gray-concrete layout inspired by the supplied references, with 19.2-metre perimeter walls, collision-matched diagonal slabs, opposing continuous ramp banks, mirrored window cover and taller interior cover.
 - **1v1**, **2v2**, **3v3** team elimination, first to five rounds; countdowns, health-based timeout resolution, spectators, results, and rematches.
-- Four bot levels: **Rookie**, **Regular**, **Veteran**, **Elite**. A* navigation, line-of-sight perception, last-known positions, aim/reaction errors, strafing, jumps, and reload retreats. Bots use rifles; they are not machine-learned replicas of real players.
+- Four bot levels: **Rookie**, **Regular**, **Veteran**, **Elite**. A* navigation, line-of-sight perception, last-known positions, aim/reaction errors, strafing, jumps, and reload retreats. Bots use rifles plus rotating Scythe/Katana/Fists/Knife melee loadouts; they are not machine-learned replicas of real players.
 - Fixed-step movement with interpolated rendering, stronger gravity for less floaty jumps, uphill ramp-launch momentum, responsive ground acceleration/braking, precise air reversals, counter-strafing, slope-driven slides, grounded stair descent, momentum-preserving air steering and slide jumps, buffered jumps (140 ms), coyote time (100 ms), Fists/Bow double jump, Scythe dash, and explosive jumping.
 - Twenty-three usable weapons/utilities, all unlocked:
   - Primary: Assault Rifle, Shotgun, Sniper, Burst Rifle, SMG, RPG, Bow, Minigun, Paintball Gun, Grenade Launcher, Flamethrower.
@@ -63,7 +63,19 @@ Reloads animate magazine extraction/insertion, bolt motion and the support hand.
 
 Graphics use darker panel-seamed concrete, a compact edge HUD, distinct original weapon models and 3D loadout previews, original procedural concrete/metal/window textures, an atmospheric sky, environment-lit metal, rounded geometry, armored bots, building vents/windows, and emissive arena trims. The sky has drifting procedural clouds and a directional sun. Fixed-size combat pools add surface hit marks, debris, bouncing shell casings and muzzle-aligned tracers without allocating a new mesh for each hit. Everything is generated locally. The world is finished with depth-aware contact shading, two-sample MSAA, restrained quarter-resolution HDR bloom, gentle sharpening and a neutral color grade; the weapon overlay stays crisp. Reloads include a raised/banked receiver, magazine extraction, supporting-hand/wrist motion and a bolt rack. Equip, jump/landing inertia, strafing, throw follow-through, blade trails and eased bot deaths provide distinct action feedback. Enable **Performance mode** in Settings to reduce render resolution and bypass post-processing and dynamic shadows on slower hardware.
 
-## Latest movement, tactics and combat-readability pass
+## Player-like bot movement and melee
+
+Combat bots now choose real abilities rather than a cosmetic crouch and random jump:
+
+- Scythe gap-closing/traversal dashes and Katana frontal guards, including **F-style secondary-only quick abilities** without an automatic slash or rifle-ammo consumption.
+- Physical slides, timed slide-jump cancels, close-fire evasive jumps, slope launch momentum, directional air steering and equipped-Fists double-jump combos, using the player movement/collision solver.
+- Close-range melee equips, switch delays, visible windups, range/cone/line-of-sight checks at impact and directional Knife backstabs. They switch back to rifles outside melee range. Switching cancels an unfinished rifle reload without granting a free magazine.
+- Difficulty-paced decisions, ability cooldowns and rifle locks while guarding, swinging, quick-using or switching. Katana responds to perceived shooting/pressure, not bullet contact or hidden input.
+- Third-person melee models, hand IK, guard flashes, forward strikes, low slide poses/hitboxes and spatial action sounds; no additional HUD panels.
+
+Try **3v3 / Elite** for a mixed roster. Melee archetypes rotate between rounds; a 1v1 opponent does not have all four melees at once. Range targets remain non-attacking practice targets. See [the bot implementation and validation report](docs/bot-movement-and-melee.md).
+
+## Movement, tactics and combat-readability pass
 
 - Fixed **120 Hz simulation** with the existing render interpolation; this is a physics update rate, not a claim of 120 rendered FPS.
 - Properly aligned rear-notch/front-fibre ADS on Rifle, SMG, Handgun, Uzi, Shotgun, Shorty and Grenade Launcher, rather than merely zooming the hip-fire pose.
@@ -78,13 +90,13 @@ See [the combat-readability report](docs/combat-readability-pass.md) for validat
 ## Tests
 
 ```sh
-npm test                   # 124 input, abilities, physics, movement, rigging, audio, rendering and combat tests
+npm test                   # 144 input, abilities, physics, movement, rigging, audio, rendering and combat tests
 npm run build              # Production build + offline cache generation
 npx playwright install chromium
 npm run test:browser       # Browser integration test
 ```
 
-You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tests. Most integration tests validate an actual WebGL frame and pointer lock, then disable rendering to run deterministic combat/AI checks efficiently on machines using software graphics. Dedicated graphics tests retain real rendering for all 23 weapon models, skeletal bots, pooled effects, contact-shading pixel comparisons, bloom resize and the Performance bypass. They exercise loadout selection, shots/headshots, reloads, jumps, grenade/smoke/molotov lifecycles, pause/settings, map selection, team bots, five-round victory, results, and mobile layout. The eleven-test browser suite also covers wizard steps, draft cancellation, compact HUD dimensions, tall walls, real Bow/Medkit input, Flashbang throws and rematch selection. Additional browser tests check arena floor layers, actual stair traversal, slide-jump momentum, Shift/F controls, katana reflection, mouse spike filtering, graphics settings, and the production cache/reload with networking disabled.
+You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tests. Most integration tests validate an actual WebGL frame and pointer lock, then disable rendering to run deterministic combat/AI checks efficiently on machines using software graphics. Dedicated graphics tests retain real rendering for all 23 weapon models, skeletal bots, pooled effects, contact-shading pixel comparisons, bloom resize and the Performance bypass. They exercise loadout selection, shots/headshots, reloads, jumps, grenade/smoke/molotov lifecycles, pause/settings, map selection, team bots, five-round victory, results, and mobile layout. The twelve-test browser suite also covers wizard steps, draft cancellation, compact HUD dimensions, tall walls, real Bow/Medkit input, Flashbang throws and rematch selection. Additional browser tests check arena floor layers, actual stair traversal, slide-jump momentum, Shift/F controls, katana reflection, mouse spike filtering, graphics settings, and the production cache/reload with networking disabled.
 
 ## Structure
 
@@ -99,6 +111,8 @@ You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tes
 - `src/audio.js`: synthesized sound effects.
 - `src/input.js`: pointer-lock mouse-packet validation.
 - `src/bot-tactics.js`: visibility-aware selection, bounded reachable-cover search and route following.
+- `src/bot-actions.js`: cooldown-gated abilities, deliberate action selection, collision probes and player-like physical movement.
+- `src/bot-visuals.js`: cached third-person melee weapons, grips and guard/swing poses.
 - `src/rigging.js`: analytic two-bone arm IK.
 - `src/combat-feedback.js`: camera-relative damage bearings, spatial mix and projected reticle spread.
 - `src/arena-dressing.js`: cached offline stencil atlas and non-colliding Arena wayfinding.
@@ -110,7 +124,7 @@ You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tes
 - `src/main.js`, `src/style.css`, `index.html`: lobby, loadout, guide, HUD, menus.
 - `vite.config.js`: bundling, preview-host support and production offline cache.
 
-This is an original playable trainer foundation, not every map, weapon, animation, mode, cosmetic, or mechanic in Roblox RIVALS. Balancing is approximate. Bot pathfinding is on a ground grid, so bots do not plan advanced rooftop routes or weapon-specific movement combinations.
+This is an original playable trainer foundation, not every map, weapon, animation, mode, cosmetic, or mechanic in Roblox RIVALS. Balancing is approximate. Global bot pathfinding is still on a ground grid. Local movement/melee combos do not constitute planned rooftop trick routes, human-equivalent decisions, or support for every weapon in the bot loadout.
 
 ## Reference research and endurance validation
 
@@ -130,6 +144,7 @@ For controlled full-size screenshots of the updated weapons, bot rig and Arena:
 
 ```sh
 npm run audit:visual -- /tmp/arena-visuals
+npm run audit:bots -- /tmp/bot-poses
 ```
 
 This uses the development preview and the same `BROWSER_EXECUTABLE` override. Images go outside Git; the paused audit is not an FPS benchmark. Settings also include an independent **speed-based field of view** toggle.
