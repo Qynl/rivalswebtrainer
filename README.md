@@ -27,10 +27,10 @@ Mobile layouts support browsing/configuration, but combat requires desktop point
 ## Included
 
 - Three original arenas: **Concrete Arena**, **Skyline**, **Hangar 09**; elevated cover, walkable stairs, and collision.
-- Default Concrete Arena: a 48 × 64-metre enclosed gray-concrete layout inspired by the supplied references, with 16.8-metre perimeter walls, collision-matched diagonal slabs, side ledges, stairs, and a central passage with a walkable roof.
+- Default Concrete Arena: a 32 × 42-metre compact gray-concrete layout inspired by the supplied references, with 19.2-metre perimeter walls, collision-matched diagonal slabs, opposing continuous ramp banks, mirrored window cover and taller interior cover.
 - **1v1**, **2v2**, **3v3** team elimination, first to five rounds; countdowns, health-based timeout resolution, spectators, results, and rematches.
 - Four bot levels: **Rookie**, **Regular**, **Veteran**, **Elite**. A* navigation, line-of-sight perception, last-known positions, aim/reaction errors, strafing, jumps, and reload retreats. Bots use rifles; they are not machine-learned replicas of real players.
-- Fixed-step movement with interpolated rendering, responsive ground acceleration/braking, momentum-preserving air steering and slide jumps, buffered jumps (140 ms), coyote time (100 ms), Fists/Bow double jump, Scythe dash, and explosive jumping.
+- Fixed-step movement with interpolated rendering, stronger gravity for less floaty jumps, uphill ramp-launch momentum, responsive ground acceleration/braking, momentum-preserving air steering and slide jumps, buffered jumps (140 ms), coyote time (100 ms), Fists/Bow double jump, Scythe dash, and explosive jumping.
 - Twenty-three usable weapons/utilities, all unlocked:
   - Primary: Assault Rifle, Shotgun, Sniper, Burst Rifle, SMG, RPG, Bow, Minigun, Paintball Gun, Grenade Launcher, Flamethrower.
   - Secondary: Handgun, Uzi, Shorty.
@@ -53,23 +53,26 @@ Mobile layouts support browsing/configuration, but combat requires desktop point
 | Space             | Jump and cancel slide; hold for bunny hops; Fists/Bow double jump                           |
 | C / Shift / Ctrl  | Short 0.4-second slide while moving; steer or jump to cancel                                |
 | 1–4 / mouse wheel | Equip a loadout slot                                                                        |
+| T                 | Inspect weapon (firing, aiming, switching or reloading cancels the inspection)              |
 | R                 | Reload                                                                                      |
 | Escape            | Pause / release mouse                                                                       |
 
 Scythe dash recharges in **3 seconds**. Katana's frontal guard lasts **1.1 seconds** and has a **3.5-second cooldown**. It reflects bullets back along a real collision-tested ray; rear attacks, melee, and explosives are not blocked. Shooting is disabled during the guard. F never automatically swings/punches; melee without a secondary ability displays a hint instead.
+
+Reloads animate magazine extraction/insertion, bolt motion and the support hand. Weapons ease into ADS/equip positions; T inspects them. Bots animate around hip/shoulder joints instead of rotating entire limbs around their centres. Static weapon geometry is batched by material to reduce draw submissions.
 
 Graphics use darker panel-seamed concrete, a compact edge HUD, distinct original weapon models and 3D loadout previews, original procedural concrete/metal/window textures, an atmospheric sky, environment-lit metal, rounded geometry, armored bots, building vents/windows, and emissive arena trims. Everything is generated locally. Enable **Performance mode** in Settings to reduce render resolution and disable dynamic shadows on slower hardware.
 
 ## Tests
 
 ```sh
-npm test                   # 59 input, abilities, physics, movement, navigation and combat tests
+npm test                   # 76 input, abilities, physics, movement, navigation, animation and combat tests
 npm run build              # Production build + offline cache generation
 npx playwright install chromium
 npm run test:browser       # Browser integration test
 ```
 
-You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tests. The integration tests validate an actual WebGL frame and pointer lock, then disable rendering to run deterministic combat/AI checks efficiently on machines using software graphics. They exercise loadout selection, shots/headshots, reloads, jumps, grenade/smoke/molotov lifecycles, pause/settings, map selection, team bots, five-round victory, results, and mobile layout. Five browser integration tests also cover wizard steps, draft cancellation, compact HUD dimensions, tall walls, real Bow/Medkit input, Flashbang throws and rematch selection. Additional browser tests check arena floor layers, actual stair traversal, slide-jump momentum, Shift/F controls, katana reflection, mouse spike filtering, graphics settings, and the production cache/reload with networking disabled.
+You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tests. The integration tests validate an actual WebGL frame and pointer lock, then disable rendering to run deterministic combat/AI checks efficiently on machines using software graphics. They exercise loadout selection, shots/headshots, reloads, jumps, grenade/smoke/molotov lifecycles, pause/settings, map selection, team bots, five-round victory, results, and mobile layout. Seven browser integration tests also cover wizard steps, draft cancellation, compact HUD dimensions, tall walls, real Bow/Medkit input, Flashbang throws and rematch selection. Additional browser tests check arena floor layers, actual stair traversal, slide-jump momentum, Shift/F controls, katana reflection, mouse spike filtering, graphics settings, and the production cache/reload with networking disabled.
 
 ## Structure
 
@@ -77,6 +80,8 @@ You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tes
 - `src/world.js`: procedural arenas, block-style actors and first-person meshes.
 - `src/weapon-models.js`, `src/weapon-preview.js`: detailed procedural weapons and the static loadout turntable.
 - `src/physics.js`: swept circle/AABB/rotated-cover collision, vertical movement, and rectangular ground-grid A* navigation.
+- `src/arena-layout.js`: compact Arena dimensions and mirrored half-layout (visual estimates, not verified Roblox measurements).
+- `src/animation.js`: frame-rate-independent weapon pose springs, phased reload/inspect animations and moving weapon parts.
 - `src/movement.js`: ground/air acceleration, slide steering, and movement tuning constants.
 - `src/data.js`: weapons, settings and difficulty parameters.
 - `src/audio.js`: synthesized sound effects.
@@ -86,3 +91,17 @@ You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tes
 - `vite.config.js`: bundling, preview-host support and production offline cache.
 
 This is an original playable trainer foundation, not every map, weapon, animation, mode, cosmetic, or mechanic in Roblox RIVALS. Balancing is approximate. Bot pathfinding is on a ground grid, so bots do not plan advanced rooftop routes or weapon-specific movement combinations.
+
+## Reference research and endurance validation
+
+See [Arena reconstruction notes](docs/arena-research.md) for sources, what could/could not be verified, tuning choices and validation scope. The default Arena is deliberately compact and distinct from Big Arena. Dimensions are original trainer-space estimates, not claimed Roblox stud measurements.
+
+With the development preview running, an optional stability/resource run exercises every weapon, movement, projectiles, effects and real WebGL rendering:
+
+```sh
+npm run test:soak -- --minutes 10
+# A two-hour endurance run, if explicitly wanted:
+npm run test:soak -- --minutes 120
+```
+
+Use `BROWSER_EXECUTABLE` when Chromium is installed outside Playwright's default location. Do not edit/rebuild the app during this development-server soak, because Vite hot reload resets the test session. This is not a hardware FPS benchmark.

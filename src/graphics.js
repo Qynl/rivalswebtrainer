@@ -57,7 +57,9 @@ export class ArenaGraphics {
       const n =
         kind === "normal"
           ? 122 + Math.floor(grain * 12)
-          : 235 + Math.floor(grain * 15);
+          : kind === "concrete"
+            ? 244 + Math.floor(grain * 6)
+            : 235 + Math.floor(grain * 15);
       image.data[i] = n;
       image.data[i + 1] = n;
       image.data[i + 2] = kind === "normal" ? 255 : n;
@@ -132,24 +134,21 @@ export class ArenaGraphics {
     sun.addColorStop(1, "#fff3de00");
     g.fillStyle = sun;
     g.fillRect(1300, 200, 300, 300);
-    for (let i = 0; i < 22; i++) {
+    // Soft wisps rather than repeated hard-edged ellipse stamps.
+    for (let i = 0; i < 36; i++) {
       const x = this.random() * 2048,
-        y = 180 + this.random() * 230,
-        w = 60 + this.random() * 170;
-      g.fillStyle = "rgba(255,255,255,.12)";
-      for (let j = 0; j < 5; j++) {
-        g.beginPath();
-        g.ellipse(
-          x + j * w * 0.28,
-          y + (j % 2) * 9,
-          w * 0.55,
-          13 + this.random() * 15,
-          0,
-          0,
-          Math.PI * 2,
-        );
-        g.fill();
-      }
+        y = 220 + this.random() * 170,
+        r = 90 + this.random() * 180;
+      const cloud = g.createRadialGradient(x, y, 1, x, y, r);
+      cloud.addColorStop(0, "rgba(255,255,255,.07)");
+      cloud.addColorStop(1, "rgba(255,255,255,0)");
+      g.save();
+      g.translate(0, y);
+      g.scale(1, 0.22);
+      g.translate(0, -y);
+      g.fillStyle = cloud;
+      g.fillRect(x - r, y - r, r * 2, r * 2);
+      g.restore();
     }
     const t = new THREE.CanvasTexture(c);
     t.mapping = THREE.EquirectangularReflectionMapping;

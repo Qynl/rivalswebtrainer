@@ -22,19 +22,46 @@ export function circleBox(x, z, r, b) {
   return dx * dx + dz * dz < r * r;
 }
 const EPSILON = 1e-5;
+// Shared by mesh collision, head clearance, support and slide-jump launch.
+export function surfaceHeight(b, x, z) {
+  if (!b.ramp) return b.maxY;
+  const p = localPoint(x, z, b),
+    bounds = limits(b),
+    axis = b.ramp.axis || "z";
+  const low = axis === "x" ? bounds.minX : bounds.minZ,
+    high = axis === "x" ? bounds.maxX : bounds.maxZ;
+  let t = clamp((p[axis] - low) / (high - low), 0, 1);
+  if (b.ramp.direction < 0) t = 1 - t;
+  return b.minY + b.ramp.rise * t;
+}
+export function rampGradient(b) {
+  if (!b.ramp) return { x: 0, z: 0 };
+  const bounds = limits(b),
+    axis = b.ramp.axis || "z";
+  const slope =
+    (b.ramp.rise /
+      (axis === "x" ? bounds.maxX - bounds.minX : bounds.maxZ - bounds.minZ)) *
+    (b.ramp.direction || 1);
+  const c = Math.cos(b.angle || 0),
+    s = Math.sin(b.angle || 0);
+  return axis === "x"
+    ? { x: slope * c, z: -slope * s }
+    : { x: slope * s, z: slope * c };
+}
 export function canOccupy(body, x, y, z, boxes, height = body.height) {
   return !boxes.some(
     (b) =>
-      y < b.maxY - EPSILON &&
+      y < surfaceHeight(b, x, z) - EPSILON &&
       y + height > b.minY + EPSILON &&
       circleBox(x, z, body.radius, b),
   );
 }
 function tryStep(body, x, z, b, boxes) {
-  if (!body.grounded || b.maxY - body.y > 0.4 + EPSILON || b.maxY <= body.y)
+  const top = surfaceHeight(b, x, z);
+  if (!body.grounded || top - body.y > 0.4 + EPSILON || top <= body.y)
     return false;
-  if (!canOccupy(body, x, b.maxY, z, boxes)) return false;
-  body.y = b.maxY;
+  if (!canOccupy(body, x, top, z, boxes)) return false;
+  body.y = top;
   return true;
 }
 function resolveCircle(body, b) {
@@ -85,11 +112,22 @@ export function moveBody(body, dx, dz, boxes) {
   for (let i = 0; i < steps; i++) {
     body.x += dx / steps;
     body.z += dz / steps;
+    // Ground adhesion on continuous slopes prevents downhill micro-falls/jitter.
+    if (body.grounded)
+      for (const b of boxes)
+        if (b.ramp && circleBox(body.x, body.z, body.radius, b)) {
+          const top = surfaceHeight(b, body.x, body.z);
+          if (
+            Math.abs(top - body.y) <= 0.4 + EPSILON &&
+            canOccupy(body, body.x, top, body.z, boxes)
+          )
+            body.y = top;
+        }
     // Two passes keep intersecting cover corners stable at high slide/dash speeds.
     for (let pass = 0; pass < 2; pass++)
       for (const b of boxes) {
         if (
-          body.y < b.maxY - 0.04 &&
+          body.y < surfaceHeight(b, body.x, body.z) - 0.04 &&
           body.y + body.height > b.minY + 0.02 &&
           circleBox(body.x, body.z, body.radius, b)
         ) {
@@ -98,16 +136,21 @@ export function moveBody(body, dx, dz, boxes) {
       }
   }
 }
+export const GRAVITY = 30;
 export function verticalStep(body, dt, boxes) {
   const old = body.y;
-  body.y += body.vy * dt - 11 * dt * dt;
-  body.vy -= 22 * dt;
+  body.y += body.vy * dt - GRAVITY * 0.5 * dt * dt;
+  body.vy -= GRAVITY * dt;
   body.grounded = false;
-  let floor = 0;
+  let floor = 0,
+    support = null;
   for (const b of boxes) {
     if (circleBox(body.x, body.z, body.radius, b)) {
-      if (body.vy <= 0 && old >= b.maxY - 0.06 && body.y <= b.maxY)
-        floor = Math.max(floor, b.maxY);
+      const top = surfaceHeight(b, body.x, body.z);
+      if (body.vy <= 0 && old >= top - 0.06 && body.y <= top && top >= floor) {
+        floor = top;
+        support = b;
+      }
       if (
         body.vy > 0 &&
         old + body.height <= b.minY + 0.05 &&
@@ -123,7 +166,8 @@ export function verticalStep(body, dt, boxes) {
     body.vy = 0;
     body.grounded = true;
     body.jumps = 0;
-  }
+    body.groundSlope = support ? rampGradient(support) : null;
+  } else body.groundSlope = null;
 }
 // Deterministic A* on a ground grid, shared by all AI combatants.
 export class NavGrid {
@@ -134,11 +178,26 @@ export class NavGrid {
     this.n = Math.ceil(size / cell);
     this.nz = Math.ceil(sizeZ / cell);
     this.blocked = new Uint8Array(this.n * this.nz);
+    this.heights = new Float32Array(this.n * this.nz);
+    this.slopes = new Uint8Array(this.n * this.nz);
     for (let z = 0; z < this.nz; z++)
       for (let x = 0; x < this.n; x++) {
-        const p = this.point(z * this.n + x);
+        const i = z * this.n + x,
+          p = this.point(i);
+        for (const b of boxes)
+          if (b.ramp && circleBox(p.x, p.z, 0.01, b)) {
+            this.heights[i] = Math.max(
+              this.heights[i],
+              surfaceHeight(b, p.x, p.z),
+            );
+            this.slopes[i] = 1;
+          }
         this.blocked[z * this.n + x] = boxes.some(
-          (b) => b.maxY > 0.5 && b.minY < 1.9 && circleBox(p.x, p.z, 0.5, b),
+          (b) =>
+            !b.ramp &&
+            b.maxY > 0.5 &&
+            b.minY < 1.9 &&
+            circleBox(p.x, p.z, 0.5, b),
         )
           ? 1
           : 0;
@@ -155,6 +214,7 @@ export class NavGrid {
     return {
       x: ((i % this.n) + 0.5) * this.cell - this.size / 2,
       z: (Math.floor(i / this.n) + 0.5) * this.cell - this.sizeZ / 2,
+      y: this.heights?.[i] || 0,
     };
   }
   nearest(i) {
@@ -182,7 +242,7 @@ export class NavGrid {
       return Math.hypot(p.x - ep.x, p.z - ep.z) / this.cell;
     };
     let count = 0;
-    while (open.length && count++ < 1600) {
+    while (open.length && count++ < this.n * this.nz) {
       open.sort((a, b) => cost.get(a) + h(a) - (cost.get(b) + h(b)));
       const cur = open.shift();
       if (cur === e) {
@@ -212,6 +272,13 @@ export class NavGrid {
         if (nx < 0 || nz < 0 || nx >= this.n || nz >= this.nz) continue;
         const n = nz * this.n + nx;
         if (this.blocked[n] || closed.has(n)) continue;
+        const rise = this.heights[n] - this.heights[cur];
+        const slopeConnection = this.slopes[n] && this.slopes[cur];
+        if (
+          rise > (slopeConnection ? this.cell * 1.1 : 0.4) ||
+          rise < -(slopeConnection ? this.cell * 1.1 : 1.2)
+        )
+          continue;
         if (
           dx &&
           dz &&

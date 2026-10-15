@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { moveBody, verticalStep, NavGrid, circleBox } from "../src/physics.js";
+import { MOVEMENT } from "../src/movement.js";
 import { WEAPONS, DIFFICULTIES } from "../src/data.js";
 const wall = { minX: 1, maxX: 2, minZ: -3, maxZ: 3, minY: 0, maxY: 4 };
 const body = () => ({
@@ -32,14 +33,14 @@ test("players can move over boxes when above their top", () => {
 });
 test("jump returns to the ground and resets double jumps", () => {
   const p = body();
-  p.vy = 8.5;
+  p.vy = MOVEMENT.jumpSpeed;
   p.jumps = 1;
   let max = 0;
   for (let i = 0; i < 120; i++) {
     verticalStep(p, 1 / 120, []);
     max = Math.max(max, p.y);
   }
-  assert.ok(max > 1.5);
+  assert.ok(max > 3 && max < 3.6);
   assert.equal(p.y, 0);
   assert.equal(p.grounded, true);
   assert.equal(p.jumps, 0);

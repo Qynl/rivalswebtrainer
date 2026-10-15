@@ -1,3 +1,5 @@
+import { rememberPart, muzzleFlash } from "./animation.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 
@@ -17,7 +19,11 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
     }));
   };
   const dark = material(0x202832, 0.35, 0.6),
-    steel = material(0x596777, 0.7, 0.3),
+    steel = material(
+      id === "rifle" ? 0xb3a582 : 0x596777,
+      id === "rifle" ? 0.25 : 0.7,
+      id === "rifle" ? 0.65 : 0.3,
+    ),
     silver = material(0xb8c6ce, 0.7, 0.25);
   const grip = material(0x363d43, 0.05, 0.9),
     accent = material(data.color, 0.35, 0.45),
@@ -67,29 +73,20 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
     );
   const hand = (x, y, z) => {
     const h = new THREE.Group();
+    h.position.set(x, y, z);
     h.userData.hand = true;
     g.add(h);
-    box(x, y, z, 0.115, 0.13, 0.19, material(0xceb39c, 0.0, 0.85), h);
-    box(
-      x,
-      y - 0.045,
-      z + 0.09,
-      0.12,
-      0.105,
-      0.11,
-      material(0x28343e, 0.0, 0.85),
-      h,
-    );
-    box(
-      x,
-      y - 0.05,
-      z + 0.24,
-      0.105,
-      0.115,
-      0.27,
-      material(0xd7bd9f, 0.0, 0.8),
-      h,
-    );
+    const skin = material(0xbfa58b, 0, 0.83),
+      fabric = material(0x293740, 0, 0.95);
+    box(0, 0, 0, 0.11, 0.095, 0.15, skin, h);
+    box(0, -0.025, 0.07, 0.12, 0.09, 0.09, fabric, h);
+    box(0, -0.04, 0.22, 0.105, 0.105, 0.24, skin, h);
+    // A thumb, knuckle strip and separate finger ridges make a readable grip.
+    box(-0.052, -0.025, -0.02, 0.035, 0.06, 0.065, skin, h).rotation.z = -0.35;
+    for (let i = 0; i < 3; i++)
+      box(-0.031 + i * 0.031, 0.04, -0.035, 0.026, 0.026, 0.072, fabric, h);
+    (g.userData.hands ||= []).push(rememberPart(h));
+    return h;
   };
   const screws = (z0, length) => {
     for (let i = 0; i < 4; i++)
@@ -119,8 +116,14 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
     box(0.24, -0.34, -0.59, 0.075, 0.19, 0.105, grip).rotation.x = -0.22;
     guard(-0.71);
     screws(-0.57, length);
+    box(0.314, -0.15, -0.72, 0.007, 0.046, 0.11, dark);
+    g.userData.bolt = rememberPart(
+      box(0.321, -0.145, -0.69, 0.012, 0.023, 0.054, silver),
+    );
   };
   const stock = () => {
+    // The shoulder stock is outside the first-person frustum, but stays in the showroom.
+    if (hands) return;
     box(0.24, -0.17, -0.4, 0.06, 0.07, 0.24, dark);
     box(0.24, -0.21, -0.28, 0.09, 0.15, 0.1, grip);
     box(0.24, -0.13, -0.4, 0.085, 0.035, 0.19, steel);
@@ -139,7 +142,7 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
   };
 
   if (id === "bow") {
-    tube(
+    g.userData.limbs = tube(
       [
         [0.24, 0.42, -0.86],
         [0.31, 0.3, -0.8],
@@ -150,41 +153,35 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
       0.028,
       wood,
     );
-    tube(
-      [
-        [0.24, 0.42, -0.86],
-        [0.2, -0.04, -0.6],
-        [0.24, -0.47, -0.86],
-      ],
-      0.0025,
-      silver,
+
+    const string = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0.24, 0.42, -0.86),
+        new THREE.Vector3(0.2, -0.04, -0.6),
+        new THREE.Vector3(0.24, -0.47, -0.86),
+      ]),
+      new THREE.LineBasicMaterial({ color: 0xcad3d5 }),
     );
-    // A second string is animated toward the player's hand as the bow draws.
-    const string = new THREE.Group();
+    string.frustumCulled = false;
     g.add(string);
     g.userData.string = string;
-    tube(
-      [
-        [0.24, 0.42, -0.86],
-        [0.2, -0.04, -0.6],
-        [0.24, -0.47, -0.86],
-      ],
-      0.0025,
-      silver,
-      string,
-    );
     box(0.34, -0.07, -0.75, 0.055, 0.16, 0.06, grip);
-    cyl(0.23, -0.055, -0.9, 0.006, 0.7, wood);
+    const arrow = new THREE.Group();
+    g.add(arrow);
+    g.userData.arrow = arrow;
+    cyl(0.23, -0.055, -0.9, 0.006, 0.7, wood, "z", arrow);
     const tip = add(
       new THREE.ConeGeometry(0.021, 0.065, 4),
       silver,
       0.23,
       -0.055,
       -1.27,
+      arrow,
     );
     tip.rotation.x = -Math.PI / 2;
     for (const a of [0, Math.PI / 2])
-      box(0.23, -0.055, -0.62, 0.045, 0.004, 0.085, silver).rotation.z = a;
+      box(0.23, -0.055, -0.62, 0.045, 0.004, 0.085, silver, arrow).rotation.z =
+        a;
     for (const y of [-0.32, 0.29])
       cyl(0.3, y, -0.805, 0.043, 0.022, steel, "x");
     if (hands) hand(0.34, -0.11, -0.7);
@@ -339,7 +336,9 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
       hand(0.37, -0.3, -0.6);
     }
   } else if (id === "pistol") {
-    box(0.24, -0.15, -0.65, 0.11, 0.115, 0.31, steel);
+    g.userData.bolt = rememberPart(
+      box(0.24, -0.15, -0.65, 0.11, 0.115, 0.31, steel),
+    );
     box(0.24, -0.22, -0.62, 0.11, 0.035, 0.29, dark);
     box(0.24, -0.32, -0.52, 0.095, 0.2, 0.12, grip).rotation.x = -0.23;
     barrel(-0.81, 0.025, 0.07);
@@ -352,7 +351,9 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
     receiver(0.29);
     box(0.24, -0.18, -0.6, 0.145, 0.15, 0.2, dark);
     barrel(-0.93, 0.022, 0.22);
-    box(0.24, -0.43, -0.58, 0.08, 0.21, 0.095, steel);
+    g.userData.magazine = rememberPart(
+      box(0.24, -0.43, -0.58, 0.08, 0.21, 0.095, steel),
+    );
     tube(
       [
         [0.32, -0.19, -0.46],
@@ -371,7 +372,9 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
     const len = id === "shotgun" ? 0.55 : 0.26;
     cyl(0.24, -0.15, -0.95, 0.031, len, dark);
     cyl(0.24, -0.22, -0.95, 0.024, len - 0.07, steel);
-    box(0.24, -0.25, -0.91, 0.13, 0.11, 0.22, wood);
+    g.userData.pump = rememberPart(
+      box(0.24, -0.25, -0.91, 0.13, 0.11, 0.22, wood),
+    );
     for (let i = 0; i < 7; i++)
       box(0.24, -0.21, -0.82 - i * 0.029, 0.138, 0.012, 0.012, dark);
     for (let i = 0; i < 4; i++)
@@ -403,7 +406,9 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
       box(0.24, -0.094, -0.85 - i * 0.037, 0.14, 0.012, 0.018, steel);
     }
     if (id === "sniper") {
-      box(0.24, -0.31, -0.75, 0.1, 0.12, 0.15, dark);
+      g.userData.magazine = rememberPart(
+        box(0.24, -0.31, -0.75, 0.1, 0.12, 0.15, dark),
+      );
       cyl(0.24, 0.028, -0.74, 0.053, 0.34, dark);
       cyl(0.24, 0.028, -0.91, 0.063, 0.035, steel);
       cyl(0.24, 0.028, -0.57, 0.055, 0.04, steel);
@@ -425,9 +430,40 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
         silver,
       );
     } else {
-      box(0.24, -0.38, -0.76, 0.095, 0.26, 0.14, steel).rotation.x = -0.18;
+      const magazine = new THREE.Group();
+      magazine.position.set(0.24, -0.245, -0.76);
+      g.add(magazine);
+      const profile = new THREE.Shape();
+      profile.moveTo(-0.06, 0);
+      profile.lineTo(0.06, 0);
+      profile.quadraticCurveTo(0.04, -0.1, 0.095, -0.21);
+      profile.lineTo(0.06, -0.27);
+      profile.quadraticCurveTo(-0.025, -0.25, -0.06, -0.1);
+      profile.closePath();
+      const geometry = new THREE.ExtrudeGeometry(profile, {
+        depth: 0.085,
+        bevelEnabled: true,
+        bevelSegments: 2,
+        bevelSize: 0.005,
+        bevelThickness: 0.004,
+        steps: 1,
+      });
+      geometry.translate(0, 0, -0.0425);
+      geometry.rotateY(Math.PI / 2);
+      add(geometry, steel, 0, 0, 0, magazine);
       for (let i = 0; i < 4; i++)
-        box(0.29, -0.3 - i * 0.05, -0.76, 0.006, 0.025, 0.115, dark);
+        box(
+          0.045,
+          -0.05 - i * 0.048,
+          -0.006,
+          0.006,
+          0.021,
+          0.09,
+          dark,
+          magazine,
+        );
+      box(0, -0.263, -0.015, 0.102, 0.022, 0.13, dark, magazine);
+      g.userData.magazine = rememberPart(magazine);
       sights(-1.06, -0.56);
       cyl(0.24, -0.068, -0.67, 0.029, 0.035, dark);
       box(0.24, -0.071, -0.68, 0.07, 0.04, 0.048, dark);
@@ -437,10 +473,76 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
       hand(0.24, -0.29, -0.94);
     }
   }
+  if (data.slot < 2 && data.type !== "bow" && data.type !== "flame") {
+    const flash = muzzleFlash(
+      new THREE.MeshBasicMaterial({
+        color: 0xffdb85,
+        transparent: true,
+        opacity: 0.85,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    );
+    const muzzleZ =
+      id === "minigun"
+        ? -1.39
+        : id === "sniper"
+          ? -1.55
+          : id === "pistol"
+            ? -0.865
+            : id === "shotgun"
+              ? -1.25
+              : id === "shorty"
+                ? -1.11
+                : id === "uzi"
+                  ? -1.07
+                  : -1.29;
+    flash.position.set(0.24, -0.16, muzzleZ);
+    g.add(flash);
+    g.userData.muzzleFlash = flash;
+  }
+  const moving = new Set(
+    Object.values(g.userData).filter((x) => x?.isObject3D),
+  );
+  for (const h of g.userData.hands || []) mergeStatic(h, new Set());
+  mergeStatic(g, moving);
   g.traverse((o) => {
     if (o.isMesh) o.frustumCulled = false;
   });
   g.position.y = -0.03;
   g.userData.detailed = true;
   return g;
+}
+
+function mergeStatic(group, moving) {
+  const batches = new Map();
+  for (const mesh of [...group.children]) {
+    if (!mesh.isMesh || moving.has(mesh) || !mesh.geometry.attributes.uv)
+      continue;
+    mesh.updateMatrix();
+    const geo = mesh.geometry.index
+      ? mesh.geometry.toNonIndexed()
+      : mesh.geometry.clone();
+    geo.applyMatrix4(mesh.matrix);
+    let batch = batches.get(mesh.material);
+    if (!batch) {
+      batch = { geometries: [], meshes: [] };
+      batches.set(mesh.material, batch);
+    }
+    batch.geometries.push(geo);
+    batch.meshes.push(mesh);
+  }
+  for (const [material, batch] of batches) {
+    const geometry = mergeGeometries(batch.geometries, false);
+    if (!geometry) {
+      batch.geometries.forEach((g) => g.dispose());
+      continue;
+    }
+    for (const m of batch.meshes) {
+      group.remove(m);
+      m.geometry.dispose();
+    }
+    batch.geometries.forEach((g) => g.dispose());
+    group.add(new THREE.Mesh(geometry, material));
+  }
 }

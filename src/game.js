@@ -1,3 +1,4 @@
+import { WeaponAnimator } from "./animation.js";
 import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { ArenaWorld, createCharacter, createViewModel } from "./world.js";
@@ -43,8 +44,8 @@ export class Game {
       180,
     );
     this.camera.rotation.order = "YXZ";
-    this.scene.add(new THREE.HemisphereLight(0xcde9ff, 0x59656f, 1.75));
-    const sun = new THREE.DirectionalLight(0xffedd3, 3.0);
+    this.scene.add(new THREE.HemisphereLight(0xddeaf5, 0x515f6a, 1.1));
+    const sun = new THREE.DirectionalLight(0xfff3e6, 2.25);
     sun.position.set(-20, 38, 15);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
@@ -56,7 +57,8 @@ export class Game {
       near: 1,
       far: 100,
     });
-    sun.shadow.normalBias = 0.04;
+    sun.shadow.normalBias = 0.025;
+    sun.shadow.radius = 2.5;
     sun.shadow.bias = -0.0003;
     this.scene.add(sun);
     this.world = new ArenaWorld(this.scene);
@@ -64,7 +66,7 @@ export class Game {
     this.weaponScene = new THREE.Scene();
     this.weaponScene.environment = this.environmentMap.texture;
     this.weaponScene.environmentIntensity = 0.8;
-    this.weaponScene.add(new THREE.HemisphereLight(0xf4e6ff, 0x544d6a, 3));
+    this.weaponScene.add(new THREE.HemisphereLight(0xe6eff6, 0x54616b, 2.2));
     const wl = new THREE.DirectionalLight(0xffdfba, 3);
     wl.position.set(-2, 3, 1);
     this.weaponScene.add(wl);
@@ -101,6 +103,8 @@ export class Game {
     this.score = [0, 0];
     this.matchStats = { shots: 0, hits: 0, kills: 0, deaths: 0, headshots: 0 };
     this.mouseLook = new MouseLook();
+    this.weaponAnimator = new WeaponAnimator();
+    this.lookSway = { x: 0, y: 0 };
     this.bindInputs();
     this.resize();
     window.addEventListener("resize", () => this.resize());
@@ -141,6 +145,17 @@ export class Game {
         if (!movement) return;
         const sens =
           0.002 * this.settings.sensitivity * (this.aiming ? 0.6 : 1);
+        this.lookSway ||= { x: 0, y: 0 };
+        this.lookSway.x = clamp(
+          this.lookSway.x + movement.x * 0.00012,
+          -0.018,
+          0.018,
+        );
+        this.lookSway.y = clamp(
+          this.lookSway.y + movement.y * 0.0001,
+          -0.014,
+          0.014,
+        );
         this.yaw -= movement.x * sens;
         this.pitch = clamp(this.pitch - movement.y * sens, -1.48, 1.48);
       }
@@ -178,6 +193,7 @@ export class Game {
         this.slide();
       if (e.code === "KeyF") this.meleeAbility(true);
       if (e.code === "KeyR") this.reload();
+      if (e.code === "KeyT" && !this.reloadTime) this.inspectTime = 1.8;
       if (/^Digit[1-4]$/.test(e.code)) this.equip(+e.code.slice(-1) - 1);
     });
     window.addEventListener("keyup", (e) => this.keys.delete(e.code));
@@ -192,6 +208,7 @@ export class Game {
         this.trigger = true;
       }
       if (e.button === 2) {
+        this.inspectTime = 0;
         const w = WEAPONS[this.loadout[this.slot]];
         if (w.type === "heal") this.beginHeal(true);
         else if (w.dash || w.deflect) this.meleeAbility(false);
@@ -436,6 +453,7 @@ export class Game {
     this.clearQuickMelee();
     this.deflectTime = 0;
     this.slot = slot;
+    this.inspectTime = 0;
     this.bowCharge = 0;
     this.bowRelease = false;
     this.spinTime = 0;
@@ -484,7 +502,11 @@ export class Game {
     const p = this.player;
     const w = WEAPONS[this.loadout[this.slot]];
     if (p.grounded || (this.coyoteTime > 0 && p.jumps === 0)) {
-      p.vy = MOVEMENT.jumpSpeed;
+      const slope = p.groundSlope;
+      const rampBoost = slope
+        ? clamp((p.vx * slope.x + p.vz * slope.z) * 0.35, 0, 4)
+        : 0;
+      p.vy = MOVEMENT.jumpSpeed + rampBoost;
       p.grounded = false;
       p.jumps = 1;
       this.coyoteTime = 0;
@@ -536,7 +558,7 @@ export class Game {
     const d = this.moveDirection();
     this.player.vx = (d.length() ? d.x : -Math.sin(this.yaw)) * 28;
     this.player.vz = (d.length() ? d.z : -Math.cos(this.yaw)) * 28;
-    this.player.vy = 3;
+    this.player.vy = Math.max(this.player.vy, 3);
     this.player.grounded = false;
     this.player.jumps = Math.max(1, this.player.jumps);
     this.coyoteTime = 0;
@@ -611,7 +633,9 @@ export class Game {
     const w = WEAPONS[this.loadout[this.slot]],
       a = this.ammunition[this.slot];
     if (!w.reload || a.mag >= w.mag || a.reserve <= 0) return;
+    this.inspectTime = 0;
     this.reloadTime = w.reload;
+    this.reloadTotal = w.reload;
     this.burstCount = 0;
     this.audio.play("reload");
     this.events.update(this);
@@ -663,7 +687,9 @@ export class Game {
     if (Number.isFinite(a.mag)) a.mag--;
     if (this.range && w.slot === 3) a.mag = w.mag;
     this.cooldown = w.interval;
+    this.inspectTime = 0;
     this.flash = 0.055;
+    this.lastShotAt = this.clock;
     this.kick = Math.min(0.13, this.kick + 0.045);
     this.audio.play(w.sound);
     const origin = this.eye(p),
@@ -1319,7 +1345,17 @@ export class Game {
       wasGrounded = p.grounded;
     moveBody(p, p.vx * dt, p.vz * dt, this.world.boxes);
     const stepRise = p.y - oldY;
-    if (wasGrounded && stepRise > 0) this.stepOffset -= stepRise;
+    if (wasGrounded && stepRise > 0) {
+      const expected = p.groundSlope
+        ? Math.max(
+            0,
+            p.groundSlope.x * (p.x - oldX) + p.groundSlope.z * (p.z - oldZ),
+          )
+        : 0;
+      // Ease the extra auto-step at a ramp/platform join, not the continuous slope.
+      const extra = stepRise - expected;
+      if (extra > 0.025) this.stepOffset -= extra;
+    }
     const fallingVelocity = p.vy;
     verticalStep(p, dt, this.world.boxes);
     if (!wasGrounded && p.grounded && fallingVelocity < -3)
@@ -1474,7 +1510,7 @@ export class Game {
         dz = -tz * 0.9 - tx * e.strafe * 0.5;
       }
       if (e.grounded && Math.random() < d.jump * dt && distance < 25) {
-        e.vy = 12.3;
+        e.vy = MOVEMENT.jumpSpeed;
         e.grounded = false;
         e.sliding = 0.4;
       }
@@ -1537,7 +1573,24 @@ export class Game {
     const norm = Math.max(1, Math.hypot(dx, dz));
     e.vx = (dx / norm) * speed;
     e.vz = (dz / norm) * speed;
+    const oldX = e.x,
+      oldZ = e.z;
     moveBody(e, e.vx * dt, e.vz * dt, this.world.boxes);
+    const moved = Math.hypot(e.x - oldX, e.z - oldZ);
+    e.animationPhase = (e.animationPhase || e.seed) + moved * 2.7;
+    e.jumpCooldown = Math.max(0, (e.jumpCooldown || 0) - dt);
+    e.stuckTime =
+      moved < dt * 0.4 && Math.hypot(dx, dz) > 0.1
+        ? (e.stuckTime || 0) + dt
+        : 0;
+    if (e.grounded && e.jumpCooldown <= 0 && e.stuckTime > 0.28) {
+      e.vy = MOVEMENT.jumpSpeed;
+      e.grounded = false;
+      e.jumpCooldown = 1.2;
+      e.stuckTime = 0;
+      e.pathTimer = 0;
+    }
+
     verticalStep(e, dt, this.world.boxes);
     const bounds = this.world.bounds || {
       minX: -23.1,
@@ -1549,19 +1602,42 @@ export class Game {
     e.z = clamp(e.z, bounds.minZ, bounds.maxZ);
     this.animateBot(e, dt);
   }
-  animateBot(e) {
+  animateBot(e, dt = 1 / 60) {
     const m = e.model;
     if (!m) return;
-    m.group.position.set(e.x, e.y, e.z);
-    m.group.rotation.y = e.yaw;
-    const stride =
-      Math.sin(this.clock * 12 + e.seed) *
-      Math.min(0.5, Math.hypot(e.vx, e.vz) * 0.06);
+    const speed = Math.hypot(e.vx, e.vz),
+      phase = e.animationPhase || this.clock * 10 + e.seed;
+    const stride = e.grounded
+      ? Math.sin(phase) * Math.min(0.65, speed * 0.06)
+      : 0.14;
+    m.group.position.set(
+      e.x,
+      e.y + (e.grounded ? Math.abs(Math.sin(phase)) * 0.018 : 0),
+      e.z,
+    );
+    const turn = Math.atan2(
+      Math.sin(e.yaw - m.group.rotation.y),
+      Math.cos(e.yaw - m.group.rotation.y),
+    );
+    m.group.rotation.y += turn * (1 - Math.exp(-18 * dt));
     m.parts.leftLeg.rotation.x = stride;
     m.parts.rightLeg.rotation.x = -stride;
-    m.parts.leftArm.rotation.x = -0.45 - stride * 0.3;
-    m.parts.rightArm.rotation.x = -0.6;
-    m.group.scale.y = e.sliding > 0 ? 0.72 : 1;
+    m.parts.leftArm.rotation.x = -0.55 - stride * 0.16;
+    m.parts.rightArm.rotation.x = -0.65;
+    if (e.reload > 0) {
+      m.parts.leftArm.rotation.x = -1.2;
+      m.parts.leftArm.rotation.z = -0.25;
+    } else m.parts.leftArm.rotation.z = 0;
+    if (e.targetEntity?.alive) {
+      const dy = e.targetEntity.y + 1.5 - (e.y + 1.5),
+        distance = Math.hypot(e.targetEntity.x - e.x, e.targetEntity.z - e.z);
+      m.parts.head.rotation.x = clamp(-Math.atan2(dy, distance), -0.5, 0.5);
+    }
+    m.group.scale.y = THREE.MathUtils.lerp(
+      m.group.scale.y,
+      e.sliding > 0 ? 0.77 : 1,
+      1 - Math.exp(-16 * dt),
+    );
   }
   updateEffects(dt) {
     for (let i = this.effects.length - 1; i >= 0; i--) {
@@ -1596,6 +1672,7 @@ export class Game {
     this.deflectTime = Math.max(0, (this.deflectTime || 0) - dt);
     this.deflectCooldown = Math.max(0, (this.deflectCooldown || 0) - dt);
     this.swingTime = Math.max(0, (this.swingTime || 0) - dt);
+    this.inspectTime = Math.max(0, (this.inspectTime || 0) - dt);
     this.guardFlash = Math.max(0, (this.guardFlash || 0) - dt);
     if (this.quickMeleeTime > 0) {
       this.quickMeleeTime -= dt;
@@ -1767,42 +1844,38 @@ export class Game {
     this.camera.updateProjectionMatrix();
     const activeModel = this.quickModel || this.viewModel;
     if (activeModel) {
-      const speed = Math.hypot(p.vx, p.vz);
-      activeModel.position.set(
-        this.aiming
-          ? -0.187
-          : 0.09 +
-              (Math.sin(this.walkPhase) * 0.005 * speed) / MOVEMENT.runSpeed,
-        -0.1 -
-          (this.aiming ? 0.015 : 0) -
-          this.kick * 0.5 -
-          this.switchTime * 0.9 -
-          (this.reloadTime > 0 ? 0.18 : 0),
-        -0.16 + this.kick * 0.45 + (this.aiming ? 0.14 : 0),
-      );
-      activeModel.rotation.set(
-        this.kick * 0.6 + (this.reloadTime > 0 ? -0.4 : 0),
-        0,
-        this.reloadTime > 0 ? -0.25 : 0,
-      );
-
-      if (activeModel.userData.rotor)
-        activeModel.userData.rotor.rotation.z +=
-          dt * (this.spinTime || 0) * 100;
-      if (activeModel.userData.string) {
-        activeModel.userData.string.position.z = (this.bowCharge || 0) * 0.08;
-      }
-      if (this.healTime > 0) {
-        activeModel.rotation.set(-0.3, 0.2, 0.1);
-        activeModel.position.y = -0.05;
-      }
-      const swing = Math.sin(((this.swingTime || 0) / 0.28) * Math.PI);
-      activeModel.rotation.z -= swing * 0.9;
-      activeModel.rotation.y -= swing * 0.5;
-      if (this.deflectTime > 0) {
-        activeModel.position.set(-0.12, -0.03, -0.24);
-        activeModel.rotation.set(0.15, -0.25, -0.85);
-      }
+      this.weaponAnimator ||= new WeaponAnimator();
+      const look = this.lookSway || { x: 0, y: 0 };
+      this.weaponAnimator.update(activeModel, {
+        dt,
+        phase: this.walkPhase,
+        speed: Math.hypot(p.vx, p.vz),
+        grounded: p.grounded,
+        slide: this.slideTime > 0,
+        aim: this.aiming,
+        kick: this.kick,
+        swap: this.switchTime || 0,
+        reloading: this.reloadTime > 0,
+        reload:
+          this.reloadTime > 0
+            ? 1 - this.reloadTime / (this.reloadTotal || w.reload || 1)
+            : 0,
+        shake: this.settings.shake,
+        lookX: this.settings.shake ? look.x : 0,
+        lookY: this.settings.shake ? look.y : 0,
+        spin: this.spinTime,
+        draw: this.bowCharge,
+        time: this.clock,
+        shotAge:
+          this.lastShotAt === undefined ? 10 : this.clock - this.lastShotAt,
+        flash: this.flash > 0,
+        heal: this.healTime,
+        swing: this.swingTime,
+        guard: this.deflectTime > 0,
+        inspect: this.inspectTime,
+      });
+      look.x *= Math.exp(-18 * dt);
+      look.y *= Math.exp(-18 * dt);
     }
   }
 }

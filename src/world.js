@@ -1,3 +1,4 @@
+import { ARENA, HALF_COVER } from "./arena-layout.js";
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { ArenaGraphics, artColor } from "./graphics.js";
@@ -196,6 +197,7 @@ export class ArenaWorld {
     this.boxes = [];
     this.solidMeshes = [];
     this.mapId = id;
+    this.size = 48;
     this.bounds = { minX: -23.1, maxX: 23.1, minZ: -23.1, maxZ: 23.1 };
     if (id === "blockout") {
       this.buildBlockout();
@@ -409,10 +411,108 @@ export class ArenaWorld {
     }
     return mesh;
   }
+  windowCover(x, z, width, height = 4.4, depth = 1.3, axis = "x") {
+    const opening = 2.15,
+      sill = 0.85,
+      lintel = 3.0;
+    const piece = (offset, y, w, h) => {
+      const mesh =
+        axis === "z"
+          ? this.box(x, y, z + offset, depth, h, w, 0x9aa4ac)
+          : this.box(x + offset, y, z, w, h, depth, 0x9aa4ac);
+      mesh.material = this.blockMaterial;
+    };
+    const side = (width - opening) / 2;
+    piece(-(width + opening) / 4, height / 2, side, height);
+    piece((width + opening) / 4, height / 2, side, height);
+    piece(0, sill / 2, opening, sill);
+    piece(0, (height + lintel) / 2, opening, height - lintel);
+  }
+  ramp(x, z, width, length, rise, direction = 1) {
+    const low = -length / 2,
+      high = length / 2;
+    const h0 = direction > 0 ? 0 : rise,
+      h1 = direction > 0 ? rise : 0;
+    const vertices = [
+      [-width / 2, 0, low],
+      [width / 2, 0, low],
+      [-width / 2, 0, high],
+      [width / 2, 0, high],
+      [-width / 2, h0, low],
+      [width / 2, h0, low],
+      [-width / 2, h1, high],
+      [width / 2, h1, high],
+    ];
+    const indices = [
+      4, 6, 5, 5, 6, 7, 0, 1, 2, 1, 3, 2, 0, 4, 1, 1, 4, 5, 2, 3, 6, 3, 7, 6, 0,
+      2, 4, 2, 6, 4, 1, 5, 3, 3, 5, 7,
+    ];
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(vertices.flat(), 3),
+    );
+    geometry.setIndex(indices);
+    const flat = geometry.toNonIndexed();
+    geometry.dispose();
+    flat.computeVertexNormals();
+    const mesh = new THREE.Mesh(flat, this.blockMaterial);
+    mesh.position.set(x, 0, z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    this.group.add(mesh);
+    this.solidMeshes.push(mesh);
+    this.boxes.push({
+      minX: x - width / 2,
+      maxX: x + width / 2,
+      minZ: z - length / 2,
+      maxZ: z + length / 2,
+      minY: 0,
+      maxY: rise,
+      ramp: { axis: "z", direction, rise },
+    });
+    return mesh;
+  }
+  contactShadow(x, z, w, d, angle = 0) {
+    if (!this.materials.has("contact-shadow")) {
+      const c = document.createElement("canvas");
+      c.width = c.height = 128;
+      const ctx = c.getContext("2d");
+      const grad = ctx.createRadialGradient(64, 64, 12, 64, 64, 64);
+      grad.addColorStop(0, "rgba(13,23,32,.3)");
+      grad.addColorStop(0.6, "rgba(13,23,32,.13)");
+      grad.addColorStop(1, "rgba(13,23,32,0)");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 128, 128);
+      this.materials.set(
+        "contact-shadow",
+        new THREE.MeshBasicMaterial({
+          map: new THREE.CanvasTexture(c),
+          transparent: true,
+          depthWrite: false,
+          polygonOffset: true,
+          polygonOffsetFactor: -1,
+        }),
+      );
+    }
+    const mesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(w + 1.3, d + 1.3),
+      this.materials.get("contact-shadow"),
+    );
+    mesh.position.set(x, 0.012, z);
+    mesh.rotation.set(-Math.PI / 2, 0, -angle);
+    this.group.add(mesh);
+  }
   buildBlockout() {
-    this.bounds = { minX: -23.55, maxX: 23.55, minZ: -31.55, maxZ: 31.55 };
+    const { width, depth, wallHeight, wallThickness } = ARENA;
+    this.bounds = {
+      minX: -width / 2 + 0.44,
+      maxX: width / 2 - 0.44,
+      minZ: -depth / 2 + 0.44,
+      maxZ: depth / 2 - 0.44,
+    };
     this.scene.background = this.graphics.sky("blockout");
-    this.scene.fog = new THREE.Fog(0xc5ccd1, 75, 160);
+    this.scene.fog = new THREE.Fog(0xa7b4be, 65, 125);
     if (!this.blockMaterial) {
       const material = new THREE.MeshStandardMaterial({
         color: 0x9aa4ac,
@@ -436,70 +536,75 @@ export class ArenaWorld {
           )
           .replace(
             "#include <map_fragment>",
-            "vec3 panelNormal=abs(normalize(vPanelNormal));vec2 panelUv=panelNormal.y>max(panelNormal.x,panelNormal.z)?vPanelPosition.xz:panelNormal.x>panelNormal.z?vPanelPosition.zy:vPanelPosition.xy;diffuseColor*=texture2D(map,panelUv/3.0);",
+            "vec3 panelNormal=abs(normalize(vPanelNormal));vec2 panelUv=panelNormal.y>max(panelNormal.x,panelNormal.z)?vPanelPosition.xz:panelNormal.x>panelNormal.z?vPanelPosition.zy:vPanelPosition.xy;diffuseColor*=texture2D(map,panelUv/2.4);",
           );
       };
       material.customProgramCacheKey = () => "concrete-reference-v1";
       this.blockMaterial = material;
       this.materials.set("reference-concrete", material);
     }
-    this.box(0, -1.1, 0, 50, 1.8, 66, 0x90999f, false);
-    const floor = this.box(0, -0.1, 0, 48, 0.2, 64, 0x858e95, false);
+    this.box(0, -0.7, 0, width + 2, 1, depth + 2, 0x63717a, false);
+    const floor = this.box(0, -0.1, 0, width, 0.2, depth, 0x858e95, false);
     if (!this.materials.has("arena-floor"))
       this.materials.set(
         "arena-floor",
         new THREE.MeshStandardMaterial({
-          color: 0x858e95,
+          color: 0x7f8a91,
           roughness: 1,
           map: this.graphics.texture("concrete"),
         }),
       );
     floor.material = this.materials.get("arena-floor");
     this.solidMeshes.push(floor);
-    for (const x of [-24.8, 24.8]) this.concrete(x, 0, 1.6, 16.8, 65.6);
-    for (const z of [-32.8, 32.8]) this.concrete(0, z, 51.2, 16.8, 1.6);
-    // A narrow low ledge and inset cap frame the reference's tall concrete box.
-    for (const x of [-22.6, 22.6]) this.concrete(x, 0, 2.8, 0.6, 62);
-    for (const z of [-30.6, 30.6]) this.concrete(0, z, 42.4, 0.6, 2.8);
-    for (const [x, z, w, h, d, a] of [
-      [-17, -22, 5.5, 3.8, 5.5, 0],
-      [-1, -22, 11, 3.4, 4.5, 0],
-      [15.5, -22, 8, 2.2, 2.7, 0],
-      [-7.8, -13, 11, 2.8, 2.4, -0.48],
-      [7.5, -12, 9.5, 3.4, 4, 0.55],
-      [-15.5, -2, 6, 3, 4, 0],
-      [15, -1, 7.5, 3.6, 4.7, 0],
-      [-6.5, 10, 11, 3.2, 4, 0.58],
-      [6.8, 12, 14, 2.5, 2.2, -0.5],
-      [-16, 19, 6.2, 3.4, 4, 0],
-      [-1.5, 24, 13, 2.1, 3, 0],
-      [15, 22, 7, 3.4, 3.3, 0],
-    ])
-      this.concrete(x, z, w, h, d, a);
-    // The central structure has a real passage and a walkable roof, not a solid cube.
-    this.concrete(-0.7, 0, 2.2, 4, 7.2);
-    this.concrete(5.7, 0, 2.2, 4, 7.2);
-    const header = this.box(2.5, 3.5, 0, 8.6, 1, 7.2, 0xd8dbdd);
-    header.material = this.blockMaterial;
-    this.concrete(2.5, -2.7, 4.2, 3, 1.8);
-    for (let i = 0; i < 8; i++)
-      this.concrete(2.5, 8.8 - i * 0.6, 3, 0.35 * (i + 1), 0.6);
-    // Explicit routes up the side ledges and a couple of hop-on blocks.
-    this.concrete(-18.3, -18, 2, 0.8, 2);
-    this.concrete(17.5, 16.5, 2, 0.8, 2);
+    for (const x of [-1, 1])
+      this.concrete(
+        (x * (width + wallThickness)) / 2,
+        0,
+        wallThickness,
+        wallHeight,
+        depth + wallThickness * 2,
+      );
+    for (const z of [-1, 1])
+      this.concrete(
+        0,
+        (z * (depth + wallThickness)) / 2,
+        width + wallThickness * 2,
+        wallHeight,
+        wallThickness,
+      );
+    // Mirrored half-layout: compact sightlines, opposing ramp banks and window cover.
+    for (const side of [-1, 1]) {
+      for (const b of HALF_COVER) {
+        this.concrete(b.x * side, b.z * side, b.w, b.h, b.d, b.angle);
+        this.contactShadow(b.x * side, b.z * side, b.w, b.d, b.angle);
+      }
+      this.windowCover(-1.5 * side, -16 * side, 7, 3.8, 2.0);
+      this.windowCover(10 * side, -15.5 * side, 5.3, 3.3, 1.8);
+      this.windowCover(-1.7 * side, -side, 6.2, 4.4, 2.0, "z");
+      this.ramp(-10.5 * side, -13.4 * side, 4.2, 6.4, ARENA.rampRise, -side);
+      this.concrete(-10.5 * side, -17.6 * side, 4.2, ARENA.rampRise, 2);
+      this.contactShadow(-10.5 * side, -14.5 * side, 4.3, 8.5);
+      // A subtle, narrow expansion grid: no raised floor overlays or z-fighting.
+      this.floorMark(0, side * 19.6, 25, 0.025, 0x596971, 1);
+    }
+    for (let x = -12; x <= 12; x += 4.8)
+      this.floorMark(x, 0, 0.014, depth - 0.1, 0x5c6971, 1);
+    for (let z = -16.8; z <= 17; z += 4.8)
+      this.floorMark(0, z, width - 0.1, 0.014, 0x5c6971, 1);
     this.spawns = {
       0: [
-        { x: 0, z: 28.5 },
-        { x: -9, z: 28.5 },
-        { x: 9, z: 28.5 },
+        { x: 0, z: ARENA.spawnZ },
+        { x: -5.8, z: ARENA.spawnZ },
+        { x: 5.8, z: ARENA.spawnZ },
       ],
       1: [
-        { x: 0, z: -28.5 },
-        { x: 9, z: -28.5 },
-        { x: -9, z: -28.5 },
+        { x: 0, z: -ARENA.spawnZ },
+        { x: 5.8, z: -ARENA.spawnZ },
+        { x: -5.8, z: -ARENA.spawnZ },
       ],
     };
-    this.nav = new NavGrid(this.boxes, 48, 1.5, 64);
+    this.size = width;
+    this.nav = new NavGrid(this.boxes, width, 0.8, depth);
     this.group.updateMatrixWorld(true);
   }
   glow(x, y, z, w, h, d, color = 0x88e1eb) {
@@ -667,6 +772,39 @@ export function createCharacter(team, name = "BOT") {
     );
     pad.position.set(0, -0.02, -0.18);
     parts[side].add(pad);
+  }
+  // Hip/shoulder pivots, not mesh-centre rotations: feet no longer paddle in place.
+  for (const [name, y] of [
+    ["leftLeg", 0.73],
+    ["rightLeg", 0.73],
+    ["leftArm", 1.37],
+    ["rightArm", 1.37],
+  ]) {
+    const mesh = parts[name],
+      joint = new THREE.Group();
+    joint.position.set(mesh.position.x, y, mesh.position.z);
+    mesh.position.sub(joint.position);
+    group.remove(mesh);
+    joint.add(mesh);
+    group.add(joint);
+    parts[name] = joint;
+    if (name.endsWith("Leg")) {
+      const boot = new THREE.Mesh(
+        new RoundedBoxGeometry(0.3, 0.13, 0.4, 1, 0.016),
+        dark,
+      );
+      boot.position.set(0, -0.665, -0.045);
+      boot.castShadow = true;
+      joint.add(boot);
+    } else {
+      const palm = new THREE.Mesh(
+        new RoundedBoxGeometry(0.22, 0.15, 0.22, 1, 0.018),
+        skin,
+      );
+      palm.position.set(0, -0.59, 0);
+      palm.castShadow = true;
+      joint.add(palm);
+    }
   }
   // Nametag: only shown for allies, so rivals can't be tracked through walls.
   if (team === 0) {
