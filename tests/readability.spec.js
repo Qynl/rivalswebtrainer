@@ -15,8 +15,13 @@ test("offline wayfinding, directional damage, physical reticle and spatial sound
   });
   await page.click("#range-button");
   await page.waitForFunction(() => document.pointerLockElement !== null);
-  const result = await page.evaluate(() => {
+  const result = await page.evaluate(async () => {
     const g = window.__arena;
+    // React commits DOM updates asynchronously; retain every original assertion.
+    const commit = async () => {
+      g.events.update(g);
+      await new Promise(requestAnimationFrame);
+    };
     g.world.build("blockout");
     g.player.health = 100;
     g.player.alive = true;
@@ -27,7 +32,7 @@ test("offline wayfinding, directional damage, physical reticle and spatial sound
     g.events.feedClear();
     const source = { x: g.player.x + 8, z: g.player.z, team: 1, name: "TEST" };
     g.damage(g.player, 12, source);
-    g.events.tick(g);
+    await commit();
     const arc = [...document.querySelectorAll(".damage-arc")].find(
       (e) => Number(e.style.opacity) > 0,
     );
@@ -36,7 +41,7 @@ test("offline wayfinding, directional damage, physical reticle and spatial sound
     );
     g.yaw = Math.PI / 2;
     g.clock += 0.05;
-    g.events.tick(g);
+    await commit();
     const turnedAngle = Number(
       arc.style.transform.match(/rotate\((.*)rad\)/)[1],
     );
@@ -48,11 +53,11 @@ test("offline wayfinding, directional damage, physical reticle and spatial sound
       );
     const ground = gap();
     g.player.grounded = false;
-    g.events.tick(g);
+    await commit();
     const airborne = gap();
     g.aiming = true;
     g.player.grounded = true;
-    g.events.tick(g);
+    await commit();
     const ads = gap();
     g.events.hit(true);
     const headMarker =

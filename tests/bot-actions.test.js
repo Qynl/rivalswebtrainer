@@ -191,7 +191,7 @@ test("Fists extra jump is only available while equipped, once per airtime", () =
   assert.equal(botJump(e, world, true), false);
   e.activeWeapon = "fists";
   assert.ok(botJump(e, world, true));
-  assert.equal(e.vy, 14);
+  assert.equal(e.vy, 10.8);
   assert.equal(e.jumps, 2);
   assert.equal(botJump(e, world, true), false);
 });
@@ -303,10 +303,10 @@ test("Knife backstabs use facing while guards do not magically block melee", () 
   e.activeWeapon = "knife";
   const g = combatGame(e, target);
   g.resolveBotMelee(e, { id: "knife", yaw: 0 });
-  assert.equal(target.health, 100);
+  assert.equal(target.health, 50);
   target.yaw = Math.PI;
   g.resolveBotMelee(e, { id: "knife", yaw: 0 });
-  assert.equal(target.health, 60);
+  assert.equal(target.health, 10);
 });
 test("NPC guard reflects frontal bullets with ownership intact, but not rear attacks", () => {
   const guard = actor("katana"),

@@ -40,7 +40,7 @@ test("jump returns to the ground and resets double jumps", () => {
     verticalStep(p, 1 / 120, []);
     max = Math.max(max, p.y);
   }
-  assert.ok(max > 3 && max < 3.6);
+  assert.ok(max > 2 && max < 2.15);
   assert.equal(p.y, 0);
   assert.equal(p.grounded, true);
   assert.equal(p.jumps, 0);

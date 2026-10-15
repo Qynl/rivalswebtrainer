@@ -1,4 +1,5 @@
 import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
 import { createHash } from "node:crypto";
 function offlineCache() {
   return {
@@ -33,7 +34,7 @@ e.respondWith(caches.match(e.request,{ignoreVary:true}).then(cached=>cached||fet
   };
 }
 export default defineConfig({
-  plugins: [offlineCache()],
+  plugins: [react(), offlineCache()],
   server: { host: "0.0.0.0", allowedHosts: [".e2b.app"] },
   preview: { host: "0.0.0.0", allowedHosts: [".e2b.app"] },
   build: {

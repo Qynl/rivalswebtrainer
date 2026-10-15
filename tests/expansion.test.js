@@ -254,7 +254,11 @@ test("medkit has distinct quick and long heals and never overheals", () => {
   g.ammunition[3].mag = 1;
   assert.equal(g.beginHeal(false), true);
   g.updateSupport(2.3);
-  assert.equal(g.player.health, 100);
+  assert.equal(g.player.health, 135);
+  g.ammunition[3].mag = 1;
+  assert.equal(g.beginHeal(true), true);
+  g.updateSupport(0.9);
+  assert.equal(g.player.health, 150);
   g.ammunition[3].mag = 1;
   assert.equal(g.beginHeal(), false);
   assert.equal(g.ammunition[3].mag, 1);

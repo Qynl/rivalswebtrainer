@@ -125,7 +125,8 @@ test("live slide buffering, slide-jump aim, descending stairs and optional speed
   expect(report.runDistance).toBeLessThan(10);
   expect(report.sliding).toBe(true);
   expect(report.jump.slide).toBe(0);
-  expect(report.jump.vy).toBeGreaterThan(14);
+  expect(report.jump.vy).toBeGreaterThan(11.2);
+  expect(report.jump.vy).toBeLessThan(12);
   expect(report.jump.speed).toBeGreaterThan(18);
   expect(report.originError).toBeLessThan(1e-10);
   expect(report.buffered).toBe(true);

@@ -271,7 +271,7 @@ export const WEAPONS = {
     reserve: Infinity,
     range: 3,
     color: 0xb7bfcc,
-    desc: "Get up close and strike. Hits from behind deal 100 damage. A risky play with a big payoff.",
+    desc: "Get up close and strike. Hits from behind deal 150 damage. Front and side hits deal 40. A risky play with a big payoff.",
     stats: [7, 1, 5],
     sound: "melee",
   },

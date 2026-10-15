@@ -1,4 +1,11 @@
 import {
+  MAX_HEALTH,
+  ROUND_COUNTDOWN,
+  knifeDamage,
+  isBackstab,
+} from "./combat-rules.js";
+import { DamageNumbers } from "./damage-numbers.js";
+import {
   THROWN_UTILITIES,
   THROW_DURATION,
   THROW_RELEASE,
@@ -50,9 +57,11 @@ const botActionSounds = {
 };
 export class Game {
   constructor(canvas, settings, events) {
+    this.warming = !!events.deferWarmup;
     this.canvas = canvas;
     this.settings = settings;
     this.events = events;
+    this.damageNumbers = new DamageNumbers();
     this.audio = new GameAudio();
     this.audio.volume = settings.volume / 100;
     this.renderer = new THREE.WebGLRenderer({
@@ -69,13 +78,33 @@ export class Game {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 0.96;
     this.scene = new THREE.Scene();
-    const pmrem = new THREE.PMREMGenerator(this.renderer);
-    const room = new RoomEnvironment();
-    this.environmentMap = pmrem.fromScene(room, 0.035, 0.1, 100, { size: 128 });
+    if (events.environmentData) {
+      const data = events.environmentData;
+      const texture = new THREE.DataTexture(
+        data.values,
+        data.width,
+        data.height,
+        THREE.RGBAFormat,
+        THREE.HalfFloatType,
+      );
+      texture.mapping = THREE.CubeUVReflectionMapping;
+      texture.colorSpace = THREE.LinearSRGBColorSpace;
+      texture.minFilter = texture.magFilter = THREE.LinearFilter;
+      texture.generateMipmaps = false;
+      texture.flipY = false;
+      texture.needsUpdate = true;
+      this.environmentMap = { texture, dispose: () => texture.dispose() };
+    } else {
+      const pmrem = new THREE.PMREMGenerator(this.renderer);
+      const room = new RoomEnvironment();
+      this.environmentMap = pmrem.fromScene(room, 0.035, 0.1, 100, {
+        size: 128,
+      });
+      room.dispose();
+      pmrem.dispose();
+    }
     this.scene.environment = this.environmentMap.texture;
     this.scene.environmentIntensity = 0.38;
-    room.dispose();
-    pmrem.dispose();
     this.camera = new THREE.PerspectiveCamera(
       settings.fov,
       innerWidth / innerHeight,
@@ -160,13 +189,24 @@ export class Game {
     this.last = performance.now();
     requestAnimationFrame((t) => this.frame(t));
   }
+  async prepare() {
+    // Parallel shader compilation happens behind the already-painted React shell.
+    // No shadow, texture, resolution or post-processing quality is reduced.
+    this.camera.position.set(8, 12, 13);
+    this.camera.lookAt(0, 2, 0);
+    await this.renderer.compileAsync(this.scene, this.camera);
+    this.renderer.autoClear = true;
+    this.renderWorld();
+    this.warming = false;
+    this.last = performance.now();
+  }
   bindInputs() {
     document.addEventListener("pointerlockchange", () => {
       if (
         document.pointerLockElement !== this.canvas &&
         ["playing", "countdown", "roundend"].includes(this.state)
       ) {
-        this.pause();
+        if (!this.selectingLoadout) this.pause();
       } else if (document.pointerLockElement === this.canvas) {
         this.captureTime = performance.now();
         this.mouseLook.reset(this.captureTime);
@@ -242,6 +282,17 @@ export class Game {
         ].includes(e.code)
       )
         e.preventDefault();
+      if (
+        e.code === "KeyM" &&
+        !e.repeat &&
+        this.state === "countdown" &&
+        !this.selectingLoadout
+      ) {
+        e.preventDefault();
+        this.beginSelection();
+        return;
+      }
+      if (this.selectingLoadout) return;
       if (e.code === "Escape") {
         this.pause();
         return;
@@ -264,7 +315,8 @@ export class Game {
     window.addEventListener("mousedown", (e) => {
       if (
         document.pointerLockElement !== this.canvas ||
-        this.state !== "playing"
+        this.state !== "playing" ||
+        this.selectingLoadout
       )
         return;
       if (e.button === 0) {
@@ -399,8 +451,51 @@ export class Game {
     this.startRound();
     this.requestLock();
   }
+  beginSelection() {
+    if (
+      this.state !== "countdown" ||
+      this.selectingLoadout ||
+      !this.player?.alive
+    )
+      return false;
+    this.selectingLoadout = true;
+    this.mouseDown = this.trigger = this.aiming = false;
+    this.keys.clear();
+    document.exitPointerLock?.();
+    this.events.selectWeapons?.();
+    return true;
+  }
+  finishSelection(loadout) {
+    if (!this.selectingLoadout) return false;
+    if (
+      loadout &&
+      this.player?.alive &&
+      ["countdown", "playing"].includes(this.state)
+    ) {
+      const next = loadout.map((id, i) =>
+        WEAPONS[id]?.slot === i ? id : this.loadout[i],
+      );
+      // Preserve ammunition for unchanged slots; never refill a spent utility.
+      this.ammunition = next.map((id, i) =>
+        id === this.loadout[i]
+          ? this.ammunition[i]
+          : { mag: WEAPONS[id].mag, reserve: WEAPONS[id].reserve },
+      );
+      this.loadout = next;
+      this.config.loadout = [...next];
+      this.slot = -1;
+      this.equip(0);
+    }
+    this.selectingLoadout = false;
+    this.keys.clear();
+    this.events.update(this);
+    if (["countdown", "playing", "roundend"].includes(this.state))
+      this.requestLock();
+    return true;
+  }
   cleanEntities() {
     this.cancelThrow(false);
+    this.damageNumbers?.clear();
     this.combatFX?.clear();
     for (const e of this.entities) {
       if (e.model) {
@@ -449,7 +544,8 @@ export class Game {
       grounded: true,
       jumps: 0,
       alive: true,
-      health: 100,
+      health: MAX_HEALTH,
+      maxHealth: MAX_HEALTH,
       isPlayer,
       target,
       yaw: team === 0 ? 0 : Math.PI,
@@ -485,6 +581,8 @@ export class Game {
     this.clearQuickMelee();
     this.cleanEntities();
     this.audio?.clearSpatial?.();
+    this.selectingLoadout = false;
+    this.playerMeleePending = null;
     this.round++;
     this.player = this.createEntity(0, this.world.spawns[0][0], 0, true);
     this.yaw = 0;
@@ -550,12 +648,12 @@ export class Game {
       for (let i = 0; i < this.config.mode; i++)
         this.createEntity(1, this.world.spawns[1][i], i);
       this.state = "countdown";
-      this.countdown = 3;
-      this.countSound = 4;
+      this.countdown = ROUND_COUNTDOWN;
+      this.countSound = ROUND_COUNTDOWN + 1;
       this.events.banner(
         "ROUND " + this.round,
-        "3",
-        "Eliminate the rivals. First to 5.",
+        String(ROUND_COUNTDOWN),
+        "M to change weapons · Eliminate the rivals. First to 5.",
         0,
       );
     }
@@ -568,6 +666,7 @@ export class Game {
   equip(slot) {
     if (slot === this.slot || !this.player?.alive) return;
     this.cancelThrow();
+    this.playerMeleePending = null;
     this.clearQuickMelee();
     this.deflectTime = 0;
     this.slot = slot;
@@ -887,26 +986,10 @@ export class Game {
       } else this.spawnProjectile(p, origin, forward, id);
       this.matchStats.shots++;
     } else if (w.type === "melee") {
-      this.swingTime = 0.28;
-      for (const e of this.entities) {
-        if (!e.alive || e.team === p.team) continue;
-        const delta = this.eye(e).sub(origin);
-        if (
-          delta.length() < w.range &&
-          delta.normalize().dot(forward) > 0.45 &&
-          this.hasLOS(origin, this.eye(e))
-        ) {
-          let damage = w.damage;
-          if (id === "knife") {
-            const behind = v3(-Math.sin(e.yaw), 0, -Math.cos(e.yaw));
-            if (behind.dot(v3(p.x - e.x, 0, p.z - e.z).normalize()) < -0.45)
-              damage = 100;
-          }
-          this.damage(e, damage, p, false);
-          this.events.hit(false);
-          this.audio.play("hit");
-        }
-      }
+      this.swingTime = 0.36;
+      this.swingSequence = (this.swingSequence || 0) + 1;
+      this.backstabTime = 0;
+      this.playerMeleePending = { id, remaining: 0.105 };
     } else {
       this.matchStats.shots++;
       let hit = false;
@@ -930,6 +1013,48 @@ export class Game {
       // sustained fire to drag/snap the user's actual look direction upward.
     }
     this.events.update(this);
+  }
+  updatePlayerMelee(dt) {
+    const attack = this.playerMeleePending;
+    if (!attack) return;
+    attack.remaining -= dt;
+    if (attack.remaining > 1e-8) return;
+    this.playerMeleePending = null;
+    if (!this.player?.alive || this.loadout[this.slot] !== attack.id) return;
+    const p = this.player,
+      w = WEAPONS[attack.id],
+      origin = this.eye(p);
+    const forward = v3(0, 0, -1).applyEuler(
+      new THREE.Euler(this.pitch, this.yaw, 0, "YXZ"),
+    );
+    const targets = this.entities
+      .filter((e) => e.alive && e.team !== p.team)
+      .sort(
+        (a, b) =>
+          Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z),
+      );
+    for (const e of targets) {
+      const delta = this.eye(e).sub(origin);
+      if (
+        delta.length() >= w.range ||
+        delta.normalize().dot(forward) <= 0.45 ||
+        !this.hasLOS(origin, this.eye(e))
+      )
+        continue;
+      const backstab = attack.id === "knife" && isBackstab(p, e);
+      if (backstab) this.backstabTime = 0.26;
+      this.damage(
+        e,
+        attack.id === "knife" ? knifeDamage(p, e) : w.damage,
+        p,
+        false,
+        p,
+        backstab,
+      );
+      this.events.hit(false);
+      this.audio.play("hit");
+      break;
+    }
   }
   bullet(shooter, origin, dir, w, reflected = false) {
     this.ray.set(origin, dir);
@@ -1058,7 +1183,7 @@ export class Game {
       this.healTime -= dt;
       if (this.healTime <= 0 && this.player.alive) {
         this.player.health = Math.min(
-          100,
+          this.player.maxHealth || MAX_HEALTH,
           this.player.health + this.healAmount,
         );
         this.events.update(this);
@@ -1070,7 +1195,7 @@ export class Game {
       !this.player?.alive ||
       this.state !== "playing" ||
       this.healTime > 0 ||
-      this.player.health >= 100
+      this.player.health >= (this.player.maxHealth || MAX_HEALTH)
     )
       return false;
     const a = this.ammunition[this.slot];
@@ -1157,8 +1282,22 @@ export class Game {
       });
     }
   }
-  damage(e, amount, source, head = false, hitOrigin = source) {
+  damage(
+    e,
+    amount,
+    source,
+    head = false,
+    hitOrigin = source,
+    backstab = false,
+  ) {
     if (!e.alive || amount <= 0) return;
+    const applied = Math.min(e.health, amount);
+    if (source?.isPlayer && source !== e && source.team !== e.team)
+      this.damageNumbers?.add(e, applied, head, this.clock, backstab);
+    if (e.model) {
+      e.hitReact = 0.22;
+      e.hitDirection = source ? Math.atan2(e.x - source.x, e.z - source.z) : 0;
+    }
     e.health = Math.max(0, e.health - amount);
     if (e.isPlayer) {
       this.healTime = 0;
@@ -1587,6 +1726,7 @@ export class Game {
   updatePlayer(dt) {
     const p = this.player;
     if (!p.alive) return;
+    this.updatePlayerMelee(dt);
     this.updateThrow(dt);
     const w = WEAPONS[this.loadout[this.slot]];
     this.slideCooldown = Math.max(0, this.slideCooldown - dt);
@@ -1746,7 +1886,7 @@ export class Game {
       this.animateDeath(e, dt);
       if (this.range && this.clock >= e.respawnAt) {
         e.alive = true;
-        e.health = 100;
+        e.health = e.maxHealth || MAX_HEALTH;
         e.model.group.rotation.z = 0;
         e.model.group.position.y = 0;
         e.x = clamp(e.x + (Math.random() - 0.5) * 6, -18, 18);
@@ -2110,15 +2250,15 @@ export class Game {
         !this.hasLOS(origin, this.eye(victim))
       )
         continue;
-      let damage = w.damage;
-      if (
-        attack.id === "knife" &&
-        v3(-Math.sin(victim.yaw || 0), 0, -Math.cos(victim.yaw || 0)).dot(
-          v3(e.x - victim.x, 0, e.z - victim.z).normalize(),
-        ) < -0.45
-      )
-        damage = 100;
-      this.damage(victim, damage, e);
+      const backstab = attack.id === "knife" && isBackstab(e, victim);
+      this.damage(
+        victim,
+        attack.id === "knife" ? knifeDamage(e, victim) : w.damage,
+        e,
+        false,
+        e,
+        backstab,
+      );
       e.actionCounts.meleeHits = (e.actionCounts.meleeHits || 0) + 1;
       break;
     }
@@ -2133,6 +2273,8 @@ export class Game {
       : 0.14;
     m.parts.locomotion ||= new BotLocomotion();
     const pose = m.parts.locomotion.update(e, phase, dt, m.group.rotation.y);
+    e.hitReact = Math.max(0, (e.hitReact || 0) - dt);
+    const hitPulse = Math.sin((e.hitReact / 0.22) * Math.PI) * 0.085;
     m.group.position.set(e.x, e.y + pose.bob, e.z);
     const turn = Math.atan2(
       Math.sin(e.yaw - m.group.rotation.y),
@@ -2170,7 +2312,8 @@ export class Game {
         forward = -e.vx * Math.sin(e.yaw) - e.vz * Math.cos(e.yaw);
       m.parts.upperBody.rotation.z = THREE.MathUtils.damp(
         m.parts.upperBody.rotation.z,
-        clamp(-lateral * 0.012, -0.1, 0.1),
+        clamp(-lateral * 0.012, -0.1, 0.1) +
+          hitPulse * Math.sin((e.hitDirection || 0) - e.yaw),
         16,
         dt,
       );
@@ -2180,7 +2323,8 @@ export class Game {
           ? -0.55
           : e.dashTime > 0
             ? -0.18
-            : clamp(-forward * 0.006, -0.07, 0.07),
+            : clamp(-forward * 0.006, -0.07, 0.07) +
+              hitPulse * Math.cos((e.hitDirection || 0) - e.yaw),
         16,
         dt,
       );
@@ -2269,6 +2413,7 @@ export class Game {
     this.deflectTime = Math.max(0, (this.deflectTime || 0) - dt);
     this.deflectCooldown = Math.max(0, (this.deflectCooldown || 0) - dt);
     this.swingTime = Math.max(0, (this.swingTime || 0) - dt);
+    this.backstabTime = Math.max(0, (this.backstabTime || 0) - dt);
     this.dashTime = Math.max(0, (this.dashTime || 0) - dt);
     this.inspectTime = Math.max(0, (this.inspectTime || 0) - dt);
     this.throwTime = Math.max(0, (this.throwTime || 0) - dt);
@@ -2300,7 +2445,7 @@ export class Game {
       }
     }
     if (this.state === "playing") {
-      this.updatePlayer(dt);
+      if (!this.selectingLoadout) this.updatePlayer(dt);
       for (const e of this.entities) if (!e.isPlayer) this.updateBot(e, dt);
       this.updateProjectiles(dt);
       if (!this.range) {
@@ -2340,6 +2485,10 @@ export class Game {
     else this.renderer.render(this.scene, this.camera);
   }
   frame(t) {
+    if (this.warming) {
+      requestAnimationFrame((t) => this.frame(t));
+      return;
+    }
     const elapsed = Math.max(0, (t - this.last) / 1000);
     const renderDt = Math.min(0.1, elapsed);
     this.last = t;
@@ -2466,6 +2615,9 @@ export class Game {
     this.camera.updateProjectionMatrix();
     const activeModel = this.quickModel || this.viewModel;
     if (activeModel) {
+      activeModel.visible = !(
+        this.aiming && this.loadout[this.slot] === "sniper"
+      );
       this.weaponAnimator ||= new WeaponAnimator();
       const look = this.lookSway || { x: 0, y: 0 };
       this.weaponAnimator.update(activeModel, {
@@ -2496,6 +2648,8 @@ export class Game {
         flash: this.flash > 0,
         heal: this.healTime,
         swing: this.swingTime,
+        swingSequence: this.swingSequence,
+        backstab: this.backstabTime,
         dash: this.dashTime,
         guard: this.deflectTime > 0,
         inspect: this.inspectTime,

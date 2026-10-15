@@ -213,6 +213,25 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
       shape.lineTo(-0.032, 0.2);
       shape.closePath();
       g.userData.blade = blade(shape, 0.28, -0.17, -0.67, bladeMetal);
+      // Inset fuller and a bright bevel edge keep the small blade readable.
+      tube(
+        [
+          [0.268, -0.13, -0.647],
+          [0.27, 0.005, -0.647],
+          [0.275, 0.08, -0.647],
+        ],
+        0.0035,
+        dark,
+      );
+      tube(
+        [
+          [0.307, -0.16, -0.647],
+          [0.301, 0.025, -0.647],
+          [0.268, 0.14, -0.647],
+        ],
+        0.0025,
+        silver,
+      );
       box(0.28, -0.19, -0.66, 0.14, 0.025, 0.085, dark);
       box(0.28, -0.28, -0.66, 0.055, 0.17, 0.065, grip);
       for (let i = 0; i < 5; i++)
@@ -290,9 +309,15 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
         g.userData.poseOffset = { x: 0.02, y: -0.07, z: -0.18 };
       }
     }
-    if (id === "scythe" || id === "katana") {
+    if (id === "scythe" || id === "katana" || id === "knife") {
       const trail = add(
-        new THREE.TorusGeometry(0.43, 0.008, 4, 32, Math.PI * 0.9),
+        new THREE.TorusGeometry(
+          id === "knife" ? 0.18 : 0.43,
+          id === "knife" ? 0.0035 : 0.008,
+          4,
+          32,
+          Math.PI * 0.9,
+        ),
         new THREE.MeshBasicMaterial({
           color: 0xd9f5ff,
           transparent: true,
@@ -341,12 +366,14 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
     }
     cyl(0.27, -0.09, -0.67, 0.037, 0.025, dark, "y");
     box(0.31, -0.15, -0.67, 0.016, 0.145, 0.025, silver).rotation.z = -0.18;
-    add(
-      new THREE.TorusGeometry(0.025, 0.004, 6, 18),
-      silver,
-      0.31,
-      -0.075,
-      -0.635,
+    g.userData.pullRing = rememberPart(
+      add(
+        new THREE.TorusGeometry(0.025, 0.004, 6, 18),
+        silver,
+        0.31,
+        -0.075,
+        -0.635,
+      ),
     );
     if (hands) hand(0.27, -0.3, -0.61);
   } else if (id === "molotov") {
@@ -537,12 +564,21 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
     const hopper = add(
       new THREE.SphereGeometry(0.1, 24, 12),
       accent,
-      0.24,
+      0.36,
       0.095,
       -0.71,
     );
     hopper.scale.set(1, 0.75, 1.35);
-    box(0.24, 0.17, -0.72, 0.13, 0.02, 0.11, dark);
+    box(0.36, 0.17, -0.72, 0.13, 0.02, 0.11, dark);
+    // Offset feed/hopper leaves an unobstructed elevated open sight line.
+    box(0.24, 0.04, -0.62, 0.035, 0.13, 0.035, dark);
+    const sightStart = g.children.length;
+    sights(-0.98, -0.52);
+    const sightLift = 0.115 - g.userData.adsPoint.y;
+    g.userData.adsPoint.y += sightLift;
+    g.userData.frontSight.y += sightLift;
+    for (const child of g.children.slice(sightStart))
+      child.position.y += sightLift;
     cyl(0.24, -0.32, -0.41, 0.068, 0.26, silver);
     cyl(0.24, -0.32, -0.28, 0.07, 0.035, dark);
     tube(
@@ -725,6 +761,7 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
       box(0.24, -0.094, -0.85 - i * 0.037, 0.14, 0.012, 0.018, steel);
     }
     if (id === "sniper") {
+      g.userData.adsPoint = new THREE.Vector3(0.24, 0.028, -0.545);
       g.userData.magazine = rememberPart(
         box(0.24, -0.31, -0.75, 0.1, 0.12, 0.15, dark),
       );
@@ -854,7 +891,11 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
     g.userData.throwableBody = body;
     mergeStatic(
       body,
-      new Set([g.userData.rag, g.userData.pilotFlame].filter(Boolean)),
+      new Set(
+        [g.userData.rag, g.userData.pilotFlame, g.userData.pullRing].filter(
+          Boolean,
+        ),
+      ),
     );
   }
   const moving = new Set(

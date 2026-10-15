@@ -27,6 +27,11 @@ export class CombatFX {
       maxLife: 1,
     }));
     this.traceLife = new Float32Array(FX_LIMITS.traces);
+    this.traceState = Array.from({ length: FX_LIMITS.traces }, () => ({
+      a: new THREE.Vector3(),
+      b: new THREE.Vector3(),
+      length: 0,
+    }));
     this.casingState = Array.from({ length: FX_LIMITS.casings }, () => ({
       life: 0,
       p: new THREE.Vector3(),
@@ -256,8 +261,18 @@ export class CombatFX {
     this.color
       .set(color ?? (team === 0 ? 0xffdfad : 0xffb49d))
       .multiplyScalar(2.6);
+    const t = this.traceState[i];
+    t.a.copy(a);
+    t.b.copy(b);
+    t.length = a.distanceTo(b);
+    const end = Math.min(1, 4 / Math.max(0.001, t.length));
     attrs.position.setXYZ(i * 2, a.x, a.y, a.z);
-    attrs.position.setXYZ(i * 2 + 1, b.x, b.y, b.z);
+    attrs.position.setXYZ(
+      i * 2 + 1,
+      a.x + (b.x - a.x) * end,
+      a.y + (b.y - a.y) * end,
+      a.z + (b.z - a.z) * end,
+    );
     for (const index of [i * 2, i * 2 + 1]) {
       attrs.color.setXYZ(index, this.color.r, this.color.g, this.color.b);
       attrs.alpha.setX(index, 0.75);
@@ -342,6 +357,26 @@ export class CombatFX {
       if (this.traceLife[i] > 0) {
         this.traceLife[i] = Math.max(0, this.traceLife[i] - dt);
         const alpha = (this.traceLife[i] / 0.065) * 0.75;
+        const t = this.traceState[i],
+          head = Math.min(1, (1 - this.traceLife[i] / 0.065) * 1.3 + 0.1),
+          tail = Math.max(
+            0,
+            head - Math.min(0.6, 4 / Math.max(0.001, t.length)),
+          );
+        const positions = this.traces.geometry.attributes.position;
+        positions.setXYZ(
+          i * 2,
+          t.a.x + (t.b.x - t.a.x) * tail,
+          t.a.y + (t.b.y - t.a.y) * tail,
+          t.a.z + (t.b.z - t.a.z) * tail,
+        );
+        positions.setXYZ(
+          i * 2 + 1,
+          t.a.x + (t.b.x - t.a.x) * head,
+          t.a.y + (t.b.y - t.a.y) * head,
+          t.a.z + (t.b.z - t.a.z) * head,
+        );
+        positions.needsUpdate = true;
         this.traces.geometry.attributes.alpha.setX(i * 2, alpha);
         this.traces.geometry.attributes.alpha.setX(i * 2 + 1, alpha);
         if (alpha > 0) traces++;

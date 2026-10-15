@@ -153,6 +153,8 @@ test("RMB Scythe dash and LMB strike are separate actions", () => {
   assert.equal(g.meleeAbility(false), true);
   assert.equal(g.entities[1].health, 100);
   g.firePlayer();
+  assert.equal(g.entities[1].health, 100); // Actual windup, not an instant hit.
+  g.updatePlayerMelee(0.11);
   assert.equal(g.entities[1].health, 65);
   assert.ok(g.swingTime > 0);
   assert.equal(g.ammunition[2].mag, Infinity);

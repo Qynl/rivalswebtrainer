@@ -113,7 +113,7 @@ test("Shift/C slides, jump cancels, F quick ability, Katana reflection and mouse
     };
   });
   expect(reflect.slot).toBe(0);
-  expect(reflect.playerHealth).toBe(100);
+  expect(reflect.playerHealth).toBe(150);
   expect(reflect.botHealth).toBeLessThan(100);
   expect(reflect.ammoUnchanged).toBe(true);
   expect(reflect.guard).toBeGreaterThan(0);

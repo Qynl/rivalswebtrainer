@@ -230,6 +230,14 @@ export class WeaponAnimator {
       model.rotation.set(-0.23, 0.2, 0.06);
       model.position.y += 0.055 + Math.sin((state.time || 0) * 5) * 0.005;
     }
+    if (parts.pullRing) {
+      parts.pullRing.position.copy(parts.pullRing.userData.restPosition);
+      const pull =
+        state.throwing > 0 ? smooth((0.48 - state.throwing) / 0.13) : 0;
+      parts.pullRing.position.x -= pull * 0.06;
+      parts.pullRing.position.y += pull * 0.035;
+      parts.pullRing.visible = !state.throwReleased || !state.throwing;
+    }
     if (parts.throwableBody)
       parts.throwableBody.visible =
         state.throwing > 0 ? !state.throwReleased : (state.ammo ?? 1) > 0;
@@ -259,25 +267,46 @@ export class WeaponAnimator {
       model.position.z += dash * 0.07;
     }
     if (state.swing > 0) {
-      const t = 1 - state.swing / 0.28;
-      const cut = smooth(t / 0.48) * (1 - smooth((t - 0.5) / 0.5));
-      if (parts.weaponId === "fists" || parts.weaponId === "knife") {
-        model.position.z -= cut * (parts.weaponId === "fists" ? 0.08 : 0.24);
-        if (parts.weaponId === "fists" && parts.hands?.[0])
-          parts.hands[0].position.z -= cut * 0.22;
-        model.position.x -= cut * 0.035;
-        model.rotation.x -= cut * 0.16;
-      } else {
-        model.rotation.z -= cut * 1.05;
-        model.rotation.y -= cut * 0.6;
-        model.rotation.x -= Math.sin(t * Math.PI) * 0.15;
-        model.position.x -= cut * 0.06;
-        if (parts.slashTrail) {
-          parts.slashTrail.visible = t > 0.17 && t < 0.72;
-          parts.slashTrail.material.opacity =
-            Math.sin(saturate((t - 0.17) / 0.55) * Math.PI) * 0.35;
+      const t = saturate(1 - state.swing / 0.36),
+        wind = smooth(t / 0.28),
+        strike = smooth((t - 0.28) / 0.22),
+        recover = 1 - smooth((t - 0.55) / 0.45),
+        direction = (state.swingSequence || 0) % 2 ? 1 : -1;
+      if (parts.weaponId === "knife") {
+        model.position.x +=
+          (wind * 0.045 - strike * 0.15) * recover * direction;
+        model.position.z += (wind * 0.065 - strike * 0.28) * recover;
+        model.position.y += (wind * 0.04 - strike * 0.05) * recover;
+        model.rotation.z += (wind * 0.35 - strike * 0.95) * recover * direction;
+        model.rotation.y += (wind * 0.15 - strike * 0.3) * recover * direction;
+        model.rotation.x += (wind * 0.18 - strike * 0.45) * recover;
+      } else if (parts.weaponId === "fists") {
+        const hand = parts.hands?.[(state.swingSequence || 0) % 2];
+        if (hand) {
+          hand.position.z -= strike * recover * 0.28;
+          hand.rotation.z += strike * recover * 0.18 * direction;
         }
+        model.rotation.y += (wind * 0.1 - strike * 0.2) * recover * direction;
+      } else {
+        model.rotation.z += (wind * 0.28 - strike * 1.15) * recover * direction;
+        model.rotation.y += (wind * 0.16 - strike * 0.65) * recover * direction;
+        model.rotation.x -= Math.sin(t * Math.PI) * 0.2;
+        model.position.x -= strike * recover * 0.09 * direction;
+        model.position.z -= strike * recover * 0.06;
       }
+      if (parts.slashTrail) {
+        parts.slashTrail.visible = t > 0.28 && t < 0.6;
+        parts.slashTrail.material.opacity =
+          Math.sin(saturate((t - 0.28) / 0.32) * Math.PI) * 0.24;
+      }
+    }
+    if (state.backstab > 0 && parts.weaponId === "knife") {
+      const t = saturate(1 - state.backstab / 0.26),
+        drive = 1 - smooth(t);
+      model.position.z -= drive * 0.18;
+      model.position.y += drive * 0.04;
+      model.rotation.x -= drive * 0.65;
+      model.rotation.z += drive * 0.28;
     }
     if (state.inspect > 0 && !state.guard && !reloading) {
       const t = 1 - state.inspect / 1.8,

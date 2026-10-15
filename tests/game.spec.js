@@ -152,7 +152,7 @@ test("lobby, loadout, combat, utilities, bots, pause and complete match", async 
     }
     return g.entities.map((e) => ({ z: e.z, health: e.health }));
   });
-  expect(bots.some((e) => e.health < 100)).toBe(true);
+  expect(bots.some((e) => e.health < 150)).toBe(true);
   expect(bots.slice(1).some((e) => Math.abs(e.z) < 17)).toBe(true);
   await page.evaluate(() => {
     const g = window.__arena;

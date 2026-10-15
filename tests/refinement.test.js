@@ -276,14 +276,14 @@ test("Scythe dash preserves upward jump momentum instead of flattening the jump"
 test("blade trails follow the cut and disappear on recovery; fists use a straight jab", () => {
   const katana = createViewModel("katana", WEAPONS.katana),
     a = new WeaponAnimator();
-  a.update(katana, { dt: 1 / 60, swing: 0.14 });
+  a.update(katana, { dt: 1 / 60, swing: 0.2 });
   assert.equal(katana.userData.slashTrail.visible, true);
   assert.ok(katana.userData.slashTrail.material.opacity > 0);
   a.update(katana, { dt: 1 / 60, swing: 0 });
   assert.equal(katana.userData.slashTrail.visible, false);
   const fists = createViewModel("fists", WEAPONS.fists),
     b = new WeaponAnimator();
-  b.update(fists, { dt: 1 / 60, swing: 0.14 });
+  b.update(fists, { dt: 1 / 60, swing: 0.2 });
   assert.ok(fists.position.z + fists.userData.hands[0].position.z < -0.7);
   assert.ok(Math.abs(fists.rotation.z) < 0.01);
 });
