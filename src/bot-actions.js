@@ -264,6 +264,7 @@ export function decideBotAction(e, c) {
       return "guard";
     if (
       e.meleeId === "scythe" &&
+      !c.positioning &&
       distance > 9 &&
       distance < 28 &&
       (skill > 0 || underFire)
@@ -307,6 +308,7 @@ export function decideBotAction(e, c) {
     !visible &&
     !c.defensive &&
     e.meleeId === "scythe" &&
+    !c.positioning &&
     (e.path?.length || 0) > 4 &&
     e.mobilityCooldown <= 0 &&
     botDash(e, wish, world)
@@ -314,6 +316,7 @@ export function decideBotAction(e, c) {
     return "dash";
   if (
     e.grounded &&
+    !c.positioning &&
     e.mobilityCooldown <= 0 &&
     Math.hypot(e.vx, e.vz) > c.speed * 0.65 &&
     (visible ? distance > 6 : Math.hypot(wish.x, wish.z) > 0.5)

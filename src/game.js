@@ -1,3 +1,4 @@
+import { positionBot, steerBotWish } from "./bot-positioning.js";
 import { ARENA } from "./arena-layout.js";
 import { updateBotWeapon } from "./bot-visuals.js";
 import {
@@ -1637,6 +1638,10 @@ export class Game {
     const impact = tickBotActions(e, dt);
     if (impact) this.resolveBotMelee(e, impact);
     const d = DIFFICULTIES[this.config.difficulty];
+    const skill = ["rookie", "regular", "veteran", "elite"].indexOf(
+      this.config.difficulty,
+    );
+    let movementPath = null;
     e.pathTimer -= dt;
     e.shootTimer -= dt;
     e.decision -= dt;
@@ -1709,7 +1714,7 @@ export class Game {
         dz = -tz * 0.9 - tx * e.strafe * 0.5;
       }
     } else {
-      if (e.pathTimer <= 0) {
+      if (e.pathTimer <= 0 && !e.attackPlan) {
         e.pathTimer = 0.9 + Math.random() * 0.6;
         const destination =
           e.lastKnown ||
@@ -1723,19 +1728,13 @@ export class Game {
         )
           e.lastKnown = null;
       }
-      while (
-        e.path.length &&
-        Math.hypot(e.x - e.path[0].x, e.z - e.path[0].z) < 0.7
-      )
-        e.path.shift();
-      if (e.path.length) {
-        const p = e.path[0],
-          len = Math.hypot(p.x - e.x, p.z - e.z);
-        dx = (p.x - e.x) / len;
-        dz = (p.z - e.z) / len;
-        e.yaw = Math.atan2(-dx, -dz);
-      }
+      const direction = followRoute(e, e.path);
+      dx = direction.x;
+      dz = direction.z;
+      movementPath = e.path;
+      if (Math.hypot(dx, dz) > 0.001) e.yaw = Math.atan2(-dx, -dz);
     }
+
     // Retreat to reachable occlusion, not merely backwards into another lane.
     const defensive =
       e.reload > 0 || e.health < 35 || e.pressureUntil > this.clock;
@@ -1767,8 +1766,31 @@ export class Game {
         e.coverUntil = this.clock + 1.8;
       }
     }
+    const positioning = positionBot(e, {
+      clock: this.clock,
+      world: this.world,
+      visible,
+      reacted: e.seen > d.reaction,
+      defensive,
+      skill,
+      teammates: this.entities,
+      targetKey: target,
+      speed: d.speed,
+      canSee: (point, threat) =>
+        this.hasLOS(
+          v3(point.x, (point.y || 0) + 1.66, point.z),
+          v3(threat.x, (threat.y || 0) + 1.4, threat.z),
+        ),
+    });
+    if (positioning) {
+      dx = positioning.x;
+      dz = positioning.z;
+      movementPath = positioning.path;
+      if (!visible && Math.hypot(dx, dz) > 0.001) e.yaw = Math.atan2(-dx, -dz);
+    }
     if (e.coverPlan) {
       const direction = followRoute(e, e.coverPlan.path);
+      movementPath = e.coverPlan.path;
       dx = direction.x;
       dz = direction.z;
       if (!visible && Math.hypot(dx, dz) > 0) e.yaw = Math.atan2(-dx, -dz);
@@ -1782,10 +1804,22 @@ export class Game {
         dz += ((e.z - other.z) / separation) * (1.15 - separation);
       }
     }
-    const norm = Math.max(1, Math.hypot(dx, dz)),
-      wish = { x: dx / norm, z: dz / norm };
-    const skill = ["rookie", "regular", "veteran", "elite"].indexOf(
-      this.config.difficulty,
+    const norm = Math.max(1, Math.hypot(dx, dz));
+    const nextPoint = movementPath?.[0];
+    const nav = this.world.nav;
+    const unchartedRoof =
+      nav && e.y > (nav.heights[nav.index(e.x, e.z)] || 0) + 1;
+    const wish = steerBotWish(
+      e,
+      { x: dx / norm, z: dz / norm },
+      this.world,
+      this.clock,
+      {
+        maxDistance: nextPoint
+          ? Math.hypot(nextPoint.x - e.x, nextPoint.z - e.z)
+          : Infinity,
+        allowDrop: !e.attackPlan && unchartedRoof,
+      },
     );
     const lastShot = target.isPlayer ? this.lastShotAt : target.lastShotAt;
     const underFire =
@@ -1804,6 +1838,7 @@ export class Game {
       underFire,
       defensive,
       speed: d.speed,
+      positioning: !!positioning?.moving,
     });
     if (botActionSounds[action]) this.playBotAction(e, botActionSounds[action]);
     if (visible && e.seen > d.reaction && e.shootTimer <= 0 && botCanShoot(e))

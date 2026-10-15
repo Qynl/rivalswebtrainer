@@ -82,15 +82,17 @@ export function chooseCover(
   return null;
 }
 
-export function followRoute(actor, path) {
+export function followRoute(actor, path, finishTolerance = 0.35) {
   while (
     path.length &&
-    Math.hypot(actor.x - path[0].x, actor.z - path[0].z) < 0.65
+    Math.hypot(actor.x - path[0].x, actor.z - path[0].z) <
+      (path.length === 1 ? finishTolerance : 0.35) &&
+    Math.abs((actor.y || 0) - (path[0].y || 0)) < 0.55
   )
     path.shift();
   if (!path.length) return { x: 0, z: 0 };
   const dx = path[0].x - actor.x,
     dz = path[0].z - actor.z,
     length = Math.hypot(dx, dz);
-  return { x: dx / length, z: dz / length };
+  return length > 0.001 ? { x: dx / length, z: dz / length } : { x: 0, z: 0 };
 }

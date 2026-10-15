@@ -32,6 +32,13 @@ test("lobby, loadout, combat, utilities, bots, pause and complete match", async 
     p.y = 0;
     g.cooldown = 0;
     g.updateBot = () => {};
+    // Teleport fixtures must also publish their camera origin. Otherwise the
+    // first shot depends on whether RAF ran between evaluate and mouse.down.
+    g.renderPrevious = null;
+    g.yaw = 0;
+    g.pitch = 0;
+    g.updateCamera(1);
+    g.camera.updateMatrixWorld();
   });
   await page.mouse.down();
   await page.evaluate(() => {

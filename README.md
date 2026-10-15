@@ -73,6 +73,16 @@ Graphics use darker panel-seamed concrete, a compact edge HUD, distinct original
 
 See [the Arena scale report](docs/tight-tall-arena.md) for dimensions, visual checks and route/traversal validation. Dimensions are reconstruction estimates, not measured Roblox units.
 
+## Tactical positioning follow-up
+
+- Katana/Knife bots can deliberately route to reachable ramp-deck firing positions when a perceived enemy is at range, rather than using elevation only by accident.
+- Bounded recovery flanks respond to persistent obstacles or a recently lost target. Plans use last-seen snapshots, prospective sightlines, complete routes and teammate spacing.
+- Ground movement probes choose clear tangents around slabs and avoid accidental ledge steps while holding a perch. Corner probes stop at the next waypoint rather than steering away from a legitimate turn too early.
+- Height-aware waypoints and precise final peeks; short, sightline-aware strafes from a held firing position. Offensive routes cancel for defense, close combat, changed targets and stale information.
+- Existing dash/slide-jump/quick-melee actions remain available; bots avoid interrupting a committed ramp route with a dash off its side. No additional HUD panels or map-size changes.
+
+See [the positioning report](docs/bot-positioning.md) for validation and limits.
+
 ## Player-like bot movement and melee
 
 Combat bots now choose real abilities rather than a cosmetic crouch and random jump:
@@ -100,13 +110,13 @@ See [the combat-readability report](docs/combat-readability-pass.md) for validat
 ## Tests
 
 ```sh
-npm test                   # 148 input, abilities, physics, movement, rigging, audio, rendering and combat tests
+npm test                   # 167 input, abilities, physics, movement, rigging, audio, rendering and combat tests
 npm run build              # Production build + offline cache generation
 npx playwright install chromium
 npm run test:browser       # Browser integration test
 ```
 
-You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tests. Most integration tests validate an actual WebGL frame and pointer lock, then disable rendering to run deterministic combat/AI checks efficiently on machines using software graphics. Dedicated graphics tests retain real rendering for all 23 weapon models, skeletal bots, pooled effects, contact-shading pixel comparisons, bloom resize and the Performance bypass. They exercise loadout selection, shots/headshots, reloads, jumps, grenade/smoke/molotov lifecycles, pause/settings, map selection, team bots, five-round victory, results, and mobile layout. The thirteen-test browser suite also covers wizard steps, draft cancellation, compact HUD dimensions, tall walls, real Bow/Medkit input, Flashbang throws and rematch selection. Additional browser tests check arena floor layers, actual stair traversal, slide-jump momentum, Shift/F controls, katana reflection, mouse spike filtering, graphics settings, and the production cache/reload with networking disabled.
+You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tests. Most integration tests validate an actual WebGL frame and pointer lock, then disable rendering to run deterministic combat/AI checks efficiently on machines using software graphics. Dedicated graphics tests retain real rendering for all 23 weapon models, skeletal bots, pooled effects, contact-shading pixel comparisons, bloom resize and the Performance bypass. They exercise loadout selection, shots/headshots, reloads, jumps, grenade/smoke/molotov lifecycles, pause/settings, map selection, team bots, five-round victory, results, and mobile layout. The fourteen-test browser suite also covers wizard steps, draft cancellation, compact HUD dimensions, tall walls, real Bow/Medkit input, Flashbang throws and rematch selection. Additional browser tests check arena floor layers, actual stair traversal, slide-jump momentum, Shift/F controls, katana reflection, mouse spike filtering, graphics settings, and the production cache/reload with networking disabled.
 
 ## Structure
 
@@ -122,6 +132,7 @@ You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tes
 - `src/input.js`: pointer-lock mouse-packet validation.
 - `src/bot-tactics.js`: visibility-aware selection, bounded reachable-cover search and route following.
 - `src/bot-actions.js`: cooldown-gated abilities, deliberate action selection, collision probes and player-like physical movement.
+- `src/bot-positioning.js`: bounded high-ground/flank plans, sightline-aware perch holds and collision/support-aware ground steering.
 - `src/bot-visuals.js`: cached third-person melee weapons, grips and guard/swing poses.
 - `src/rigging.js`: analytic two-bone arm IK.
 - `src/combat-feedback.js`: camera-relative damage bearings, spatial mix and projected reticle spread.
@@ -134,7 +145,7 @@ You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tes
 - `src/main.js`, `src/style.css`, `index.html`: lobby, loadout, guide, HUD, menus.
 - `vite.config.js`: bundling, preview-host support and production offline cache.
 
-This is an original playable trainer foundation, not every map, weapon, animation, mode, cosmetic, or mechanic in Roblox RIVALS. Balancing is approximate. Global bot pathfinding is still on a ground grid. Local movement/melee combos do not constitute planned rooftop trick routes, human-equivalent decisions, or support for every weapon in the bot loadout.
+This is an original playable trainer foundation, not every map, weapon, animation, mode, cosmetic, or mechanic in Roblox RIVALS. Balancing is approximate. Global bot pathfinding is still a single-support-height grid, with explicit ramp decks and bounded firing-position plans. Local movement/melee combos do not constitute planned rooftop trick routes, human-equivalent decisions, or support for every weapon in the bot loadout.
 
 ## Reference research and endurance validation
 
