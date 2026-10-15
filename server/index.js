@@ -1,3 +1,4 @@
+import { PROTOCOL } from "../src/net/protocol.js";
 import { encodeSnapshot } from "../src/net/snapshot-codec.js";
 import { createServer } from "node:http";
 import { WebSocketServer } from "ws";
@@ -41,7 +42,7 @@ export async function createMultiplayerServer({
       });
       res.end(
         JSON.stringify({
-          protocol: 1,
+          protocol: PROTOCOL,
           websocket: true,
           geckos: geckosActive,
           rooms: service.rooms.size,

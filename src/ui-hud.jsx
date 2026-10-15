@@ -227,7 +227,9 @@ export function Hud() {
           <div className="ammo-block">
             <span id="weapon-name">{h.weapon}</span>
             <div>
-              <strong id="ammo-value">{h.ammo}</strong>
+              <strong id="ammo-value" className={h.ammoState || ""}>
+                {h.ammo}
+              </strong>
               <span>
                 / <b id="reserve-value">{h.reserve}</b>
               </span>

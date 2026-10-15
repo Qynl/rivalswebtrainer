@@ -231,7 +231,7 @@ test("katana deflects a frontal rifle shot back to its shooter without damaging 
     s.service.dispose();
   }
 });
-test("all 23 weapons execute on the shared authoritative engine, including delayed utilities and charged bow", () => {
+test("all 26 weapons execute on the shared authoritative engine, including delayed utilities and charged bow", () => {
   for (const [id, w] of Object.entries(WEAPONS)) {
     const loadout = [...defaults];
     loadout[w.slot] = id;
@@ -408,11 +408,13 @@ test("binary 3v3 snapshots stay below one kilobyte and round-trip ammo, abilitie
       pitch: -1.2,
       slide: 0.31,
       deflect: 0.5,
+      shotSide: 1,
     });
     const metadata = new Map(snapshot.players.map((p) => [p.index, p])),
       bytes = encodeSnapshot(snapshot),
       decoded = decodeSnapshot(bytes, metadata);
     assert.equal(bytes.byteLength, 587);
+    assert.equal(decoded.players[0].shotSide, 1);
     assert.ok(bytes.byteLength < 1024);
     for (const key of [
       "x",
@@ -836,5 +838,90 @@ test("authoritative RPG/launcher launches never self-damage, and F quick knife c
     } finally {
       s.service.dispose();
     }
+  }
+});
+
+test("switch to a secondary is fast, but swapping back cannot bypass the original shot recovery", () => {
+  const s = setup(["rpg", "revolver", "knife", "grenade"]);
+  try {
+    const m = start(s);
+    m.phase = "playing";
+    const a = m.contexts.get(s.ids[0]);
+    a.cooldown = 0;
+    a.firePlayer();
+    assert.equal(a.ammunition[0].mag, 0);
+    a.equip(1);
+    assert.equal(a.cooldown, 0.14);
+    assert.equal(a.switchTime, 0.14);
+    a.equip(0);
+    assert.ok(a.cooldown > 1);
+    a.equip(1);
+    a.cooldown = 0;
+    a.firePlayer();
+    assert.equal(a.ammunition[1].mag, 5);
+    a.equip(0);
+    a.equip(1);
+    assert.ok(a.cooldown >= WEAPONS.revolver.interval);
+    a.firePlayer();
+    assert.equal(a.ammunition[1].mag, 5);
+  } finally {
+    s.service.dispose();
+  }
+});
+test("authoritative burst pistol fires exactly three rounds and empty partial bursts reload without phantom shots", () => {
+  for (const ammo of [18, 1]) {
+    const s = setup(["rifle", "burstpistol", "knife", "grenade"]);
+    try {
+      const m = start(s);
+      m.phase = "playing";
+      const a = m.contexts.get(s.ids[0]);
+      a.equip(1);
+      a.cooldown = 0;
+      a.ammunition[1].mag = ammo;
+      m.input(s.ids[0], input(1, { actions: [{ id: 1, type: "fire" }] }));
+      for (let i = 0; i < 50; i++) m.step(1 / 120);
+      assert.equal(a.matchStats.shots, ammo === 1 ? 1 : 3);
+      assert.equal(a.ammunition[1].mag, ammo === 1 ? 0 : 15);
+      assert.equal(a.burstCount, 0);
+      if (ammo === 1) assert.ok(a.reloadTime > 0);
+    } finally {
+      s.service.dispose();
+    }
+  }
+});
+
+test("Knife F and normal Knife strikes share recovery without blocking the RPG combo", () => {
+  const s = setup(["rpg", "revolver", "knife", "grenade"]);
+  try {
+    const m = start(s);
+    m.phase = "playing";
+    const a = m.contexts.get(s.ids[0]);
+    a.cooldown = 1.1;
+    assert.ok(a.meleeAbility(true), "gun recovery must not block Knife F");
+    a.updatePlayerMelee(0.11);
+    a.equip(2);
+    assert.ok(
+      a.cooldown >= WEAPONS.knife.interval,
+      "equip must not erase F recovery",
+    );
+    a.firePlayer();
+    assert.equal(a.playerMeleePending, null);
+    a.clock = 0.6;
+    a.cooldown = 0;
+    a.knifeQuickCooldown = 0;
+    a.firePlayer();
+    assert.ok(a.playerMeleePending);
+    a.updatePlayerMelee(0.11);
+    a.equip(0);
+    assert.equal(
+      a.meleeAbility(true),
+      false,
+      "F must not bypass normal Knife recovery",
+    );
+    a.clock = 1.2;
+    a.cooldown = 0;
+    assert.ok(a.meleeAbility(true));
+  } finally {
+    s.service.dispose();
   }
 });

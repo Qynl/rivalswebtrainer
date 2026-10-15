@@ -7,6 +7,9 @@ export const WEAPON_FINISHES = Object.freeze({
   smg: 0x546d78,
   sniper: 0x778870,
   pistol: 0x91a0a5,
+  revolver: 0xaab4b5,
+  burstpistol: 0x537c83,
+  dualpistols: 0x938477,
   uzi: 0x70818a,
   shotgun: 0x656b6d,
   shorty: 0x88745f,
@@ -58,7 +61,11 @@ export function detailWeapon(
     cyl(x, y, z, 0.007, 0.012, silver, "x");
     box(x + 0.007, y, z, 0.002, 0.003, 0.009, black);
   };
-  if (data.slot < 2 && !["bow", "flame", "rocket"].includes(data.type)) {
+  if (
+    data.slot < 2 &&
+    !["revolver", "burstpistol", "dualpistols"].includes(id) &&
+    !["bow", "flame", "rocket"].includes(data.type)
+  ) {
     const compact = ["pistol", "uzi"].includes(id),
       len = compact ? 0.22 : id === "minigun" ? 0.27 : 0.34;
     for (const side of [-1, 1]) {

@@ -44,6 +44,15 @@ export function mechanismPose(age = Infinity) {
     pump: pulse(0.045, 0.145, 0.31) * 0.075,
   };
 }
+// Called at shot time too: a tracer must start at the gun that actually fired.
+export function selectShotSide(model, sequence = 1) {
+  const p = model?.userData;
+  if (!p?.muzzleFlashes) return;
+  p.activeShotSide = (Math.max(1, sequence) - 1) % p.muzzleFlashes.length;
+  for (const f of p.muzzleFlashes) f.visible = false;
+  p.muzzleFlash = p.muzzleFlashes[p.activeShotSide];
+  p.bolt = p.bolts[p.activeShotSide];
+}
 export class WeaponAnimator {
   constructor() {
     this.x = new Spring(0.09);
@@ -168,7 +177,49 @@ export class WeaponAnimator {
         impulse * feel.roll * ((state.shotSequence || 0) % 2 ? 1 : -1) * scale;
     }
     const parts = model.userData,
-      mechanism = mechanismPose(age);
+      mechanism = mechanismPose(age),
+      emptySlide =
+        ["pistol", "burstpistol", "dualpistols"].includes(
+          model.userData.weaponId,
+        ) &&
+        state.ammo === 0 &&
+        (!reloading || reload < 0.87);
+    if (parts.muzzleFlashes) selectShotSide(model, state.shotSequence);
+    if (parts.bolts)
+      for (const b of parts.bolts) {
+        b.position.copy(b.userData.restPosition);
+        b.position.z += emptySlide
+          ? 0.045
+          : b === parts.bolt
+            ? mechanism.bolt
+            : 0;
+      }
+    if (parts.dualGuns)
+      for (let i = 0; i < parts.dualGuns.length; i++) {
+        const gun = parts.dualGuns[i];
+        gun.position.copy(gun.userData.restPosition);
+        gun.rotation.x = i === parts.activeShotSide ? impulse * 0.11 : 0;
+        gun.position.z += i === parts.activeShotSide ? impulse * 0.035 : 0;
+      }
+    if (parts.magazines)
+      for (const m of parts.magazines) {
+        m.position.copy(m.userData.restPosition);
+        m.position.y -= reloadState.extract * 0.28;
+        m.position.z += reloadState.extract * 0.09;
+      }
+    if (parts.revolverCylinder) {
+      const c = parts.revolverCylinder;
+      c.position.copy(c.userData.restPosition);
+      c.position.x -= reloadState.extract * 0.12;
+      const chamber = (state.shotSequence || 0) % 6;
+      c.rotation.z =
+        ((chamber -
+          ((state.shotSequence || 0) > 0 ? 1 - smooth(age / 0.065) : 0)) *
+          Math.PI) /
+        3;
+      c.rotation.y = -reloadState.lower * 0.32;
+    }
+    if (parts.hammer) parts.hammer.rotation.x = -mechanism.bolt * 9;
     if (parts.magazine) {
       const m = parts.magazine;
       m.position.copy(m.userData.restPosition);
@@ -179,10 +230,7 @@ export class WeaponAnimator {
     if (parts.bolt) {
       const b = parts.bolt;
       b.position.copy(b.userData.restPosition);
-      const locked =
-        parts.weaponId === "pistol" &&
-        state.ammo === 0 &&
-        (!reloading || reload < 0.87);
+      const locked = emptySlide;
       b.position.z += locked
         ? 0.045
         : mechanism.bolt + reloadState.rack * 0.055;
@@ -206,6 +254,17 @@ export class WeaponAnimator {
       h.rotation.z = -reloadState.lower * 0.25;
       if (parts.pump) h.position.z += mechanism.pump;
     }
+    if (parts.dualGuns)
+      for (let i = 0; i < (parts.hands || []).length; i++) {
+        const h = parts.hands[i],
+          fired = i === parts.activeShotSide;
+        h.position.copy(h.userData.restPosition);
+        h.position.z +=
+          (fired ? impulse * 0.035 : 0) + reloadState.lower * 0.27;
+        h.position.y -= reloadState.extract * 0.22;
+        h.rotation.x = fired ? impulse * 0.11 : 0;
+        h.rotation.z = reloadState.lower * (i === 0 ? 0.18 : -0.18);
+      }
     if (parts.rocket) {
       parts.rocket.position.copy(parts.rocket.userData.restPosition);
       parts.rocket.position.z -= reloadState.extract * 0.38;

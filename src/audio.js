@@ -3,6 +3,8 @@ const SPATIAL_LIFETIME = Object.freeze({
   rifle: 0.16,
   smg: 0.12,
   pistol: 0.18,
+  revolver: 0.3,
+  burstpistol: 0.13,
   shotgun: 0.36,
   sniper: 0.36,
   explosion: 0.8,
@@ -180,6 +182,14 @@ export class GameAudio {
       case "smg":
         this.noiseHit(0.07, 0.16 * level, 3200);
         this.tone(180, 0.06, "square", 0.045 * level, 65);
+        break;
+      case "revolver":
+        this.noiseHit(0.16, 0.3 * level, 2400);
+        this.tone(135, 0.15, "triangle", 0.2 * level, 38);
+        break;
+      case "burstpistol":
+        this.noiseHit(0.065, 0.2 * level, 3700);
+        this.tone(245, 0.055, "triangle", 0.11 * level, 95);
         break;
       case "pistol":
         this.noiseHit(0.12, 0.24 * level, 3000);

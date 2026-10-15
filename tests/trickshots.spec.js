@@ -73,7 +73,7 @@ test("real explosive launch and F quick rear stab retain HP, gun slot and camera
   expect(result.gl).toBe(0);
   expect(errors).toEqual([]);
 });
-test("new operator rig and all 23 finished weapons actually render, with an attached full-draw Bow", async ({
+test("new operator rig and all 26 finished weapons actually render, with an attached full-draw Bow", async ({
   page,
 }) => {
   const errors = [];
@@ -185,7 +185,7 @@ test("new operator rig and all 23 finished weapons actually render, with an atta
     g.renderer.render(s.scene, s.cam);
     return results;
   });
-  expect(weapons).toHaveLength(23);
+  expect(weapons).toHaveLength(26);
   expect(weapons.every((w) => w.finish === "machined-v2" && w.gl === 0)).toBe(
     true,
   );

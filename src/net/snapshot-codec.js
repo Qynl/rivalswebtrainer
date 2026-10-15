@@ -75,7 +75,7 @@ export function encodeSnapshot(snapshot) {
   u8(zones.length);
   for (const p of players) {
     u8(p.index);
-    u8((p.alive ? 1 : 0) | (p.grounded ? 2 : 0));
+    u8((p.alive ? 1 : 0) | (p.grounded ? 2 : 0) | (p.shotSide ? 4 : 0));
     u8(p.height * 100);
     u16(p.health * 100);
     for (const key of ["x", "y", "z"]) f32(p[key]);
@@ -176,6 +176,7 @@ export function decodeSnapshot(data, metadata) {
         team: meta.team,
         alive: !!(flags & 1),
         grounded: !!(flags & 2),
+        shotSide: flags & 4 ? 1 : 0,
         height: u8() / 100,
         health: u16() / 100,
       };

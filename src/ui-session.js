@@ -153,6 +153,12 @@ function snapshot(g, force = false) {
       })),
     weapon: w.name.toUpperCase(),
     ammo: Number.isFinite(a.mag) ? a.mag : "∞",
+    ammoState:
+      a.mag === 0
+        ? "empty"
+        : Number.isFinite(w.mag) && a.mag <= Math.ceil(w.mag * 0.2)
+          ? "low"
+          : "",
     reserve: g.range || !Number.isFinite(a.reserve) ? "∞" : a.reserve,
     hint:
       w.type === "melee"
@@ -209,7 +215,10 @@ function snapshot(g, force = false) {
               ? g.deflectCooldown
               : melee.dash
                 ? g.dashCooldown
-                : g.knifeQuickCooldown || 0,
+                : Math.max(
+                    g.knifeQuickCooldown || 0,
+                    (g.weaponReadyAt?.[2] || 0) - (g.clock || 0),
+                  ),
             active: melee.deflect && g.deflectTime > 0,
             time: g.deflectTime,
           }

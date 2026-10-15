@@ -1,3 +1,4 @@
+import { buildSecondary } from "./secondary-models.js";
 import { detailWeapon, WEAPON_FINISHES } from "./weapon-detailing.js";
 import { rememberPart, muzzleFlash } from "./animation.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
@@ -749,6 +750,20 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
       hand(-0.08, -0.3, -0.6);
       hand(0.37, -0.3, -0.6);
     }
+  } else if (["revolver", "burstpistol", "dualpistols"].includes(id)) {
+    buildSecondary(g, id, {
+      box,
+      cyl,
+      tube,
+      material,
+      dark,
+      steel,
+      silver,
+      grip,
+      hand,
+      sights,
+      hands,
+    });
   } else if (id === "pistol") {
     g.userData.bolt = rememberPart(
       box(0.24, -0.15, -0.65, 0.11, 0.115, 0.31, steel),
@@ -958,9 +973,21 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
                 : id === "uzi"
                   ? -1.07
                   : -1.29;
-    flash.position.set(0.24, -0.16, muzzleZ);
+    flash.position.set(0.24, -0.16, g.userData.muzzleZ ?? muzzleZ);
     g.add(flash);
     g.userData.muzzleFlash = flash;
+    if (id === "dualpistols") {
+      const [rightGun, leftGun] = g.userData.dualGuns;
+      flash.position.set(
+        0,
+        -0.16 - rightGun.position.y,
+        g.userData.muzzleZ - rightGun.position.z,
+      );
+      rightGun.add(flash);
+      const left = flash.clone();
+      leftGun.add(left);
+      g.userData.muzzleFlashes = [flash, left];
+    }
   }
   if (["grenade", "molotov", "smoke", "flashbang"].includes(id)) {
     const body = new THREE.Group();
@@ -985,11 +1012,25 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
     g.userData.arrow,
     g.userData.bowTopCam,
     g.userData.bowBottomCam,
+    g.userData.revolverCylinder,
   ])
     if (part) mergeStatic(part, new Set());
+  for (const part of [
+    ...(g.userData.bolts || []),
+    ...(g.userData.magazines || []),
+  ])
+    mergeStatic(part, new Set());
   const moving = new Set(
     Object.values(g.userData).filter((x) => x?.isObject3D),
   );
+  for (const part of [
+    ...(g.userData.bolts || []),
+    ...(g.userData.magazines || []),
+    ...(g.userData.muzzleFlashes || []),
+    ...(g.userData.dualGuns || []),
+  ])
+    moving.add(part);
+  for (const gun of g.userData.dualGuns || []) mergeStatic(gun, moving);
   for (const h of g.userData.hands || []) {
     if (h.userData.sleeve) mergeStatic(h.userData.sleeve, new Set());
     mergeStatic(h, new Set());

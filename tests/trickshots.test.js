@@ -150,6 +150,7 @@ test("F does not reset recovery through repeated presses or consume pending relo
   g.quickMeleeTime = 0;
   assert.equal(g.meleeAbility(true), false);
   g.updateSupport(0.56);
+  g.clock += 0.56;
   assert.ok(g.meleeAbility(true));
   assert.equal(g.ammunition[0].mag, 5);
 });

@@ -35,7 +35,7 @@ Mobile layouts support browsing/configuration, but combat requires desktop point
 - Fixed-step movement with interpolated rendering, stronger gravity for less floaty jumps, uphill ramp-launch momentum, responsive ground acceleration/braking, precise air reversals, counter-strafing, slope-driven slides, grounded stair descent, momentum-preserving air steering and slide jumps, buffered jumps (140 ms), coyote time (100 ms), Fists/Bow double jump, Scythe dash, and explosive jumping.
 - Twenty-three usable weapons/utilities, all unlocked:
   - Primary: Assault Rifle, Shotgun, Sniper, Burst Rifle, SMG, RPG, Bow, Minigun, Paintball Gun, Grenade Launcher, Flamethrower.
-  - Secondary: Handgun, Uzi, Shorty.
+  - Secondary: Handgun, Uzi, Shorty, **Revolver**, **Burst Pistol**, **Dual Pistols**.
   - Melee: Fists, Knife (rear backstab / F quick stab), Scythe (dash), Katana (bullet deflection).
   - Utility: Grenade, Molotov, Smoke, Flashbang, Medkit.
 - Charged ballistic arrows, minigun spin-up with animated barrels, paint splats, arcing impact grenades, close-range flame/afterburn, LOS-aware flashbang blindness, and interruptible 70-HP / quick 25-HP medkit heals. Medkits are one use per round (unlimited in the range).
@@ -65,6 +65,14 @@ Scythe dash recharges in **3 seconds**. Katana's frontal guard lasts **1.1 secon
 Reloads animate magazine extraction/insertion, bolt motion and the support hand. Weapons ease into ADS/equip positions; T inspects them. Bots have connected head/weapon rigs, independently bending knees, body lean, aim pitch and muzzle flashes. Static weapon geometry is batched by material to reduce draw submissions; fixed Arena visuals use nine batches while original ray geometry stays intact.
 
 Graphics use darker panel-seamed concrete, a compact edge HUD, distinct original weapon models and 3D loadout previews, original procedural concrete/metal/window textures, an atmospheric sky, environment-lit metal, rounded geometry, armored bots, building vents/windows, and emissive arena trims. The sky has drifting procedural clouds and a directional sun. Fixed-size combat pools add surface hit marks, debris, bouncing shell casings and muzzle-aligned tracers without allocating a new mesh for each hit. Everything is generated locally. The world is finished with depth-aware contact shading, two-sample MSAA, restrained quarter-resolution HDR bloom, gentle sharpening and a neutral color grade; the weapon overlay stays crisp. Reloads include a raised/banked receiver, magazine extraction, supporting-hand/wrist motion and a bolt rack. Equip, jump/landing inertia, strafing, throw follow-through, blade trails and eased bot deaths provide distinct action feedback. Enable **Performance mode** in Settings to reduce render resolution and bypass post-processing and dynamic shadows on slower hardware.
+
+## Expanded secondaries and handling
+
+The secondary roster now has **six choices**. Revolver offers six precision shots (45 body / 78.75 head), a rotating cylinder and speedloader-style reload. Burst Pistol fires three 14-damage rounds per click, with a compact open reflex sight. Dual Pistols hold 24 shared rounds and alternate two separately cycling guns while LMB is held; each gun has its own flash, slide and magazine. New weapons have bespoke models, icons, audio/feel profiles, reloads, previews and online loadout support.
+
+Drawing a secondary takes **0.14 seconds**. A primary's remaining firing delay no longer blocks your backup; per-slot ready times prevent swapping back to bypass recovery. Bursts stop cleanly and reload when the magazine empties mid-burst. Low/empty ammo is amber/red on the existing counter, without adding another HUD panel. All recoil remains viewmodel-only, and self-immunity / launch force / Knife F rules remain intact.
+
+[Secondary implementation and validation notes](docs/secondary-expansion.md).
 
 ## Trickshots, Bow and weapon-model pass
 
@@ -160,13 +168,13 @@ See [the combat-readability report](docs/combat-readability-pass.md) for validat
 ## Tests
 
 ```sh
-npm test                   # 265 input, abilities, physics, movement, rigging, audio, rendering and combat tests
+npm test                   # 276 input, abilities, physics, movement, rigging, audio, rendering and combat tests
 npm run build              # Production build + offline cache generation
 npx playwright install chromium
 npm run test:browser       # Browser integration test
 ```
 
-You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tests. Most integration tests validate an actual WebGL frame and pointer lock, then disable rendering to run deterministic combat/AI checks efficiently on machines using software graphics. Dedicated graphics tests retain real rendering for all 23 weapon models, skeletal bots, pooled effects, contact-shading pixel comparisons, bloom resize and the Performance bypass. They exercise loadout selection, shots/headshots, reloads, jumps, grenade/smoke/molotov lifecycles, pause/settings, map selection, team bots, five-round victory, results, and mobile layout. The browser suite also covers wizard steps, draft cancellation, compact HUD dimensions, tall walls, real Bow/Medkit input, Flashbang throws and rematch selection. Additional browser tests check arena floor layers, actual stair traversal, slide-jump momentum, Shift/F controls, katana reflection, mouse spike filtering, graphics settings, and the production cache/reload with networking disabled.
+You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tests. Most integration tests validate an actual WebGL frame and pointer lock, then disable rendering to run deterministic combat/AI checks efficiently on machines using software graphics. Dedicated graphics tests retain real rendering for all 26 weapon models, skeletal bots, pooled effects, contact-shading pixel comparisons, bloom resize and the Performance bypass. They exercise loadout selection, shots/headshots, reloads, jumps, grenade/smoke/molotov lifecycles, pause/settings, map selection, team bots, five-round victory, results, and mobile layout. The browser suite also covers wizard steps, draft cancellation, compact HUD dimensions, tall walls, real Bow/Medkit input, Flashbang throws and rematch selection. Additional browser tests check arena floor layers, actual stair traversal, slide-jump momentum, Shift/F controls, katana reflection, mouse spike filtering, graphics settings, and the production cache/reload with networking disabled.
 
 ## Structure
 

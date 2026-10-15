@@ -1,3 +1,4 @@
+import { PROTOCOL } from "../src/net/protocol.js";
 import { createServer } from "vite";
 import { createMultiplayerServer } from "../server/index.js";
 const args = process.argv.slice(2),
@@ -11,7 +12,7 @@ await new Promise((resolve, reject) => {
         const health = await fetch("http://127.0.0.1:3001/api/health").then(
           (r) => r.json(),
         );
-        if (health.protocol !== 1)
+        if (health.protocol !== PROTOCOL)
           throw Error("Port 3001 belongs to another application");
         console.log("Using existing multiplayer server on port 3001");
         resolve();

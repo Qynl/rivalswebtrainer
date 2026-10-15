@@ -238,6 +238,7 @@ export class MultiplayerSession {
         health: state.health,
         alive: state.alive,
         activeWeapon: state.weapon,
+        shotSide: state.shotSide || 0,
         deflectTime: state.deflect,
         quickMeleeTime: state.quickMelee || 0,
         dashTime: state.dash,

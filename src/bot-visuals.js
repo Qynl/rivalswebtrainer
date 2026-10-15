@@ -1,3 +1,4 @@
+import { selectShotSide } from "./animation.js";
 import * as THREE from "three";
 import { createViewModel } from "./world.js";
 import { WEAPONS } from "./data.js";
@@ -52,6 +53,10 @@ export function updateBotWeapon(model, e, clock = 0) {
           ? 0
           : 1
         : Math.max(0, clock - (e.lastShotAt ?? -10));
+    if (parts.muzzleFlashes) {
+      selectShotSide(weapon, (e.shotSide || 0) + 1);
+      p.botLeftGrip.set(-0.408, -0.1, -0.03);
+    }
     if (parts.muzzleFlash) {
       p.muzzleFlash = parts.muzzleFlash;
       parts.muzzleFlash.visible = age < 0.055;

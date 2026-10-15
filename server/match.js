@@ -515,6 +515,7 @@ export class Match {
           paint: g.paintTintTime,
           quickMelee: g.quickMeleeTime,
           shot: g.lastShotAt ?? -1,
+          shotSide: (Math.max(1, g.shotSequence || 1) - 1) % 2,
           dashCooldown: g.dashCooldown,
           deflectCooldown: g.deflectCooldown,
           stats: { ...g.matchStats },

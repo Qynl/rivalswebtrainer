@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 test.use({ viewport: { width: 800, height: 600 } });
 
-test("all 23 actual weapon models, skeletal bots and pooled combat shaders render without GL errors", async ({
+test("all 26 actual weapon models, skeletal bots and pooled combat shaders render without GL errors", async ({
   page,
 }) => {
   const errors = [];
@@ -108,7 +108,7 @@ test("all 23 actual weapon models, skeletal bots and pooled combat shaders rende
     };
   });
   console.log(JSON.stringify(report));
-  expect(report.rendered).toBe(23);
+  expect(report.rendered).toBe(26);
   expect(report.after).toBeLessThanOrEqual(report.before + 1);
   expect(report.staticStats.after).toBeLessThan(report.staticStats.before / 2);
   expect(report.staticStats.retainedRayMeshes).toBeGreaterThan(20);

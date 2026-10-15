@@ -32,7 +32,7 @@ import { aimArm } from "./rigging.js";
 import { chooseCover, followRoute, selectOpponent } from "./bot-tactics.js";
 import { CombatFX } from "./combat-fx.js";
 import { ArenaRenderer } from "./rendering.js";
-import { WeaponAnimator } from "./animation.js";
+import { WeaponAnimator, selectShotSide } from "./animation.js";
 import * as THREE from "three";
 import { createProjectileModel } from "./projectile-model.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
@@ -626,6 +626,7 @@ export class Game {
     this.blindTime = 0;
     this.paintTintTime = 0;
     this.cooldown = 0;
+    this.weaponReadyAt = [0, 0, 0, 0];
     this.reloadTime = 0;
     this.burstCount = 0;
     this.mouseDown = false;
@@ -694,10 +695,14 @@ export class Game {
     this.reloadTime = 0;
     this.burstCount = 0;
     this.aiming = false;
-    this.cooldown = Math.max(this.cooldown, 0.2);
+    const equipTime = WEAPONS[this.loadout[slot]].slot === 1 ? 0.14 : 0.22;
+    this.cooldown = Math.max(
+      equipTime,
+      (this.weaponReadyAt?.[slot] || 0) - (this.clock || 0),
+    );
     this.trigger = false;
     if (this.headless) {
-      this.switchTime = 0.22;
+      this.switchTime = equipTime;
       return;
     }
     if (this.viewModel) {
@@ -716,7 +721,7 @@ export class Game {
     this.viewModel.scale.setScalar(0.78);
     this.weaponScene.add(this.viewModel);
     this.weaponAnimator?.equip();
-    this.switchTime = 0.22;
+    this.switchTime = equipTime;
     this.audio.play("switch");
     this.events.update(this);
   }
@@ -819,6 +824,7 @@ export class Game {
     if (quick && id === "knife") {
       if (
         this.knifeQuickCooldown > 0 ||
+        (this.weaponReadyAt?.[2] || 0) > (this.clock || 0) ||
         this.playerMeleePending ||
         this.quickMeleeTime > 0 ||
         this.deflectTime > 0
@@ -826,6 +832,8 @@ export class Game {
         return false;
       // Separate recovery permits a rocket/launcher -> F combo, not a gun timer wait.
       this.knifeQuickCooldown = weapon.interval;
+      (this.weaponReadyAt ||= [0, 0, 0, 0])[2] =
+        (this.clock || 0) + weapon.interval;
       this.knifeQuickTime = 0.36;
       this.cooldown = Math.max(this.cooldown || 0, weapon.interval);
       this.reloadTime = this.healTime = this.burstCount = this.inspectTime = 0;
@@ -963,10 +971,13 @@ export class Game {
     if (Number.isFinite(a.mag)) a.mag--;
     if (this.range && w.slot === 3) a.mag = w.mag;
     this.cooldown = w.interval;
+    (this.weaponReadyAt ||= [0, 0, 0, 0])[this.slot] =
+      (this.clock || 0) + w.interval;
     this.inspectTime = 0;
     this.flash = 0.055;
     this.lastShotAt = this.clock;
     this.shotSequence = (this.shotSequence || 0) + 1;
+    selectShotSide(this.viewModel, this.shotSequence);
     this.kick = Math.min(0.13, this.kick + 0.045);
     if (w.type !== "flame" || !this.audio.updateFlame) this.audio.play(w.sound);
     if (
@@ -1939,17 +1950,24 @@ export class Game {
       this.reloadTime <= 0 &&
       this.ammunition[this.slot].mag > 0
     ) {
-      this.burstCount = 3;
+      this.burstCount = w.burstSize || 3;
       this.burstTimer = 0;
       this.trigger = false;
     }
     if (this.burstCount > 0) {
+      // Empty/partial bursts must not count phantom shots or push the counter negative.
+      if (this.reloadTime > 0 || this.ammunition[this.slot].mag <= 0) {
+        this.burstCount = 0;
+        if (this.ammunition[this.slot].mag <= 0 && this.reloadTime <= 0)
+          this.reload();
+        return;
+      }
       this.burstTimer -= dt;
       if (this.burstTimer <= 0) {
         this.cooldown = 0;
         this.firePlayer();
         this.burstCount--;
-        this.burstTimer = 0.075;
+        this.burstTimer = w.burstSpacing || 0.075;
         this.cooldown = this.burstCount ? 0 : w.interval;
       }
     } else if (

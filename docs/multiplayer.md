@@ -9,7 +9,7 @@ npm run dev -- --port 5173
 
 Development now starts **both Vite and the match server**. Open the game on port **5173**, choose **Multiplayer**, enter a name, and create a public/private lobby. Friends on the **same deployed origin** can use the public browser or a six-character invite code/link. Pick teams and four weapons, ready up, then let the host start an equal **1v1, 2v2 or 3v3**. First to five rounds wins.
 
-Online maps: **Concrete Arena, Foundry and Courtyard**. All five maps, all 23 weapons, and offline bot/range sessions remain available offline. Online players are actual humans, not replacement bots. There is no global matchmaking service shared across unrelated deployments.
+Online maps: **Concrete Arena, Foundry and Courtyard**. All five maps, all 26 weapons, and offline bot/range sessions remain available offline. Online players are actual humans, not replacement bots. There is no global matchmaking service shared across unrelated deployments.
 
 After a server-started match opens, click **Back to the arena** to capture the mouse. A server message is not a browser user gesture; online startup therefore does not attempt a permission-sensitive automatic pointer capture. Escape only releases/pauses your own input: the online match continues.
 
@@ -96,3 +96,7 @@ A separate seeded 30-second simulated 3v3 regression introduces **25% input/snap
 The deterministic server audit runs three **simulated one-minute 3v3 fights**, not a one-hour wall-clock soak. It checks finite/occupiable live bodies on every step, frame sizes, and server step timing. This is neither a GPU FPS benchmark nor a real Internet latency measurement. Final counts and the actual work interval are recorded in `multiplayer-hour-progress.md` after validation.
 
 No networked FPS can promise zero lag: RTT, jitter, packet loss, server load, the client's GPU and browser pointer-lock behavior still matter.
+
+### Secondary roster update
+
+Protocol negotiation is now version **2**. Client, server health and development-server reuse check share the same constant. New weapon IDs append to the old roster rather than renumbering old weapons. A spare player-flags bit carries the active dual-pistol barrel, so a standard 3v3 binary frame remains 587 bytes. Deploy client and server together; an older client receives the existing version-mismatch/reload message. All six secondary choices use the same server-side ammunition, timing, damage and loadout validation as primaries.
