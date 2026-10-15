@@ -75,7 +75,12 @@ export function encodeSnapshot(snapshot) {
   u8(zones.length);
   for (const p of players) {
     u8(p.index);
-    u8((p.alive ? 1 : 0) | (p.grounded ? 2 : 0) | (p.shotSide ? 4 : 0));
+    u8(
+      (p.alive ? 1 : 0) |
+        (p.grounded ? 2 : 0) |
+        (p.shotSide ? 4 : 0) |
+        (p.quickUtility > 0 ? 8 : 0),
+    );
     u8(p.height * 100);
     u16(p.health * 100);
     for (const key of ["x", "y", "z"]) f32(p[key]);
@@ -204,6 +209,8 @@ export function decodeSnapshot(data, metadata) {
     p.shot = f32();
     p.stats = {};
     for (const key of STATS) p.stats[key] = u16();
+    // Quick utility reuses the existing throw/heal timer; no larger packets or new weapon IDs.
+    p.quickUtility = flags & 8 ? Math.max(p.throw, p.heal) : 0;
     p.quickMelee = u16() / 1000;
     p.paint = u16() / 1000;
     players.push(p);

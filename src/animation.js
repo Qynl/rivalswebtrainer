@@ -70,6 +70,19 @@ export class WeaponAnimator {
     this.z.value = -0.08;
     this.roll.value = 0.2;
   }
+  quickDraw() {
+    // A 160ms quick-throw windup must not spend most of its life below screen.
+    for (const [spring, value] of [
+      [this.x, 0.09],
+      [this.y, -0.125],
+      [this.z, -0.16],
+      [this.aim, 0],
+      [this.carry, 0],
+    ]) {
+      spring.value = value;
+      spring.velocity = 0;
+    }
+  }
   update(model, state) {
     const {
       dt,

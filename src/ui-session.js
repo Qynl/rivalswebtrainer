@@ -1,3 +1,4 @@
+import { smokeImmersion } from "./smoke-fx.js";
 import { BOW_DRAW_TIME } from "./combat-rules.js";
 import { createStore } from "./ui-store.js";
 import { loadEnvironment } from "./environment.js";
@@ -125,20 +126,23 @@ function snapshot(g, force = false) {
     w = WEAPONS[g.loadout[g.slot]],
     a = g.ammunition[g.slot],
     melee = WEAPONS[g.loadout[2]],
+    utility = WEAPONS[g.loadout[3]],
     secs = Math.max(0, Math.ceil(g.roundTime));
   const scoped = g.aiming && g.loadout[g.slot] === "sniper",
     dt = Math.max(0, g.clock - feedbackClock);
   feedbackClock = g.clock;
   const action =
-    g.healTime > 0
-      ? "HEALING " + g.healTime.toFixed(1) + "s"
-      : g.bowCharge > 0
-        ? "DRAW " + Math.round((g.bowCharge / BOW_DRAW_TIME) * 100) + "%"
-        : w.spin && g.spinTime > 0 && g.spinTime < 0.55
-          ? "SPINNING UP"
-          : g.reloadTime > 0
-            ? "RELOADING"
-            : "";
+    g.pendingThrow || g.throwTime > 0
+      ? "THROWING " + utility.name.toUpperCase()
+      : g.healTime > 0
+        ? "HEALING " + g.healTime.toFixed(1) + "s"
+        : g.bowCharge > 0
+          ? "DRAW " + Math.round((g.bowCharge / BOW_DRAW_TIME) * 100) + "%"
+          : w.spin && g.spinTime > 0 && g.spinTime < 0.55
+            ? "SPINNING UP"
+            : g.reloadTime > 0
+              ? "RELOADING"
+              : "";
   hud.set({
     health: Math.ceil(p.health),
     maxHealth: p.maxHealth || 150,
@@ -228,7 +232,29 @@ function snapshot(g, force = false) {
     guard: g.deflectTime > 0,
     flash: Math.min(1, (g.blindTime || 0) / 1.4),
     paint: Math.min(0.7, g.paintTintTime || 0),
+    smoke: p.alive ? smokeImmersion(g.eye(p), g.smokes || []) : 0,
     action,
+    actionProgress:
+      g.healTime > 0
+        ? 1 - g.healTime / (g.healTotal || 0.8)
+        : g.throwTime > 0
+          ? 1 - g.throwTime / 0.48
+          : g.bowCharge > 0
+            ? Math.min(1, g.bowCharge / BOW_DRAW_TIME)
+            : g.reloadTime > 0
+              ? 1 - g.reloadTime / (g.reloadTotal || w.reload || 1)
+              : 0,
+    utility: {
+      name: utility.name.toUpperCase(),
+      count: g.range ? "∞" : g.ammunition[3].mag,
+      empty: !g.range && g.ammunition[3].mag <= 0,
+      active:
+        g.quickUtilityTime > 0 ||
+        (g.slot === 3 && (g.throwTime > 0 || g.healTime > 0)),
+      cooldown: Math.max(0, (g.weaponReadyAt?.[3] || 0) - (g.clock || 0)),
+      remaining: Math.max(g.throwTime || 0, g.healTime || 0),
+      healing: utility.type === "heal",
+    },
     stats: { ...g.matchStats },
     range: g.range,
     map: g.range

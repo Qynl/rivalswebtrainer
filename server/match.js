@@ -3,6 +3,7 @@ import { Game } from "../src/game.js";
 import { WEAPONS } from "../src/data.js";
 import { MAX_HEALTH, ROUND_COUNTDOWN } from "../src/combat-rules.js";
 import { createServerWorld } from "./world.js";
+import { THROWN_UTILITIES } from "../src/throwables.js";
 import { KEYS } from "../src/net/protocol.js";
 const noop = () => {};
 const timers = [
@@ -135,6 +136,14 @@ export class Match {
       origin = source,
       backstab = false,
     ) => this.damage(e, amount, source, head, origin, backstab);
+    g.projectileBounce = (p, position) => {
+      if (
+        THROWN_UTILITIES.has(p.id) &&
+        p.bounces <= 3 &&
+        p.vel.lengthSq() >= 2.25
+      )
+        this.emit({ type: "bounce", position: position.toArray() });
+    };
     g.particles = noop;
     g.tracer = (a, b, team, color) =>
       this.emit({
@@ -177,14 +186,6 @@ export class Match {
       if (!Number.isInteger(slot) || slot < 0 || slot > 3 || slot === g.slot)
         return;
       Game.prototype.equip.call(g, slot);
-    };
-    g.showQuickMelee = (id, duration) => {
-      g.quickMeleeTime = duration;
-      g.quickModelId = id;
-    };
-    g.clearQuickMelee = () => {
-      g.quickMeleeTime = 0;
-      g.quickModelId = null;
     };
     const spawnProjectile = Game.prototype.spawnProjectile;
     g.spawnProjectile = (...args) => {
@@ -277,11 +278,21 @@ export class Match {
     const fire = !input.paused && input.fire,
       old = g.mouseDown;
     g.mouseDown = fire;
-    if (fire && !old) g.trigger = true;
+    if (fire && !old) g.queueFire();
+    if (input.paused) {
+      g.fireBufferedUntil = g.burstCount = g.bowCharge = 0;
+      g.trigger = g.firePulse = g.bowRelease = false;
+    }
     if (old && !fire && WEAPONS[g.loadout[g.slot]].type === "bow")
       g.bowRelease = true;
     const w = WEAPONS[g.loadout[g.slot]];
-    g.aiming = !input.paused && input.aim && w.slot < 2 && g.deflectTime <= 0;
+    g.aiming =
+      !input.paused &&
+      input.aim &&
+      w.slot < 2 &&
+      g.deflectTime <= 0 &&
+      !(g.quickUtilityTime > 0) &&
+      !(g.quickMeleeTime > 0);
     for (const action of input.actions.sort((a, b) => a.id - b.id)) {
       if (action.id <= g.lastAction) continue;
       g.lastAction = action.id;
@@ -290,13 +301,14 @@ export class Match {
       const currentWeapon = WEAPONS[g.loadout[g.slot]];
       if (action.type === "fire") {
         g.firePulse = true;
-        g.trigger = true;
+        g.queueFire();
       }
       if (action.type === "release" && currentWeapon.type === "bow")
         g.bowRelease = true;
       if (action.type === "jump") g.jump();
       if (action.type === "slide") g.slide();
       if (action.type === "ability") g.meleeAbility(true);
+      if (action.type === "utility") g.quickUtility();
       if (action.type === "reload") g.reload();
       if (action.type === "secondary") {
         if (currentWeapon.type === "heal") g.beginHeal(true);
@@ -356,6 +368,8 @@ export class Match {
     if (source && (source === e || source.team === e.team)) return;
     const applied = Math.min(e.health, amount);
     e.health = Math.max(0, e.health - amount);
+    if (e.context.healTime > 0 && e.context.quickUtilityTime > 0)
+      e.context.clearQuickMelee();
     e.context.healTime = 0;
     this.emit({
       type: "damage",
@@ -370,6 +384,12 @@ export class Match {
       e.alive = false;
       e.context.mouseDown = e.context.trigger = false;
       e.context.cancelThrow(false);
+      e.context.clearQuickMelee();
+      e.context.fireBufferedUntil =
+        e.context.deflectTime =
+        e.context.burstCount =
+          0;
+      e.context.playerMeleePending = null;
       e.context.matchStats.deaths++;
       if (source && source !== e && source.team !== e.team) {
         source.context.matchStats.kills++;
@@ -514,6 +534,7 @@ export class Match {
           blind: g.blindTime,
           paint: g.paintTintTime,
           quickMelee: g.quickMeleeTime,
+          quickUtility: g.quickUtilityTime,
           shot: g.lastShotAt ?? -1,
           shotSide: (Math.max(1, g.shotSequence || 1) - 1) % 2,
           dashCooldown: g.dashCooldown,

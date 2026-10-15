@@ -33,7 +33,7 @@ Mobile layouts support browsing/configuration, but combat requires desktop point
 - **150 HP** for players, bots and range targets; capped healing, normalized health bars and confirmed-hit floating damage numbers above opponents. Knife front/side hits deal **40**; behind-facing backstabs deal **150**.
 - **M** opens the four-step weapon picker during the five-second round preparation only. An already-open picker may finish after the countdown, while bots move and fight; only your own movement/input stays locked. Unchanged slots keep their ammunition.
 - Fixed-step movement with interpolated rendering, stronger gravity for less floaty jumps, uphill ramp-launch momentum, responsive ground acceleration/braking, precise air reversals, counter-strafing, slope-driven slides, grounded stair descent, momentum-preserving air steering and slide jumps, buffered jumps (140 ms), coyote time (100 ms), Fists/Bow double jump, Scythe dash, and explosive jumping.
-- Twenty-three usable weapons/utilities, all unlocked:
+- Twenty-six usable weapons/utilities, all unlocked:
   - Primary: Assault Rifle, Shotgun, Sniper, Burst Rifle, SMG, RPG, Bow, Minigun, Paintball Gun, Grenade Launcher, Flamethrower.
   - Secondary: Handgun, Uzi, Shorty, **Revolver**, **Burst Pistol**, **Dual Pistols**.
   - Melee: Fists, Knife (rear backstab / F quick stab), Scythe (dash), Katana (bullet deflection).
@@ -52,6 +52,7 @@ Mobile layouts support browsing/configuration, but combat requires desktop point
 | Left mouse        | Shoot / melee strike / throw / heal; hold and release to fire Bow                           |
 | Right mouse       | ADS; Scythe dash or Katana guard when equipped; quick Medkit heal                           |
 | F                 | Quick melee-slot ability: **Knife stab**, Scythe dash or Katana guard; keeps current slot/ammo |
+| G                 | Quick utility throw / 25-HP quick Medkit; keeps your selected weapon and its ammunition       |
 | Space             | Jump and cancel slide; hold for bunny hops; Fists/Bow double jump                           |
 | C / Shift / Ctrl  | Short 0.36-second slide; airborne presses buffer on landing; steer or jump to cancel        |
 | 1–4 / mouse wheel | Equip a loadout slot                                                                        |
@@ -65,6 +66,18 @@ Scythe dash recharges in **3 seconds**. Katana's frontal guard lasts **1.1 secon
 Reloads animate magazine extraction/insertion, bolt motion and the support hand. Weapons ease into ADS/equip positions; T inspects them. Bots have connected head/weapon rigs, independently bending knees, body lean, aim pitch and muzzle flashes. Static weapon geometry is batched by material to reduce draw submissions; fixed Arena visuals use nine batches while original ray geometry stays intact.
 
 Graphics use darker panel-seamed concrete, a compact edge HUD, distinct original weapon models and 3D loadout previews, original procedural concrete/metal/window textures, an atmospheric sky, environment-lit metal, rounded geometry, armored bots, building vents/windows, and emissive arena trims. The sky has drifting procedural clouds and a directional sun. Fixed-size combat pools add surface hit marks, debris, bouncing shell casings and muzzle-aligned tracers without allocating a new mesh for each hit. Everything is generated locally. The world is finished with depth-aware contact shading, two-sample MSAA, restrained quarter-resolution HDR bloom, gentle sharpening and a neutral color grade; the weapon overlay stays crisp. Reloads include a raised/banked receiver, magazine extraction, supporting-hand/wrist motion and a bolt rack. Equip, jump/landing inertia, strafing, throw follow-through, blade trails and eased bot deaths provide distinct action feedback. Enable **Performance mode** in Settings to reduce render resolution and bypass post-processing and dynamic shadows on slower hardware.
+
+## Quick utility and responsive combat
+
+**G** uses the utility in slot 4 without selecting it. Grenade, Molotov, Smoke and Flashbang use the same 160 ms hand-release and 480 ms throw action as a normal throw, then your previous gun/melee comes back. Your gun's ammo and firing recovery are retained. Utility ammunition and recovery are shared between G and slot 4; repeat-key events, weapon switching and retransmitted online actions cannot duplicate a charge. Switching before release refunds the reserved throwable; switching after release does not. Range utility remains unlimited, with normal recovery.
+
+With Medkit equipped, G channels the **25-HP / 0.8-second quick heal** using utility ammo, not gun ammo. Full-health use does nothing. Damage interrupts healing and consumes the Medkit as with a normal heal. Death clears pending throws and quick models rather than leaving ghost actions behind.
+
+A **140 ms single-request firing buffer** catches taps just before recovery/reload ends. It does not create extra shots, replay clicks on another weapon, or fire a stale request after a pause. Empty burst weapons reload on a tap, and bursts do not advance during a blocking utility animation. Compact F/G chips show readiness, remaining utility and active actions; the action bar follows actual simulation progress.
+
+Smoke now grows and dissipates as depth-tested procedural billows, with an interior haze. One instanced draw uses 32 puffs, or 16 with lower shader detail in Performance mode; switching quality does not rebuild resources. Projectiles have short pooled travel traces, thrown fuse markers and positional bounce audio. Remote operators display and animate the actual quick utility before returning to their gun. Bots can react to **visible hostile explosives and fire**, with difficulty-dependent reaction time, legal escape probes and no through-wall hazard perception.
+
+Implementation, validation and actual elapsed time: [work log](docs/night-pass.md).
 
 ## Expanded secondaries and handling
 
@@ -168,7 +181,7 @@ See [the combat-readability report](docs/combat-readability-pass.md) for validat
 ## Tests
 
 ```sh
-npm test                   # 280 input, abilities, physics, movement, rigging, audio, rendering and combat tests
+npm test                   # 315 input, abilities, physics, movement, rigging, audio, rendering and combat tests
 npm run build              # Production build + offline cache generation
 npx playwright install chromium
 npm run test:browser       # Browser integration test

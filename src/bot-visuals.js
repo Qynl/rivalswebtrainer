@@ -1,3 +1,4 @@
+import { THROW_DURATION, THROW_RELEASE } from "./throwables.js";
 import { selectShotSide } from "./animation.js";
 import * as THREE from "three";
 import { createViewModel } from "./world.js";
@@ -8,6 +9,7 @@ import { WEAPONS } from "./data.js";
 export function updateBotWeapon(model, e, clock = 0) {
   const p = model.parts,
     melee =
+      !(e.quickUtilityTime > 0) &&
       !!e.meleeId &&
       (e.activeWeapon === e.meleeId ||
         e.quickMeleeTime > 0 ||
@@ -29,7 +31,7 @@ export function updateBotWeapon(model, e, clock = 0) {
       p.weaponRig.add(p.onlineSocket);
     }
     const socket = p.onlineSocket,
-      id = e.activeWeapon || "rifle";
+      id = e.quickUtilityTime > 0 ? e.utilityId : e.activeWeapon || "rifle";
     if (socket.userData.id !== id) {
       const mats = new Set();
       socket.traverse((o) => {
@@ -57,6 +59,41 @@ export function updateBotWeapon(model, e, clock = 0) {
           ? 0
           : 1
         : Math.max(0, clock - (e.lastShotAt ?? -10));
+    if (WEAPONS[id].slot === 3) {
+      const remaining = e.throwTime || e.quickUtilityTime || 0,
+        throwing = id !== "medkit" && remaining > 0,
+        t = throwing
+          ? Math.max(0, Math.min(1, 1 - remaining / THROW_DURATION))
+          : 0,
+        wind = THREE.MathUtils.smoothstep(t, 0, 0.3),
+        cast = THREE.MathUtils.smoothstep(t, 0.3, 0.5),
+        recover = 1 - THREE.MathUtils.smoothstep(t, 0.5, 1);
+      weapon.position.set(-0.24 * 0.85, 0.24 * 0.85, 0.62 * 0.85);
+      weapon.position.y += (wind * 0.07 - cast * 0.12) * recover;
+      weapon.position.z += (wind * 0.12 - cast * 0.32) * recover;
+      weapon.rotation.set((wind * 0.45 - cast * 0.85) * recover, 0, 0);
+      if (parts.throwableBody)
+        parts.throwableBody.visible = throwing
+          ? remaining > THROW_DURATION - THROW_RELEASE
+          : (e.utilityAmmo ?? 1) > 0;
+      if (parts.pullRing)
+        parts.pullRing.visible =
+          !throwing || remaining > THROW_DURATION - THROW_RELEASE;
+      p.botRightGrip
+        .set(id === "medkit" ? 0.35 : 0.27, -0.3, -0.61)
+        .multiplyScalar(0.85)
+        .applyEuler(weapon.rotation)
+        .add(weapon.position);
+      p.botLeftGrip
+        .set(
+          id === "medkit" ? -0.1 : 0.24,
+          id === "medkit" ? -0.3 : -0.08,
+          -0.65,
+        )
+        .multiplyScalar(0.85)
+        .applyEuler(weapon.rotation)
+        .add(weapon.position);
+    }
     if (id === "bow") {
       p.botLeftGrip
         .copy(parts.bowGripPoint)

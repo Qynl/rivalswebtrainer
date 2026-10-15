@@ -24,15 +24,32 @@ export function createThrownModel(id) {
   group.add(model);
   group.userData.item = model;
   group.userData.utility = id;
+  if (id !== "molotov") {
+    const led = new THREE.Mesh(
+      new THREE.SphereGeometry(0.014, 6, 4),
+      new THREE.MeshBasicMaterial({
+        color:
+          id === "grenade" ? 0xffad62 : id === "smoke" ? 0xa6d5b0 : 0xe3f0ff,
+        transparent: true,
+      }),
+    );
+    led.position.y = new THREE.Box3().setFromObject(group).max.y - 0.025;
+    group.add(led);
+    group.userData.fuseLight = led;
+  }
   return group;
 }
 export function animateThrown(p, dt, time) {
+  const led = p.mesh.userData.fuseLight;
+  if (led)
+    led.material.opacity =
+      0.25 + 0.75 * Math.sin(time * ((p.fuse || 2) < 0.6 ? 24 : 12)) ** 2;
+  const flame = p.mesh.userData.item?.userData.pilotFlame;
+  if (flame) flame.scale.set(1, 1 + Math.sin(time * 31) * 0.18, 1);
   if (!p.spin) return;
   p.mesh.rotation.x += p.spin.x * dt;
   p.mesh.rotation.y += p.spin.y * dt;
   p.mesh.rotation.z += p.spin.z * dt;
-  const flame = p.mesh.userData.item?.userData.pilotFlame;
-  if (flame) flame.scale.set(1, 1 + Math.sin(time * 31) * 0.18, 1);
 }
 // Smooth value noise avoids repeating stripes and needs no texture download.
 const FIRE_NOISE = `

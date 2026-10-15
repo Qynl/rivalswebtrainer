@@ -2707,15 +2707,146 @@ kbd {
 }
 
 /* Crisp confirmed-hit punctuation; only the tiny SVG restarts, never the game. */
-#hitmarker svg { animation: hit-confirm-pop 130ms cubic-bezier(.16,.8,.25,1) both; }
-@keyframes hit-confirm-pop { from { transform: scale(1.38) rotate(4deg); } to { transform: scale(1) rotate(0); } }
-#hitmarker.headshot { filter: drop-shadow(0 0 5px #c78e4a88); }
-#hitmarker.elimination { filter: drop-shadow(0 0 6px #79d5ad99); }
-#bow-draw { position:absolute;left:50%;top:calc(50% + 27px);width:44px;height:3px;transform:translateX(-50%);background:#17232d88;border-radius:2px;overflow:hidden;pointer-events:none; }
-#bow-draw i { display:block;width:100%;height:100%;transform-origin:left;background:#e4d6ae; }
-#bow-draw.full i { background:#baf5d6;box-shadow:0 0 7px #9fecd3; }
-@media (prefers-reduced-motion: reduce) { #hitmarker svg { animation:none; } }
+#hitmarker svg {
+  animation: hit-confirm-pop 130ms cubic-bezier(0.16, 0.8, 0.25, 1) both;
+}
+@keyframes hit-confirm-pop {
+  from {
+    transform: scale(1.38) rotate(4deg);
+  }
+  to {
+    transform: scale(1) rotate(0);
+  }
+}
+#hitmarker.headshot {
+  filter: drop-shadow(0 0 5px #c78e4a88);
+}
+#hitmarker.elimination {
+  filter: drop-shadow(0 0 6px #79d5ad99);
+}
+#bow-draw {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 27px);
+  width: 44px;
+  height: 3px;
+  transform: translateX(-50%);
+  background: #17232d88;
+  border-radius: 2px;
+  overflow: hidden;
+  pointer-events: none;
+}
+#bow-draw i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: left;
+  background: #e4d6ae;
+}
+#bow-draw.full i {
+  background: #baf5d6;
+  box-shadow: 0 0 7px #9fecd3;
+}
+@media (prefers-reduced-motion: reduce) {
+  #hitmarker svg {
+    animation: none;
+  }
+}
 
 /* Low ammunition is readable without another HUD panel. */
-#ammo-value.low { color:#f4c885; }
-#ammo-value.empty { color:#f48c79; }
+#ammo-value.low {
+  color: #f4c885;
+}
+#ammo-value.empty {
+  color: #f48c79;
+}
+
+/* Two compact quick-action chips, not another large HUD panel. */
+.quick-actions {
+  position: absolute;
+  left: 50%;
+  bottom: 78px;
+  transform: translateX(-50%);
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  max-width: calc(100vw - 24px);
+}
+.quick-actions #ability-status,
+#utility-status {
+  position: static;
+  transform: none;
+  min-width: 0;
+  padding: 5px 8px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: 6px;
+  font-size: 7px;
+  letter-spacing: 0.6px;
+  background: #101b26cf;
+  border: 1px solid #92dce52e;
+  color: #95a5b6;
+  backdrop-filter: blur(8px);
+}
+.quick-actions #ability-status.ready,
+#utility-status.ready {
+  border-color: #b7f9dc55;
+  color: #d4efe4;
+}
+#utility-status kbd {
+  border-color: #7bd4df30;
+  color: #cceef4;
+  font-size: 9px;
+}
+#utility-status b {
+  margin-left: auto;
+  font: 9px monospace;
+  color: #b7f9dc;
+  white-space: nowrap;
+}
+#utility-status.active {
+  border-color: #a8e7ff;
+  color: #d8f4ff;
+}
+#utility-status.empty b {
+  color: #a5adb6;
+}
+#reload-indicator .action-track {
+  height: 2px;
+  width: 100px;
+  background: #ffffff26;
+  animation: none;
+  overflow: hidden;
+}
+.action-track i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: var(--orange);
+  transform-origin: left;
+}
+@media (max-width: 700px) {
+  .quick-actions {
+    bottom: 124px;
+    gap: 4px;
+  }
+  .quick-actions #ability-status,
+  #utility-status {
+    font-size: 6px;
+    gap: 5px;
+    padding: 5px 6px;
+  }
+}
+
+#smoke-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: #8b999f;
+  z-index: 1;
+}
+
+#hud {
+  z-index: 2;
+}

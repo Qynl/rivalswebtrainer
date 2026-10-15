@@ -126,6 +126,65 @@ test("two real browser clients join a private lobby, ready up and share an autho
         .onlineSocket?.userData.id;
     }),
   ).toBe("sniper");
+  // G is an actual reliable server action, not a local fake grenade/ammo edit.
+  const utilityBefore = await page.evaluate(() => {
+    const g = window.__arena,
+      self = g.network.latest.players.find((p) => p.id === g.network.id);
+    g.yaw = -Math.PI / 2;
+    g.pitch = 0.4; // throw toward the side wall, not the idle rival
+    return {
+      utility: self.ammo[3].mag,
+      gun: self.ammo[0].mag,
+      slot: self.slot,
+    };
+  });
+  await page.keyboard.press("g");
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const g = window.__arena;
+        return g.network.latest.players.find((p) => p.id === g.network.id)
+          .ammo[3].mag;
+      }),
+    )
+    .toBe(utilityBefore.utility - 1);
+  await expect
+    .poll(() =>
+      other.evaluate(() => {
+        const g = window.__arena;
+        return g.entities.find((e) => e.netId !== g.network.id).model.parts
+          .onlineSocket?.userData.id;
+      }),
+    )
+    .toBe("grenade");
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const g = window.__arena;
+        return g.network.latest.projectiles.some(
+          (p) => p.owner === g.network.id && p.weapon === "grenade",
+        );
+      }),
+    )
+    .toBe(true);
+  await expect
+    .poll(() => page.evaluate(() => !!window.__arena.quickModel))
+    .toBe(false);
+  expect(await page.evaluate(() => window.__arena.slot)).toBe(
+    utilityBefore.slot,
+  );
+  expect(await page.evaluate(() => window.__arena.ammunition[0].mag)).toBe(
+    utilityBefore.gun,
+  );
+  await expect
+    .poll(() =>
+      other.evaluate(() => {
+        const g = window.__arena;
+        return g.entities.find((e) => e.netId !== g.network.id).model.parts
+          .onlineSocket?.userData.id;
+      }),
+    )
+    .toBe("sniper");
   // A forged position/HP/kill packet is ignored: server accepts controls only.
   await page.evaluate(() => {
     const g = window.__arena;

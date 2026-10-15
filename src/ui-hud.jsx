@@ -26,6 +26,7 @@ export function Hud() {
   const h = useSyncExternalStore(hud.subscribe, hud.get),
     s = useSyncExternalStore(ui.subscribe, ui.get),
     a = h.ability,
+    u = h.utility,
     b = h.banner;
   const marker = h.marker || "",
     stats = h.stats || {},
@@ -46,6 +47,14 @@ export function Hud() {
         className={h.paint && !s.paused ? "" : "hidden"}
         aria-hidden="true"
         style={{ opacity: h.paint || 0 }}
+      />
+      <div
+        id="smoke-overlay"
+        aria-hidden="true"
+        className={
+          h.smoke > 0 && s.screen === "game" && !s.paused ? "" : "hidden"
+        }
+        style={{ opacity: h.smoke || 0 }}
       />
       <div id="hud" className={s.screen === "game" ? "" : "hidden"}>
         <div className="hud-top">
@@ -200,7 +209,14 @@ export function Hud() {
           <p id="banner-subtitle">{b?.subtitle}</p>
         </div>
         <div id="reload-indicator" className={h.action ? "" : "hidden"}>
-          {h.action || "RELOADING"} <span />
+          {h.action || "RELOADING"}
+          <span className="action-track">
+            <i
+              style={{
+                transform: `scaleX(${Math.max(0, Math.min(1, h.actionProgress || 0))})`,
+              }}
+            />
+          </span>
         </div>
         <div className="hud-bottom">
           <div className="health-block">
@@ -239,7 +255,7 @@ export function Hud() {
         </div>
         <div className="hud-controls">
           WASD MOVE <i>·</i> C / SHIFT SLIDE <i>·</i> SPACE JUMP <i>·</i> RMB
-          AIM <i>·</i> F ABILITY <i>·</i> ESC PAUSE
+          AIM <i>·</i> F ABILITY <i>·</i> G UTILITY <i>·</i> ESC PAUSE
         </div>
         <div id="round-loadout-hint" className={h.canSelect ? "" : "hidden"}>
           <kbd>M</kbd> CHANGE WEAPONS · {h.countdown}s
@@ -257,27 +273,63 @@ export function Hud() {
           ))}
         </div>
         <div id="scope" className={h.scoped ? "" : "hidden"} />
-        <div
-          id="ability-status"
-          className={
-            !a
-              ? "hidden"
-              : (a.cooldown <= 0 ? "ready " : "") + (a.active ? "guarding" : "")
-          }
-        >
-          {a && (
-            <>
-              <kbd>F</kbd>
-              <span>{a.name}</span>
-              <b>
-                {a.active
-                  ? a.time.toFixed(1) + "s"
-                  : a.cooldown > 0
-                    ? a.cooldown.toFixed(1) + "s"
-                    : "READY"}
-              </b>
-            </>
-          )}
+        <div className="quick-actions">
+          <div
+            id="ability-status"
+            className={
+              !a
+                ? "hidden"
+                : (a.cooldown <= 0 ? "ready " : "") +
+                  (a.active ? "guarding" : "")
+            }
+          >
+            {a && (
+              <>
+                <kbd>F</kbd>
+                <span>{a.name}</span>
+                <b>
+                  {a.active
+                    ? a.time.toFixed(1) + "s"
+                    : a.cooldown > 0
+                      ? a.cooldown.toFixed(1) + "s"
+                      : "READY"}
+                </b>
+              </>
+            )}
+          </div>
+          <div
+            id="utility-status"
+            className={
+              !u
+                ? "hidden"
+                : "quick-utility " +
+                  (u.active
+                    ? "active"
+                    : u.empty
+                      ? "empty"
+                      : u.cooldown > 0
+                        ? "recovering"
+                        : "ready")
+            }
+          >
+            {u && (
+              <>
+                <kbd>G</kbd>
+                <span>{u.name}</span>
+                <b>
+                  {u.active
+                    ? u.healing
+                      ? "HEALING"
+                      : "THROWING"
+                    : u.empty
+                      ? "EMPTY"
+                      : u.cooldown > 0
+                        ? u.cooldown.toFixed(1) + "s"
+                        : u.count + " LEFT"}
+                </b>
+              </>
+            )}
+          </div>
         </div>
         <div id="guard-overlay" className={h.guard ? "" : "hidden"} />
       </div>

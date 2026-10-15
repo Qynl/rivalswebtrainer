@@ -248,6 +248,10 @@ export class GameAudio {
         this.tone(2400, 0.18, "triangle", 0.2, 900);
         this.noiseHit(0.08, 0.14, 6500);
         break;
+      case "bounce":
+        this.noiseHit(0.035, 0.035, 1800);
+        this.tone(580, 0.055, "triangle", 0.025, 220);
+        break;
       case "melee":
       case "throw":
         this.noiseHit(0.16, 0.12, 1000);

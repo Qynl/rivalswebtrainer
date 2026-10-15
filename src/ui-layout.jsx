@@ -332,7 +332,13 @@ export function Layout({ bind, content }) {
                 <dt>
                   <kbd>{"F"}</kbd>
                 </dt>
-                <dd>{"Quick melee right-click ability"}</dd>
+                <dd>{"Quick melee ability / Knife stab"}</dd>
+                <dt>
+                  <kbd>{"G"}</kbd>
+                </dt>
+                <dd>
+                  {"Quick utility / quick Medkit heal — keeps your weapon"}
+                </dd>
                 <dt>
                   <kbd>{"1"}</kbd>
                   <kbd>{"2"}</kbd>

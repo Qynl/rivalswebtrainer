@@ -1,3 +1,4 @@
+import { updateProjectileTrail } from "./projectile-feedback.js";
 import { FlameJet } from "./flame-fx.js";
 import {
   MAX_HEALTH,
@@ -15,6 +16,8 @@ import {
   createFirePatch,
   animateFire,
 } from "./throwables.js";
+import { createSmokeCloud, animateSmoke } from "./smoke-fx.js";
+import { evadeHazards } from "./bot-hazards.js";
 import { BotLocomotion } from "./bot-animation.js";
 import { positionBot, steerBotWish } from "./bot-positioning.js";
 import { ARENA } from "./arena-layout.js";
@@ -278,6 +281,7 @@ export class Game {
           "ShiftLeft",
           "ShiftRight",
           "KeyF",
+          "KeyG",
           "KeyW",
           "KeyA",
           "KeyS",
@@ -312,6 +316,7 @@ export class Game {
       )
         this.slide();
       if (e.code === "KeyF") this.meleeAbility(true);
+      if (e.code === "KeyG") this.quickUtility();
       if (e.code === "KeyR") this.reload();
       if (e.code === "KeyT" && !this.reloadTime) this.inspectTime = 1.8;
       if (/^Digit[1-4]$/.test(e.code)) this.equip(+e.code.slice(-1) - 1);
@@ -326,7 +331,7 @@ export class Game {
         return;
       if (e.button === 0) {
         this.mouseDown = true;
-        this.trigger = true;
+        this.queueFire();
         this.network?.action("fire");
       }
       if (e.button === 2) {
@@ -468,6 +473,7 @@ export class Game {
       return false;
     this.selectingLoadout = true;
     this.network?.beginSelection();
+    this.fireBufferedUntil = 0;
     this.mouseDown = this.trigger = this.aiming = false;
     this.keys.clear();
     document.exitPointerLock?.();
@@ -682,6 +688,7 @@ export class Game {
     if (!this.network?.applying) this.network?.action("slot" + slot);
     this.cancelThrow();
     this.playerMeleePending = null;
+    this.fireBufferedUntil = 0;
     this.clearQuickMelee();
     this.deflectTime = 0;
     this.slot = slot;
@@ -816,7 +823,12 @@ export class Game {
     return true;
   }
   meleeAbility(quick = false) {
-    if (!this.player?.alive || this.state !== "playing" || this.pendingThrow)
+    if (
+      !this.player?.alive ||
+      this.state !== "playing" ||
+      this.pendingThrow ||
+      this.quickUtilityTime > 0
+    )
       return false;
     const id = quick ? this.loadout[2] : this.loadout[this.slot];
     const weapon = WEAPONS[id];
@@ -873,14 +885,80 @@ export class Game {
     this.events.update(this);
     return true;
   }
+  // G uses utility-slot inventory/recovery, never the selected gun's ammo or timer.
+  quickUtility() {
+    const id = this.loadout[3],
+      w = WEAPONS[id],
+      a = this.ammunition[3];
+    if (
+      !this.player?.alive ||
+      this.state !== "playing" ||
+      this.selectingLoadout ||
+      !w ||
+      w.slot !== 3 ||
+      !a ||
+      this.pendingThrow ||
+      this.quickUtilityTime > 0 ||
+      this.quickMeleeTime > 0 ||
+      this.deflectTime > 0 ||
+      this.healTime > 0 ||
+      this.playerMeleePending ||
+      (this.weaponReadyAt?.[3] || 0) > (this.clock || 0)
+    )
+      return false;
+    if (a.mag <= 0) {
+      this.audio.play("empty");
+      this.events.toast?.(w.name + " is empty. Utility restocks next round.");
+      return false;
+    }
+    if (w.type === "heal") {
+      if (!this.beginHeal(true, 3)) return false;
+    } else {
+      if (!THROWN_UTILITIES.has(id)) return false;
+      if (!this.range) a.mag--;
+      this.pendingThrow = {
+        owner: this.player,
+        id,
+        remaining: THROW_RELEASE,
+        ammo: a,
+        slot: 3,
+        quick: true,
+      };
+      this.throwTime = THROW_DURATION;
+      this.throwReleased = false;
+      this.matchStats.shots++;
+      this.audio.play(w.sound);
+    }
+    const duration = w.type === "heal" ? this.healTime : THROW_DURATION;
+    (this.weaponReadyAt ||= [0, 0, 0, 0])[3] = (this.clock || 0) + w.interval;
+    this.reloadTime =
+      this.burstCount =
+      this.inspectTime =
+      this.bowCharge =
+      this.fireBufferedUntil =
+        0;
+    this.bowRelease = this.mouseDown = this.trigger = this.aiming = false;
+    if (this.slot !== 3) this.showQuickAction(id, duration, true);
+    else {
+      this.quickUtilityTime = duration;
+      this.cooldown = Math.max(this.cooldown || 0, w.interval);
+    }
+    this.events.update(this);
+    return true;
+  }
   showQuickMelee(id, duration) {
+    this.showQuickAction(id, duration);
+  }
+  showQuickAction(id, duration, utility = false) {
     this.clearQuickMelee();
+    this.quickModelId = id;
+    this[utility ? "quickUtilityTime" : "quickMeleeTime"] = duration;
+    if (this.headless) return;
     this.quickModel = createViewModel(id, WEAPONS[id]);
     this.quickModel.scale.setScalar(0.78);
-    this.quickModelId = id;
-    this.quickMeleeTime = duration;
     this.weaponScene.add(this.quickModel);
     if (this.viewModel) this.viewModel.visible = false;
+    this.weaponAnimator?.quickDraw();
   }
   clearQuickMelee() {
     if (this.quickModel) {
@@ -893,7 +971,8 @@ export class Game {
       materials.forEach((m) => m.dispose());
     }
     this.quickModel = null;
-    this.quickMeleeTime = 0;
+    this.quickModelId = null;
+    this.quickMeleeTime = this.quickUtilityTime = 0;
     if (this.viewModel) this.viewModel.visible = true;
   }
   moveDirection() {
@@ -907,7 +986,15 @@ export class Game {
     ).normalize();
   }
   reload() {
-    if (!this.player?.alive || this.reloadTime > 0) return;
+    if (
+      !this.player?.alive ||
+      this.reloadTime > 0 ||
+      this.pendingThrow ||
+      this.quickUtilityTime > 0 ||
+      this.quickMeleeTime > 0 ||
+      this.healTime > 0
+    )
+      return;
     const w = WEAPONS[this.loadout[this.slot]],
       a = this.ammunition[this.slot];
     if (!w.reload || a.mag >= w.mag || a.reserve <= 0) return;
@@ -942,6 +1029,12 @@ export class Game {
     }
     return true;
   }
+  queueFire() {
+    this.trigger = true;
+    // A tap just before recovery ends is one request, not a macro/autofire.
+    this.fireBufferedUntil = (this.clock || 0) + 0.14;
+    this.fireBufferedWeapon = this.loadout[this.slot];
+  }
   firePlayer() {
     const p = this.player;
     if (
@@ -950,6 +1043,7 @@ export class Game {
       this.reloadTime > 0 ||
       this.deflectTime > 0 ||
       this.quickMeleeTime > 0 ||
+      this.quickUtilityTime > 0 ||
       this.healTime > 0 ||
       this.pendingThrow
     )
@@ -958,8 +1052,7 @@ export class Game {
       w = WEAPONS[id],
       a = this.ammunition[this.slot];
     if (w.type === "heal") {
-      this.beginHeal(false);
-      return;
+      return this.beginHeal(false);
     }
     if (w.spin && this.spinTime < 0.55) return;
     if (a.mag <= 0) {
@@ -1077,7 +1170,9 @@ export class Game {
       // Recoil animates the weapon. Never rewrite the mouse's pitch; that caused
       // sustained fire to drag/snap the user's actual look direction upward.
     }
+    this.fireBufferedUntil = 0;
     this.events.update(this);
+    return true;
   }
   updatePlayerMelee(dt) {
     const attack = this.playerMeleePending;
@@ -1252,13 +1347,17 @@ export class Game {
     this.effects.push({ mesh, life: 7, max: 7 });
   }
   updateSupport(dt) {
+    if (this.quickUtilityTime > 0) {
+      this.quickUtilityTime = Math.max(0, this.quickUtilityTime - dt);
+      if (this.quickUtilityTime <= 1e-8) this.clearQuickMelee();
+    }
     this.knifeQuickTime = Math.max(0, (this.knifeQuickTime || 0) - dt);
     this.knifeQuickCooldown = Math.max(0, (this.knifeQuickCooldown || 0) - dt);
     this.blindTime = Math.max(0, (this.blindTime || 0) - dt);
     this.paintTintTime = Math.max(0, (this.paintTintTime || 0) - dt);
     if (this.healTime > 0) {
       this.healTime -= dt;
-      if (this.healTime <= 0 && this.player.alive) {
+      if (this.healTime <= 0 && this.player.alive && !this.network) {
         this.player.health = Math.min(
           this.player.maxHealth || MAX_HEALTH,
           this.player.health + this.healAmount,
@@ -1267,18 +1366,20 @@ export class Game {
       }
     }
   }
-  beginHeal(quick = false) {
+  beginHeal(quick = false, slot = this.slot) {
     if (
       !this.player?.alive ||
       this.state !== "playing" ||
       this.healTime > 0 ||
+      this.pendingThrow ||
+      WEAPONS[this.loadout[slot]]?.type !== "heal" ||
       this.player.health >= (this.player.maxHealth || MAX_HEALTH)
     )
       return false;
-    const a = this.ammunition[this.slot];
+    const a = this.ammunition[slot];
     if (a.mag <= 0) return false;
     if (!this.range) a.mag--;
-    this.healTime = quick ? 0.8 : 2.2;
+    this.healTime = this.healTotal = quick ? 0.8 : 2.2;
     this.healAmount = quick ? 25 : 70;
     this.mouseDown = false;
     this.trigger = false;
@@ -1291,6 +1392,8 @@ export class Game {
     const materials = new Set(),
       textures = new Set();
     object.traverse((o) => {
+      // Instance transforms/colors are owned by the mesh, not its geometry.
+      if (o.isInstancedMesh) o.dispose();
       o.geometry?.dispose();
       for (const material of Array.isArray(o.material)
         ? o.material
@@ -1394,6 +1497,8 @@ export class Game {
     }
     e.health = Math.max(0, e.health - amount);
     if (e.isPlayer) {
+      if (this.healTime > 0 && this.quickUtilityTime > 0)
+        this.clearQuickMelee();
       this.healTime = 0;
       this.events.hurt(hitOrigin, amount);
       this.audio.play("hurt");
@@ -1409,6 +1514,9 @@ export class Game {
       }
       if (e.isPlayer) {
         this.cancelThrow(false);
+        this.clearQuickMelee();
+        this.fireBufferedUntil = this.deflectTime = this.burstCount = 0;
+        this.playerMeleePending = null;
         this.matchStats.deaths++;
         this.mouseDown = false;
         this.aiming = false;
@@ -1469,6 +1577,7 @@ export class Game {
     this.keys.clear();
     this.mouseDown = false;
     this.trigger = false;
+    this.fireBufferedUntil = this.burstCount = 0;
     this.bowCharge = 0;
     this.bowRelease = false;
     this.aiming = false;
@@ -1553,6 +1662,18 @@ export class Game {
       p.vel.z += (owner.vz || 0) * 0.35;
     }
   }
+  projectileBounce(p, position) {
+    if (!THROWN_UTILITIES.has(p.id) || p.bounces > 3 || p.vel.lengthSq() < 2.25)
+      return;
+    if (this.audio.playAt && this.player)
+      this.audio.playAt(
+        "bounce",
+        position,
+        this.eye(this.player),
+        this.yaw,
+        0.45,
+      );
+  }
   cancelThrow(refund = true) {
     const p = this.pendingThrow;
     if (p && refund && !this.range && p.ammo && Number.isFinite(p.ammo.mag))
@@ -1566,7 +1687,7 @@ export class Game {
     if (!p) return;
     p.remaining -= dt;
     if (p.remaining > 1e-8) return;
-    if (!p.owner.alive) {
+    if (!p.owner.alive || (p.quick && this.loadout[3] !== p.id)) {
       this.cancelThrow(false);
       return;
     }
@@ -1615,15 +1736,7 @@ export class Game {
     }
     if (id === "smoke") {
       const radius = 4.5,
-        mat = new THREE.MeshStandardMaterial({
-          color: 0xaaa2be,
-          transparent: true,
-          opacity: 0.83,
-          roughness: 1,
-        }),
-        mesh = this.headless
-          ? new THREE.Object3D()
-          : new THREE.Mesh(new THREE.IcosahedronGeometry(radius, 2), mat);
+        mesh = this.headless ? new THREE.Object3D() : createSmokeCloud();
       mesh.position.copy(pos);
       mesh.position.y = Math.max(1.5, pos.y);
       this.scene.add(mesh);
@@ -1756,17 +1869,13 @@ export class Game {
             p.vel.z *= 0.7;
           }
           p.bounces++;
-        }
-      }
-      if (p.arrow && !this.headless && this.combatFX) {
-        p.trailTime = (p.trailTime || 0) - dt;
-        if (p.trailTime <= 0) {
-          this.combatFX.trace(p.pos, next, p.owner.team, 0xe8d6a5);
-          p.trailTime = 0.03;
+          this.projectileBounce(p, next);
         }
       }
       p.pos.copy(next);
       p.mesh.position.copy(next);
+      if (!this.headless)
+        updateProjectileTrail(p, this.combatFX, dt, p.owner.team);
       if ((p.arrow || p.id === "launcher") && p.vel.lengthSq() > 0)
         p.mesh.quaternion.setFromUnitVectors(
           v3(0, 1, 0),
@@ -1931,6 +2040,7 @@ export class Game {
         this.reloadTime <= 0 &&
         this.cooldown <= 0 &&
         !(this.quickMeleeTime > 0) &&
+        !(this.quickUtilityTime > 0) &&
         this.deflectTime <= 0 &&
         this.ammunition[this.slot].mag > 0;
       if (this.mouseDown && ready)
@@ -1943,14 +2053,30 @@ export class Game {
       this.trigger = false;
       return;
     }
+    const fireRequested =
+      this.trigger ||
+      (this.fireBufferedUntil > (this.clock || 0) &&
+        this.fireBufferedWeapon === this.loadout[this.slot]);
     if (
       w.type === "burst" &&
-      this.trigger &&
+      fireRequested &&
+      this.ammunition[this.slot].mag <= 0
+    )
+      this.firePlayer(); // Empty burst weapons should reload on a tap too.
+    if (
+      w.type === "burst" &&
+      fireRequested &&
+      !(this.quickMeleeTime > 0) &&
+      !(this.quickUtilityTime > 0) &&
+      !(this.deflectTime > 0) &&
+      !(this.healTime > 0) &&
+      !this.pendingThrow &&
       this.cooldown <= 0 &&
       this.reloadTime <= 0 &&
       this.ammunition[this.slot].mag > 0
     ) {
       this.burstCount = w.burstSize || 3;
+      this.fireBufferedUntil = 0;
       this.burstTimer = 0;
       this.trigger = false;
     }
@@ -1965,14 +2091,17 @@ export class Game {
       this.burstTimer -= dt;
       if (this.burstTimer <= 0) {
         this.cooldown = 0;
-        this.firePlayer();
-        this.burstCount--;
-        this.burstTimer = w.burstSpacing || 0.075;
-        this.cooldown = this.burstCount ? 0 : w.interval;
+        if (this.firePlayer()) {
+          this.burstCount--;
+          this.burstTimer = w.burstSpacing || 0.075;
+          this.cooldown = this.burstCount ? 0 : w.interval;
+        }
       }
     } else if (
       w.type !== "burst" &&
-      (w.type === "auto" || w.type === "flame" ? this.mouseDown : this.trigger)
+      (w.type === "auto" || w.type === "flame"
+        ? this.mouseDown || fireRequested
+        : fireRequested)
     ) {
       this.firePlayer();
       if (w.type !== "auto" && w.type !== "flame") this.trigger = false;
@@ -2176,6 +2305,23 @@ export class Game {
       dz = direction.z;
       if (!visible && Math.hypot(dx, dz) > 0) e.yaw = Math.atan2(-dx, -dz);
     }
+    const hazard = evadeHazards(e, {
+      clock: this.clock,
+      projectiles: this.projectiles,
+      fires: this.fires,
+      world: this.world,
+      reaction: d.reaction,
+      canSee: (point) =>
+        this.hasLOS(origin, v3(point.x, point.y + 0.15, point.z)),
+    });
+    e.evadingHazard = !!hazard;
+    if (hazard) {
+      dx = hazard.x;
+      dz = hazard.z;
+      movementPath = null;
+      // Keep eyes on a visible rival while backing away from a grenade/fire.
+      if (!visible) e.yaw = Math.atan2(-dx, -dz);
+    }
     // Teammates spread out rather than occupying the same firing position.
     for (const other of this.entities) {
       if (other === e || !other.alive || other.team !== e.team) continue;
@@ -2216,8 +2362,8 @@ export class Game {
       skill,
       reaction: d.reaction,
       reacted: e.seen > d.reaction,
-      underFire,
-      defensive,
+      underFire: underFire || !!hazard,
+      defensive: defensive || !!hazard,
       speed: d.speed,
       positioning: !!positioning?.moving,
     });
@@ -2500,6 +2646,14 @@ export class Game {
       }
       if (e.expand) e.mesh.scale.setScalar(1 + (1 - e.life / e.max) * 7);
       if (e.fire) animateFire(e.mesh, this.clock || 0, e.life);
+      if (e.smoke)
+        animateSmoke(
+          e.mesh,
+          this.clock || 0,
+          e.life,
+          e.max,
+          this.settings?.performance,
+        );
       if (e.mesh.material?.transparent)
         e.mesh.material.opacity =
           (e.smoke ? 0.83 : 0.7) * Math.min(1, e.life / (e.max * 0.25));
@@ -2762,7 +2916,9 @@ export class Game {
         kick: this.kick,
         swap: this.switchTime || 0,
         reloading: this.reloadTime > 0,
-        ammo: this.ammunition?.[this.slot]?.mag ?? Infinity,
+        ammo:
+          this.ammunition?.[this.quickUtilityTime > 0 ? 3 : this.slot]?.mag ??
+          Infinity,
         reload:
           this.reloadTime > 0
             ? 1 - this.reloadTime / (this.reloadTotal || w.reload || 1)
@@ -2778,6 +2934,7 @@ export class Game {
           this.lastShotAt === undefined ? 10 : this.clock - this.lastShotAt,
         flash: this.flash > 0,
         heal: this.healTime,
+        healTotal: this.healTotal,
         quickStab: this.knifeQuickTime > 0,
         swing: this.swingTime,
         swingSequence: this.swingSequence,

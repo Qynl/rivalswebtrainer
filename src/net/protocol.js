@@ -10,6 +10,7 @@ export const ACTIONS = new Set([
   "jump",
   "slide",
   "ability",
+  "utility",
   "reload",
   "secondary",
   "slot0",

@@ -1,9 +1,11 @@
+import { updateProjectileTrail } from "../projectile-feedback.js";
 import { moveBody, canOccupy, GRAVITY } from "../physics.js";
 import * as THREE from "three";
 import { createProjectileModel } from "../projectile-model.js";
 import { WEAPONS } from "../data.js";
 import { SnapshotBuffer, KEYS } from "./protocol.js";
-import { createFirePatch, animateFire } from "../throwables.js";
+import { createSmokeCloud, animateSmoke } from "../smoke-fx.js";
+import { createFirePatch, animateFire, animateThrown } from "../throwables.js";
 const v = (a) => new THREE.Vector3().fromArray(a);
 export class MultiplayerSession {
   constructor(game, client, map, snapshot) {
@@ -194,6 +196,19 @@ export class MultiplayerSession {
       g.reloadTime = self.reload;
       g.reloadTotal = WEAPONS[g.loadout[g.slot]].reload;
       g.healTime = self.heal;
+      if (self.alive && self.quickUtility > 0) {
+        if (g.quickModelId !== g.loadout[3] && g.slot !== 3)
+          g.showQuickAction(g.loadout[3], self.quickUtility, true);
+        g.quickUtilityTime = self.quickUtility;
+        g.throwTime = self.throw;
+        g.throwReleased = self.throw > 0 && self.throw <= 0.32;
+      } else if (
+        g.quickUtilityTime > 0 ||
+        WEAPONS[g.quickModelId]?.slot === 3
+      ) {
+        g.cancelThrow(false);
+        g.clearQuickMelee();
+      }
       g.deflectTime = self.deflect;
     }
     this.actions = this.actions.filter((a) => a.id > self.lastAction);
@@ -241,6 +256,11 @@ export class MultiplayerSession {
         shotSide: state.shotSide || 0,
         deflectTime: state.deflect,
         quickMeleeTime: state.quickMelee || 0,
+        quickUtilityTime: state.quickUtility || 0,
+        utilityId: state.loadout[3],
+        utilityAmmo: state.ammo[3].mag ?? Infinity,
+        throwTime: state.throw,
+        healTime: state.heal,
         dashTime: state.dash,
         swingTime: state.swing,
       });
@@ -355,6 +375,15 @@ export class MultiplayerSession {
           0,
         );
       }
+      if (event.type === "bounce") {
+        g.audio.playAt(
+          "bounce",
+          v(event.position),
+          g.eye(g.player),
+          g.yaw,
+          0.45,
+        );
+      }
       if (event.type === "explosion") {
         const w = event.weapon;
         if (w !== "molotov" && w !== "smoke") {
@@ -396,6 +425,7 @@ export class MultiplayerSession {
       ShiftRight: "slide",
       KeyC: "slide",
       KeyF: "ability",
+      KeyG: "utility",
       KeyR: "reload",
     }[key];
     if (action) this.action(action);
@@ -526,14 +556,8 @@ export class MultiplayerSession {
       const t = 1 - Math.exp(-dt * 28);
       p.mesh.position.lerp(p.target, t);
       p.mesh.rotation.set(p.rx, p.ry, p.rz);
-      if (p.weapon === "bow" && g.combatFX) {
-        p.trailTime -= dt;
-        if (p.trailTime <= 0) {
-          g.combatFX.trace(p.trailFrom, p.mesh.position, 0, 0xe8d6a5);
-          p.trailFrom.copy(p.mesh.position);
-          p.trailTime = 0.03;
-        }
-      }
+      animateThrown(p, dt, g.clock);
+      updateProjectileTrail(p, g.combatFX, dt);
       if (p.mesh.userData.exhaust)
         p.mesh.userData.exhaust.scale.set(
           1 + Math.sin(g.clock * 90) * 0.12,
@@ -543,7 +567,8 @@ export class MultiplayerSession {
     }
     for (const zone of this.zones.values()) {
       if (zone.type === "fire") animateFire(zone.mesh, g.clock, zone.life);
-      else zone.mesh.material.opacity = 0.83 * Math.min(1, zone.life / 1.75);
+      else
+        animateSmoke(zone.mesh, g.clock, zone.life, 7, g.settings.performance);
     }
     g.updateEffects(dt);
     g.combatFX?.update(dt, g.world.boxes);
@@ -587,17 +612,7 @@ export class MultiplayerSession {
       let zone = this.zones.get(state.id);
       if (!zone) {
         const mesh =
-          state.type === "fire"
-            ? createFirePatch()
-            : new THREE.Mesh(
-                new THREE.IcosahedronGeometry(4.5, 2),
-                new THREE.MeshStandardMaterial({
-                  color: 0xaaa2be,
-                  transparent: true,
-                  opacity: 0.83,
-                  roughness: 1,
-                }),
-              );
+          state.type === "fire" ? createFirePatch() : createSmokeCloud();
         mesh.position.set(state.x, state.y, state.z);
         gAdd(this.game, mesh);
         zone = { mesh, type: state.type, life: state.life };
