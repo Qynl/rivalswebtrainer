@@ -42,7 +42,7 @@ try {
   const views = [
     {
       name: "spawn-eye-height",
-      position: [0, 1.66, 14.3],
+      position: [0, 1.66, 17.3],
       target: [0, 1.66, 0],
       fov: 95,
     },
@@ -54,7 +54,7 @@ try {
     },
     {
       name: "ramp-summit",
-      position: [8.5, 7.86, 14.8],
+      position: [10.5, 6.06, 17.8],
       target: [0, 3, 0],
       fov: 95,
     },

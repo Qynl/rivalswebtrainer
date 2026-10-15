@@ -1,3 +1,12 @@
+import {
+  THROWN_UTILITIES,
+  THROW_DURATION,
+  THROW_RELEASE,
+  createThrownModel,
+  animateThrown,
+  createFirePatch,
+  animateFire,
+} from "./throwables.js";
 import { BotLocomotion } from "./bot-animation.js";
 import { positionBot, steerBotWish } from "./bot-positioning.js";
 import { ARENA } from "./arena-layout.js";
@@ -161,6 +170,7 @@ export class Game {
       } else if (document.pointerLockElement === this.canvas) {
         this.captureTime = performance.now();
         this.mouseLook.reset(this.captureTime);
+        this.lookSway = { x: 0, y: 0 };
         this.keys.clear();
         if (this.state === "paused") {
           this.state = this.previousState;
@@ -169,17 +179,32 @@ export class Game {
       }
     });
     document.addEventListener("pointerlockerror", () => {
+      // Chromium may dispatch the raw-input error before OR after rejecting
+      // its promise. Do not let either ordering pause a normal-lock fallback.
+      if (this.rawMousePending) {
+        this.rawMouseErrorSeen = true;
+        return;
+      }
+      if (this.ignoredRawErrors > 0 && performance.now() < this.rawErrorUntil) {
+        this.ignoredRawErrors--;
+        return;
+      }
       this.events.toast(
         "Mouse capture unavailable. Click “Back to the arena” to try again.",
       );
       if (this.state !== "lobby") this.pause();
     });
     document.addEventListener("mousemove", (e) => {
-      if (document.pointerLockElement === this.canvas && this.player?.alive) {
+      if (
+        document.pointerLockElement === this.canvas &&
+        this.player?.alive &&
+        ["playing", "countdown", "roundend"].includes(this.state)
+      ) {
         const movement = this.mouseLook.accept(
           e.movementX,
           e.movementY,
           performance.now(),
+          e.timeStamp,
         );
         if (!movement) return;
         const sens =
@@ -282,7 +307,16 @@ export class Game {
       },
       { passive: false },
     );
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) {
+        this.mouseLook.reset(performance.now());
+        this.lookSway = { x: 0, y: 0 };
+        this.pause();
+      }
+    });
     window.addEventListener("blur", () => {
+      this.mouseLook.reset(performance.now());
+      this.lookSway = { x: 0, y: 0 };
       if (["playing", "countdown", "roundend"].includes(this.state))
         this.pause();
     });
@@ -310,17 +344,47 @@ export class Game {
   requestLock() {
     this.audio.init();
     this.mouseLook.reset(performance.now());
-    try {
-      const p = this.canvas.requestPointerLock();
-      p?.catch(() => {
-        if (!["lobby", "results"].includes(this.state)) this.pause();
-      });
-    } catch {
-      this.pause();
-      this.events.toast(
-        "A desktop browser with mouse capture is required to play.",
-      );
-    }
+    const failed = () => {
+      if (!["lobby", "results"].includes(this.state)) this.pause();
+    };
+    const capture = (raw) => {
+      try {
+        const promise = this.canvas.requestPointerLock(
+          raw ? { unadjustedMovement: true } : undefined,
+        );
+        if (raw && promise?.then) {
+          this.rawMousePending = true;
+          this.rawMouseErrorSeen = false;
+        }
+        promise?.then(
+          () => {
+            this.rawMousePending = false;
+          },
+          (error) => {
+            this.rawMousePending = false;
+            if (
+              raw &&
+              ["NotSupportedError", "TypeError"].includes(error.name)
+            ) {
+              this.rawMouseSupported = false;
+              this.ignoredRawErrors = this.rawMouseErrorSeen ? 0 : 1;
+              this.rawErrorUntil = performance.now() + 500;
+              capture(false);
+            } else failed();
+          },
+        );
+      } catch (error) {
+        if (raw) {
+          this.rawMousePending = false;
+          this.rawMouseSupported = false;
+          capture(false);
+        } else {
+          failed();
+          this.events.toast("Mouse capture unavailable. Click to retry.");
+        }
+      }
+    };
+    capture(this.rawMouseSupported !== false);
   }
   start(config) {
     this.config = { ...config };
@@ -336,6 +400,7 @@ export class Game {
     this.requestLock();
   }
   cleanEntities() {
+    this.cancelThrow(false);
     this.combatFX?.clear();
     for (const e of this.entities) {
       if (e.model) {
@@ -354,8 +419,7 @@ export class Game {
     this.entities = [];
     for (const e of this.effects) {
       this.scene.remove(e.mesh);
-      e.mesh.geometry?.dispose();
-      e.mesh.material?.dispose();
+      this.disposeVisual(e.mesh);
     }
     this.effects = [];
     for (const p of this.projectiles) {
@@ -503,11 +567,13 @@ export class Game {
   }
   equip(slot) {
     if (slot === this.slot || !this.player?.alive) return;
+    this.cancelThrow();
     this.clearQuickMelee();
     this.deflectTime = 0;
     this.slot = slot;
     this.inspectTime = 0;
     this.throwTime = 0;
+    this.throwReleased = false;
     this.bowCharge = 0;
     this.bowRelease = false;
     this.spinTime = 0;
@@ -628,7 +694,8 @@ export class Game {
     return true;
   }
   meleeAbility(quick = false) {
-    if (!this.player?.alive || this.state !== "playing") return false;
+    if (!this.player?.alive || this.state !== "playing" || this.pendingThrow)
+      return false;
     const id = quick ? this.loadout[2] : this.loadout[this.slot];
     const weapon = WEAPONS[id];
     let duration = 0.36;
@@ -733,7 +800,8 @@ export class Game {
       this.reloadTime > 0 ||
       this.deflectTime > 0 ||
       this.quickMeleeTime > 0 ||
-      this.healTime > 0
+      this.healTime > 0 ||
+      this.pendingThrow
     )
       return;
     const id = this.loadout[this.slot],
@@ -812,8 +880,11 @@ export class Game {
         5,
       );
     } else if (w.type === "rocket" || w.type === "launcher" || w.slot === 3) {
-      this.spawnProjectile(p, origin, forward, id);
-      if (w.slot === 3) this.throwTime = 0.36;
+      if (THROWN_UTILITIES.has(id)) {
+        this.pendingThrow = { owner: p, id, remaining: THROW_RELEASE, ammo: a };
+        this.throwTime = THROW_DURATION;
+        this.throwReleased = false;
+      } else this.spawnProjectile(p, origin, forward, id);
       this.matchStats.shots++;
     } else if (w.type === "melee") {
       this.swingTime = 0.28;
@@ -1104,6 +1175,7 @@ export class Game {
         e.deathRoll = e.model.group.rotation.z;
       }
       if (e.isPlayer) {
+        this.cancelThrow(false);
         this.matchStats.deaths++;
         this.mouseDown = false;
         this.aiming = false;
@@ -1186,18 +1258,20 @@ export class Game {
     const w = WEAPONS[id],
       rocket = w.type === "rocket",
       arrow = w.type === "bow",
-      mesh = new THREE.Mesh(
-        arrow
-          ? new THREE.CylinderGeometry(0.025, 0.025, 0.8, 6)
-          : rocket
-            ? new THREE.CylinderGeometry(0.07, 0.07, 0.4, 8)
-            : new THREE.IcosahedronGeometry(0.13, 0),
-        new THREE.MeshStandardMaterial({
-          color: rocket ? 0xffc99a : w.color,
-          emissive: rocket ? 0xe96920 : 0,
-          emissiveIntensity: 0.8,
-        }),
-      );
+      mesh = THROWN_UTILITIES.has(id)
+        ? createThrownModel(id)
+        : new THREE.Mesh(
+            arrow
+              ? new THREE.CylinderGeometry(0.025, 0.025, 0.8, 6)
+              : rocket
+                ? new THREE.CylinderGeometry(0.07, 0.07, 0.4, 8)
+                : new THREE.IcosahedronGeometry(0.13, 0),
+            new THREE.MeshStandardMaterial({
+              color: rocket ? 0xffc99a : w.color,
+              emissive: rocket ? 0xe96920 : 0,
+              emissiveIntensity: 0.8,
+            }),
+          );
     this.ray.set(origin, dir);
     this.ray.far = 0.7;
     const muzzleWall = this.ray.intersectObjects(
@@ -1206,7 +1280,9 @@ export class Game {
     )[0];
     const clearance = muzzleWall
       ? Math.max(0, Math.min(0.55, muzzleWall.distance - 0.16))
-      : 0.55;
+      : THROWN_UTILITIES.has(id)
+        ? 0.18
+        : 0.55;
     const pos = origin.clone().addScaledVector(dir, clearance);
     mesh.position.copy(pos);
     if (arrow) {
@@ -1254,7 +1330,56 @@ export class Game {
       damage: w.damage * (arrow ? 1 + Math.min(1, charge / 1.2) : 1),
       rocket,
       bounces: 0,
+      spin: THROWN_UTILITIES.has(id)
+        ? v3(id === "molotov" ? 5 : 8, 1.7, 2.3)
+        : null,
     });
+    if (THROWN_UTILITIES.has(id)) {
+      const p = this.projectiles.at(-1);
+      p.vel.x += (owner.vx || 0) * 0.35;
+      p.vel.z += (owner.vz || 0) * 0.35;
+    }
+  }
+  cancelThrow(refund = true) {
+    const p = this.pendingThrow;
+    if (p && refund && !this.range && p.ammo && Number.isFinite(p.ammo.mag))
+      p.ammo.mag = Math.min(WEAPONS[p.id].mag, p.ammo.mag + 1);
+    this.pendingThrow = null;
+    this.throwReleased = false;
+    this.throwTime = 0;
+  }
+  updateThrow(dt) {
+    const p = this.pendingThrow;
+    if (!p) return;
+    p.remaining -= dt;
+    if (p.remaining > 1e-8) return;
+    if (!p.owner.alive) {
+      this.cancelThrow(false);
+      return;
+    }
+    const dir = v3(0, 0, -1).applyEuler(
+      new THREE.Euler(this.pitch, this.yaw, 0, "YXZ"),
+    );
+    const eye = this.eye(p.owner),
+      hand = eye
+        .clone()
+        .addScaledVector(v3(Math.cos(this.yaw), 0, -Math.sin(this.yaw)), 0.18)
+        .addScaledVector(dir, 0.18);
+    hand.y -= 0.08;
+    const segment = hand.clone().sub(eye);
+    this.ray.set(eye, segment.clone().normalize());
+    this.ray.far = segment.length() + 0.05;
+    const wall = this.ray.intersectObjects(this.world.solidMeshes, false)[0];
+    if (wall)
+      hand
+        .copy(wall.point)
+        .addScaledVector(
+          wall.face.normal.clone().transformDirection(wall.object.matrixWorld),
+          0.18,
+        );
+    this.spawnProjectile(p.owner, hand, dir, p.id);
+    this.pendingThrow = null;
+    this.throwReleased = true;
   }
   explosion(pos, owner, id) {
     const w = WEAPONS[id];
@@ -1294,20 +1419,21 @@ export class Game {
       return;
     }
     if (id === "molotov") {
-      const mesh = new THREE.Mesh(
-        new THREE.CylinderGeometry(3.2, 3.2, 0.08, 32),
-        new THREE.MeshBasicMaterial({
-          color: 0xff7940,
-          transparent: true,
-          opacity: 0.55,
-        }),
-      );
-      mesh.position.set(pos.x, 0.1, pos.z);
+      const grounded = pos.clone();
+      this.ray.set(pos.clone().add(v3(0, 0.2, 0)), v3(0, -1, 0));
+      this.ray.far = 30;
+      const support = this.ray.intersectObjects(
+        this.world.solidMeshes,
+        false,
+      )[0];
+      grounded.y = support ? support.point.y : Math.max(0, pos.y - 0.2);
+      const mesh = createFirePatch();
+      mesh.position.copy(grounded);
       this.scene.add(mesh);
-      const effect = { mesh, life: 5, max: 5 };
+      const effect = { mesh, life: 5, max: 5, fire: true };
       this.effects.push(effect);
-      this.fires.push({ pos: pos.clone(), effect, owner, tick: 0 });
-      this.particles(pos, 0xffa44c, 22);
+      this.fires.push({ pos: grounded, effect, owner, tick: 0 });
+      this.particles(grounded, 0xffa44c, 16);
       return;
     }
     if (this.audio.playAt && this.player)
@@ -1417,6 +1543,7 @@ export class Game {
       }
       p.pos.copy(next);
       p.mesh.position.copy(next);
+      animateThrown(p, dt, this.clock || 0);
       if (actorHit) p.fuse = 0;
       if (p.fuse <= 0) {
         if (p.arrow) {
@@ -1448,7 +1575,8 @@ export class Game {
             e.alive &&
             (e.team !== fire.owner.team || e === fire.owner) &&
             Math.hypot(e.x - fire.pos.x, e.z - fire.pos.z) < 3.2 &&
-            e.y < 1.5
+            Math.abs(e.y - fire.pos.y) < 1.5 &&
+            this.hasLOS(fire.pos.clone().add(v3(0, 0.2, 0)), this.eye(e))
           )
             this.damage(e, 8, fire.owner, false, fire.pos);
       }
@@ -1459,6 +1587,7 @@ export class Game {
   updatePlayer(dt) {
     const p = this.player;
     if (!p.alive) return;
+    this.updateThrow(dt);
     const w = WEAPONS[this.loadout[this.slot]];
     this.slideCooldown = Math.max(0, this.slideCooldown - dt);
     this.dashCooldown = Math.max(0, this.dashCooldown - dt);
@@ -2116,13 +2245,13 @@ export class Game {
         e.mesh.position.addScaledVector(e.velocity, dt);
       }
       if (e.expand) e.mesh.scale.setScalar(1 + (1 - e.life / e.max) * 7);
-      if (e.mesh.material.transparent)
+      if (e.fire) animateFire(e.mesh, this.clock || 0, e.life);
+      if (e.mesh.material?.transparent)
         e.mesh.material.opacity =
           (e.smoke ? 0.83 : 0.7) * Math.min(1, e.life / (e.max * 0.25));
       if (e.life <= 0) {
         this.scene.remove(e.mesh);
-        e.mesh.geometry?.dispose();
-        e.mesh.material?.dispose();
+        this.disposeVisual(e.mesh);
         this.effects.splice(i, 1);
       }
     }
@@ -2224,16 +2353,17 @@ export class Game {
     if (this.state === "lobby") {
       this.accumulator = 0;
       const a = 0.62 + Math.sin(t * 0.00006) * 0.04;
-      if (this.world?.mapId === "blockout") {
+      if (this.world?.layout || this.world?.mapId === "blockout") {
         // The former orbit was outside the perimeter: taller walls hid the
         // court. Keep the Arena overview inside the enclosure, above cover.
+        const layout = this.world.layout || ARENA;
         this.camera.position.set(
-          ARENA.width * 0.38 * Math.sin(a),
-          ARENA.wallHeight * 0.9,
-          ARENA.depth * 0.4 * Math.cos(a),
+          layout.width * 0.38 * Math.sin(a),
+          layout.wallHeight * 0.9,
+          layout.depth * 0.4 * Math.cos(a),
         );
         this.camera.fov = 70;
-        this.camera.lookAt(-ARENA.width * 0.1, 2, -ARENA.depth * 0.08);
+        this.camera.lookAt(-layout.width * 0.1, 2, -layout.depth * 0.08);
       } else {
         this.camera.position.set(43 * Math.sin(a), 31, 43 * Math.cos(a));
         this.camera.fov = 48;
@@ -2370,6 +2500,7 @@ export class Game {
         guard: this.deflectTime > 0,
         inspect: this.inspectTime,
         throwing: this.throwTime,
+        throwReleased: this.throwReleased,
         verticalSpeed: p.vy,
         landing: this.landingDip,
         strafe: (p.vx * Math.cos(this.yaw) - p.vz * Math.sin(this.yaw)) / 11.5,

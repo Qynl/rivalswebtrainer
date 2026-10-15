@@ -1,3 +1,4 @@
+import { EXTRA_COURTS, dressCourt } from "./map-layouts.js";
 import { createArenaDressing } from "./arena-dressing.js";
 import { batchFixedMeshes } from "./batching.js";
 import { muzzleFlash } from "./animation.js";
@@ -214,11 +215,18 @@ export class ArenaWorld {
     this.boxes = [];
     this.solidMeshes = [];
     this.mapId = id;
+    this.layout = null;
     this.staticStats = null;
     this.size = 48;
     this.bounds = { minX: -23.1, maxX: 23.1, minZ: -23.1, maxZ: 23.1 };
-    if (id === "blockout") {
-      this.buildBlockout();
+    if (id === "blockout" || EXTRA_COURTS[id]) {
+      const layout = EXTRA_COURTS[id] || ARENA;
+      this.layout = layout;
+      this.buildBlockout(
+        layout,
+        layout.cover || HALF_COVER,
+        layout.windows || HALF_WINDOWS,
+      );
       return;
     }
     const roof = id === "rooftops",
@@ -528,8 +536,8 @@ export class ArenaWorld {
     mesh.rotation.set(-Math.PI / 2, 0, -angle);
     this.group.add(mesh);
   }
-  buildBlockout() {
-    const { width, depth, wallHeight, wallThickness } = ARENA;
+  buildBlockout(layout = ARENA, covers = HALF_COVER, windows = HALF_WINDOWS) {
+    const { width, depth, wallHeight, wallThickness } = layout;
     this.bounds = {
       minX: -width / 2 + 0.44,
       maxX: width / 2 - 0.44,
@@ -538,6 +546,7 @@ export class ArenaWorld {
     };
     this.scene.background = null;
     this.scene.fog = new THREE.Fog(0xa7b4be, 65, 125);
+    this.blockMaterial = this.materials.get("reference-concrete");
     if (!this.blockMaterial) {
       const material = new THREE.MeshStandardMaterial({
         color: 0xa4a6a5,
@@ -578,6 +587,18 @@ export class ArenaWorld {
       this.blockMaterial = material;
       this.materials.set("reference-concrete", material);
     }
+    if (layout.theme) {
+      const key = this.mapId + "-concrete";
+      if (!this.materials.has(key)) {
+        const base = this.blockMaterial,
+          mat = base.clone();
+        mat.color.setHex(layout.theme.wall);
+        mat.onBeforeCompile = base.onBeforeCompile;
+        mat.customProgramCacheKey = base.customProgramCacheKey;
+        this.materials.set(key, mat);
+      }
+      this.blockMaterial = this.materials.get(key);
+    }
     this.box(0, -0.7, 0, width + 2, 1, depth + 2, 0x63717a, false);
     const floor = this.box(0, -0.1, 0, width, 0.2, depth, 0x858e95, false);
     if (!this.materials.has("arena-floor"))
@@ -593,6 +614,15 @@ export class ArenaWorld {
         }),
       );
     floor.material = this.materials.get("arena-floor");
+    if (layout.theme) {
+      const key = this.mapId + "-floor";
+      if (!this.materials.has(key)) {
+        const mat = floor.material.clone();
+        mat.color.setHex(layout.theme.floor);
+        this.materials.set(key, mat);
+      }
+      floor.material = this.materials.get(key);
+    }
     this.solidMeshes.push(floor);
     for (const x of [-1, 1])
       this.concrete(
@@ -612,34 +642,34 @@ export class ArenaWorld {
       );
     // Mirrored half-layout: compact sightlines, opposing ramp banks and window cover.
     for (const side of [-1, 1]) {
-      for (const b of HALF_COVER) {
+      for (const b of covers) {
         this.concrete(b.x * side, b.z * side, b.w, b.h, b.d, b.angle);
         this.contactShadow(b.x * side, b.z * side, b.w, b.d, b.angle);
       }
-      for (const b of HALF_WINDOWS)
+      for (const b of windows)
         this.windowCover(b.x * side, b.z * side, b.w, b.h, b.d, b.axis);
       this.ramp(
-        -ARENA.rampX * side,
-        -ARENA.rampZ * side,
-        ARENA.rampWidth,
-        ARENA.rampLength,
-        ARENA.rampRise,
+        -layout.rampX * side,
+        -layout.rampZ * side,
+        layout.rampWidth,
+        layout.rampLength,
+        layout.rampRise,
         -side,
       );
       this.concrete(
-        -ARENA.rampX * side,
-        -ARENA.platformZ * side,
-        ARENA.rampWidth,
-        ARENA.rampRise,
-        ARENA.platformLength,
+        -layout.rampX * side,
+        -layout.platformZ * side,
+        layout.rampWidth,
+        layout.rampRise,
+        layout.platformLength,
       );
       // Explicit walkable summit: bots may reach it only through the ramp.
       this.boxes[this.boxes.length - 1].walkable = true;
       this.contactShadow(
-        -ARENA.rampX * side,
-        -ARENA.rampZ * side,
-        ARENA.rampWidth,
-        ARENA.rampLength + ARENA.platformLength,
+        -layout.rampX * side,
+        -layout.rampZ * side,
+        layout.rampWidth,
+        layout.rampLength + layout.platformLength,
       );
       this.floorMark(
         0,
@@ -656,22 +686,25 @@ export class ArenaWorld {
       this.floorMark(0, z, width - 0.1, 0.014, 0x5c6971, 1);
     this.spawns = {
       0: [
-        { x: 0, z: ARENA.spawnZ },
-        { x: -ARENA.spawnSpread, z: ARENA.spawnZ },
-        { x: ARENA.spawnSpread, z: ARENA.spawnZ },
+        { x: 0, z: layout.spawnZ },
+        { x: -layout.spawnSpread, z: layout.spawnZ },
+        { x: layout.spawnSpread, z: layout.spawnZ },
       ],
       1: [
-        { x: 0, z: -ARENA.spawnZ },
-        { x: ARENA.spawnSpread, z: -ARENA.spawnZ },
-        { x: -ARENA.spawnSpread, z: -ARENA.spawnZ },
+        { x: 0, z: -layout.spawnZ },
+        { x: layout.spawnSpread, z: -layout.spawnZ },
+        { x: -layout.spawnSpread, z: -layout.spawnZ },
       ],
     };
     this.size = width;
     this.nav = new NavGrid(this.boxes, width, 0.8, depth);
+    if (layout.theme) dressCourt(this, layout);
     this.staticStats = batchFixedMeshes(this.group, {
       rayMeshes: this.solidMeshes,
     });
-    this.group.add(createArenaDressing(this.graphics, this.materials));
+    this.group.add(
+      createArenaDressing(this.graphics, this.materials, layout, covers),
+    );
     this.group.updateMatrixWorld(true);
   }
   glow(x, y, z, w, h, d, color = 0x88e1eb) {

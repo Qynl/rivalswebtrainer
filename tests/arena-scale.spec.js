@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-test("tight tall Arena keeps protected spawns, connected lanes and physically walkable ramp summits", async ({
+test("roomier lower Arena keeps protected spawns, connected lanes and physically walkable ramp summits", async ({
   page,
 }) => {
   const errors = [];
@@ -86,10 +86,10 @@ test("tight tall Arena keeps protected spawns, connected lanes and physically wa
       summits,
     };
   });
-  console.log(JSON.stringify({ tightArena: report }));
-  expect(report.area).toBe(832);
-  expect(report.walls).toEqual([24, 24, 24, 24]);
-  expect(Math.min(...report.coverHeights)).toBeGreaterThanOrEqual(5.8);
+  console.log(JSON.stringify({ revisedArena: report }));
+  expect(report.area).toBe(1140);
+  expect(report.walls).toEqual([14, 14, 14, 14]);
+  expect(Math.min(...report.coverHeights)).toBeGreaterThanOrEqual(4.2);
   expect(report.spawnClear).toBe(true);
   expect(report.spawnLOS).toBe(false);
   for (const r of report.routes) {
@@ -100,7 +100,7 @@ test("tight tall Arena keeps protected spawns, connected lanes and physically wa
   for (const r of report.summits) {
     expect(r.complete).toBe(true);
     expect(r.invalid).toBe(0);
-    expect(r.y).toBeCloseTo(6.2);
+    expect(r.y).toBeCloseTo(4.4);
   }
   expect(errors).toEqual([]);
 });

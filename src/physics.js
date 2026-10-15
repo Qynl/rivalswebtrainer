@@ -241,8 +241,7 @@ export class NavGrid {
           }
         this.blocked[z * this.n + x] = boxes.some(
           (b) =>
-            !b.ramp &&
-            b.maxY > this.heights[i] + 0.5 &&
+            surfaceHeight(b, p.x, p.z) > this.heights[i] + 0.4 &&
             b.minY < this.heights[i] + 1.9 &&
             circleBox(p.x, p.z, 0.5, b),
         )

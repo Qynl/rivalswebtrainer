@@ -845,6 +845,18 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
     g.add(flash);
     g.userData.muzzleFlash = flash;
   }
+  if (["grenade", "molotov", "smoke", "flashbang"].includes(id)) {
+    const body = new THREE.Group();
+    body.name = "throwable-body";
+    g.add(body);
+    for (const item of [...g.children])
+      if (item !== body && !item.userData.hand) body.add(item);
+    g.userData.throwableBody = body;
+    mergeStatic(
+      body,
+      new Set([g.userData.rag, g.userData.pilotFlame].filter(Boolean)),
+    );
+  }
   const moving = new Set(
     Object.values(g.userData).filter((x) => x?.isObject3D),
   );

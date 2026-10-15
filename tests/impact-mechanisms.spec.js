@@ -29,7 +29,7 @@ test("real pistol locks and reloads its slide, and real wall hits render pooled 
     g.renderPrevious = null;
     g.keys.clear();
     Object.assign(g.player, {
-      x: 9,
+      x: 11, // Keep the original four-unit wall distance in the wider Arena.
       y: 0,
       z: 3,
       vx: 0,

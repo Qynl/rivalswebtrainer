@@ -26,8 +26,8 @@ Mobile layouts support browsing/configuration, but combat requires desktop point
 
 ## Included
 
-- Three original arenas: **Concrete Arena**, **Skyline**, **Hangar 09**; elevated cover, walkable stairs, and collision.
-- Default Concrete Arena: a 26 × 32-metre compact gray-concrete layout inspired by the supplied references, with 24-metre perimeter walls, collision-matched diagonal slabs, opposing continuous ramp banks, mirrored window cover and 5.8–6.6-metre interior cover.
+- Five original arenas: **Concrete Arena**, **Skyline**, **Hangar 09**, **Foundry**, **Courtyard**; elevated cover, walkable stairs, and collision.
+- Default Concrete Arena: a 30 × 38-metre gray-concrete layout inspired by the supplied references, with 14-metre perimeter walls, collision-matched diagonal slabs, opposing continuous ramp banks, mirrored window cover and 4.2–4.8-metre interior cover.
 - **1v1**, **2v2**, **3v3** team elimination, first to five rounds; countdowns, health-based timeout resolution, spectators, results, and rematches.
 - Four bot levels: **Rookie**, **Regular**, **Veteran**, **Elite**. A* navigation, line-of-sight perception, last-known positions, aim/reaction errors, strafing, jumps, and reload retreats. Bots use rifles plus rotating Scythe/Katana/Fists/Knife melee loadouts; they are not machine-learned replicas of real players.
 - Fixed-step movement with interpolated rendering, stronger gravity for less floaty jumps, uphill ramp-launch momentum, responsive ground acceleration/braking, precise air reversals, counter-strafing, slope-driven slides, grounded stair descent, momentum-preserving air steering and slide jumps, buffered jumps (140 ms), coyote time (100 ms), Fists/Bow double jump, Scythe dash, and explosive jumping.
@@ -63,15 +63,15 @@ Reloads animate magazine extraction/insertion, bolt motion and the support hand.
 
 Graphics use darker panel-seamed concrete, a compact edge HUD, distinct original weapon models and 3D loadout previews, original procedural concrete/metal/window textures, an atmospheric sky, environment-lit metal, rounded geometry, armored bots, building vents/windows, and emissive arena trims. The sky has drifting procedural clouds and a directional sun. Fixed-size combat pools add surface hit marks, debris, bouncing shell casings and muzzle-aligned tracers without allocating a new mesh for each hit. Everything is generated locally. The world is finished with depth-aware contact shading, two-sample MSAA, restrained quarter-resolution HDR bloom, gentle sharpening and a neutral color grade; the weapon overlay stays crisp. Reloads include a raised/banked receiver, magazine extraction, supporting-hand/wrist motion and a bolt rack. Equip, jump/landing inertia, strafing, throw follow-through, blade trails and eased bot deaths provide distinct action feedback. Enable **Performance mode** in Settings to reduce render resolution and bypass post-processing and dynamic shadows on slower hardware.
 
-## Tighter, taller Arena rebuild
+## Roomier Arena, new courts and utility presentation
 
-- **38% less floor area** than the previous 32 × 42 layout: now **26 × 32**, with full-size actors and unchanged gameplay movement/FOV settings.
-- **24-high perimeter**, **5.8–6.6-high cover**, taller window towers and **6.2-high ramp summits**. Sparse coping and height courses make the vertical proportions easier to read.
-- Repositioned mirrored cover, protected spawns and connected flank/centre routes. Both ramp decks meet the rear wall without a falling pocket.
-- Steep-ramp summit adhesion fixes a real downhill fall; explicit walkable summit navigation lets bots reach those decks through the ramp rather than a tall side.
-- Arena lobby overview stays inside the enclosure so the taller walls do not hide the court. No extra HUD clutter.
+- Arena is now **30 × 38**, with a **14-high perimeter**, **4.2–4.8-high cover** and **4.4-high ramp decks**. This supersedes the earlier tight/tall rebuild: 37% more floor area and substantially lower walls, without changing player scale or movement speed.
+- **Foundry** (34 × 42) has cool industrial concrete, bronze markings, overhead gantries and offset firing lanes. **Courtyard** (36 × 40) has warm stone, green planted islands, low cover and wall lamps. Both use the same offline rendering kit, mirrored protected spawns and physically reachable ramp decks.
+- Grenade, Molotov, Smoke and Flashbang now fly as their recognizable detailed models, not generic balls. Throws wind up, release at 160 ms and recover over 480 ms; the held item disappears at release. Projectiles tumble and inherit some lateral movement. Switching before release cancels/refunds the throw.
+- Molotov fire has animated flames and a softly irregular ember/scorch patch on the actual impact support height, with height/line-of-sight-aware damage and recursive resource cleanup.
+- Mouse input rejects stale queued packets and isolated mid-session outliers, resets across capture/focus changes, and requests raw input with a normal pointer-lock fallback. This is a mitigation, not proof that every mouse/browser issue is eliminated.
 
-See [the Arena scale report](docs/tight-tall-arena.md) for dimensions, visual checks and route/traversal validation. Dimensions are reconstruction estimates, not measured Roblox units.
+See [the court/throw/input report](docs/courts-throws-input.md) for validation and limits.
 
 ## Impact and weapon-mechanism polish
 
@@ -132,7 +132,7 @@ npx playwright install chromium
 npm run test:browser       # Browser integration test
 ```
 
-You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tests. Most integration tests validate an actual WebGL frame and pointer lock, then disable rendering to run deterministic combat/AI checks efficiently on machines using software graphics. Dedicated graphics tests retain real rendering for all 23 weapon models, skeletal bots, pooled effects, contact-shading pixel comparisons, bloom resize and the Performance bypass. They exercise loadout selection, shots/headshots, reloads, jumps, grenade/smoke/molotov lifecycles, pause/settings, map selection, team bots, five-round victory, results, and mobile layout. The sixteen-test browser suite also covers wizard steps, draft cancellation, compact HUD dimensions, tall walls, real Bow/Medkit input, Flashbang throws and rematch selection. Additional browser tests check arena floor layers, actual stair traversal, slide-jump momentum, Shift/F controls, katana reflection, mouse spike filtering, graphics settings, and the production cache/reload with networking disabled.
+You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tests. Most integration tests validate an actual WebGL frame and pointer lock, then disable rendering to run deterministic combat/AI checks efficiently on machines using software graphics. Dedicated graphics tests retain real rendering for all 23 weapon models, skeletal bots, pooled effects, contact-shading pixel comparisons, bloom resize and the Performance bypass. They exercise loadout selection, shots/headshots, reloads, jumps, grenade/smoke/molotov lifecycles, pause/settings, map selection, team bots, five-round victory, results, and mobile layout. The nineteen-test browser suite also covers wizard steps, draft cancellation, compact HUD dimensions, tall walls, real Bow/Medkit input, Flashbang throws and rematch selection. Additional browser tests check arena floor layers, actual stair traversal, slide-jump momentum, Shift/F controls, katana reflection, mouse spike filtering, graphics settings, and the production cache/reload with networking disabled.
 
 ## Structure
 
@@ -140,7 +140,9 @@ You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tes
 - `src/world.js`: procedural arenas and skeletal block-style actors.
 - `src/weapon-models.js`, `src/weapon-preview.js`: detailed procedural weapons and the static loadout turntable.
 - `src/physics.js`: swept circle/AABB/rotated-cover collision, vertical movement, and rectangular ground-grid A* navigation.
-- `src/arena-layout.js`: compact Arena dimensions and mirrored half-layout (visual estimates, not verified Roblox measurements).
+- `src/arena-layout.js`: Arena dimensions and mirrored half-layout (visual estimates, not verified Roblox measurements).
+- `src/map-layouts.js`: authored Foundry/Courtyard layouts and non-colliding themed dressing.
+- `src/throwables.js`: detailed airborne utilities and bounded animated fire.
 - `src/animation.js`: frame-rate-independent weapon pose springs, phased reload/inspect animations and moving weapon parts.
 - `src/movement.js`: ground/air acceleration, slide steering, and movement tuning constants.
 - `src/data.js`: weapons, settings and difficulty parameters.

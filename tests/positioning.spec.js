@@ -23,6 +23,7 @@ test("a combat bot chooses, physically reaches and fires from a real Arena ramp 
       w = g.world;
     const { chooseFiringPosition } = await import("/src/bot-positioning.js");
     const { canOccupy } = await import("/src/physics.js");
+    const { ARENA } = await import("/src/arena-layout.js");
     g.world.build("blockout");
     g.config.difficulty = "elite";
     g.audio.volume = 0;
@@ -34,9 +35,9 @@ test("a combat bot chooses, physically reaches and fires from a real Arena ramp 
     g.range = true;
     Object.assign(e, {
       target: false,
-      x: 12,
+      x: ARENA.width / 2 - 1,
       y: 0,
-      z: 9,
+      z: ARENA.rampZ - 2.2,
       vx: 0,
       vy: 0,
       vz: 0,
@@ -66,7 +67,7 @@ test("a combat bot chooses, physically reaches and fires from a real Arena ramp 
     Object.assign(p, { alive: true, health: 1000, y: 0, height: 1.9 });
     const sight = (point, target) =>
       g.hasLOS(g.eye(point), g.eye({ ...target, y: (target.y || 0) - 0.26 }));
-    const candidates = [{ x: 12, y: 0, z: -5 }];
+    const candidates = [{ x: ARENA.width / 2 - 1, y: 0, z: -5 }];
     for (let i = 0; i < w.nav.blocked.length; i += 2) {
       const c = w.nav.point(i);
       if (
@@ -157,7 +158,7 @@ test("a combat bot chooses, physically reaches and fires from a real Arena ramp 
   console.log(JSON.stringify({ highGroundCombat: result }));
   expect(result.actions.highGroundPlans).toBeGreaterThan(0);
   expect(result.arrival).not.toBeNull();
-  expect(result.arrival.y).toBeGreaterThan(6);
+  expect(result.arrival.y).toBeGreaterThan(4.2);
   expect(result.actions.rifleShots).toBeGreaterThan(result.arrival.shots);
   expect(result.hits).toBeGreaterThan(0);
   expect(result.invalid).toBe(0);

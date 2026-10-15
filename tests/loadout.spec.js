@@ -17,12 +17,12 @@ test("reference arena, four-step picker, draft cancellation, new weapons and med
       angled: window.__arena.world.boxes.filter((b) => b.angle).length,
       depth: window.__arena.world.nav.sizeZ,
     })),
-  ).toEqual({ map: "blockout", angled: 4, depth: 32 });
+  ).toEqual({ map: "blockout", angled: 4, depth: 38 });
   const walls = await page.evaluate(() =>
     window.__arena.world.boxes.filter((b) => b.maxY > 10),
   );
   expect(walls.length).toBe(4);
-  expect(walls.every((b) => b.maxY === 24)).toBe(true);
+  expect(walls.every((b) => b.maxY === 14)).toBe(true);
   await page.evaluate(() => (window.__arena.renderer.render = () => {}));
   await page.click("#play-button");
   await expect(page.locator("#match-setup")).toBeVisible();
@@ -122,6 +122,8 @@ test("reference arena, four-step picker, draft cancellation, new weapons and med
     g.equip(3);
     g.cooldown = 0;
     g.firePlayer();
+    if (!g.pendingThrow) throw Error("Utility must have a wind-up");
+    g.updateThrow(0.16);
     return {
       mag: g.ammunition[3].mag,
       id: g.projectiles.at(-1).id,

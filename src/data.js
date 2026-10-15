@@ -391,7 +391,7 @@ export const MAPS = [
     id: "blockout",
     name: "Concrete Arena",
     short: "ARENA",
-    tag: "Compact court. Towering cover. Vertical duels.",
+    tag: "Roomier lanes. Lower cover. Fast duels.",
   },
   {
     id: "rooftops",
@@ -404,6 +404,18 @@ export const MAPS = [
     name: "Hangar 09",
     short: "HANGAR 09",
     tag: "Long sightlines. Fast flanks.",
+  },
+  {
+    id: "foundry",
+    name: "Foundry",
+    short: "FOUNDRY",
+    tag: "Industrial crossfire. Low gantries. Wide flanks.",
+  },
+  {
+    id: "courtyard",
+    name: "Courtyard",
+    short: "COURTYARD",
+    tag: "Warm stone. Planted islands. Terraced duels.",
   },
 ];
 export const DIFFICULTIES = {

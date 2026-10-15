@@ -230,13 +230,19 @@ export class WeaponAnimator {
       model.rotation.set(-0.23, 0.2, 0.06);
       model.position.y += 0.055 + Math.sin((state.time || 0) * 5) * 0.005;
     }
+    if (parts.throwableBody)
+      parts.throwableBody.visible =
+        state.throwing > 0 ? !state.throwReleased : (state.ammo ?? 1) > 0;
     if (state.throwing > 0) {
-      const t = 1 - state.throwing / 0.36,
-        reach = Math.sin(t * Math.PI);
-      model.position.z -= reach * 0.2;
-      model.position.y += reach * 0.11;
-      model.rotation.x -= reach * 0.6;
-      model.rotation.z += reach * 0.16;
+      const t = saturate(1 - state.throwing / 0.48),
+        wind = smooth(t / 0.3),
+        cast = smooth((t - 0.3) / 0.2),
+        recover = 1 - smooth((t - 0.5) / 0.5);
+      model.position.z += (wind * 0.13 - cast * 0.38) * recover;
+      model.position.y += (wind * 0.08 - cast * 0.06) * recover;
+      model.position.x += (-wind * 0.06 + cast * 0.11) * recover;
+      model.rotation.x += (wind * 0.65 - cast * 1.2) * recover;
+      model.rotation.z += (wind * 0.35 - cast * 0.5) * recover;
     }
     if (parts.slashTrail) {
       parts.slashTrail.visible = false;

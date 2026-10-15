@@ -38,7 +38,12 @@ function stencilAtlas(graphics) {
   graphics.textures.set("arena-stencils", texture);
   return texture;
 }
-export function createArenaDressing(graphics, materials) {
+export function createArenaDressing(
+  graphics,
+  materials,
+  layout = ARENA,
+  covers = HALF_COVER,
+) {
   const group = new THREE.Group();
   group.name = "arena-wayfinding";
   if (!materials.has("arena-stencils"))
@@ -91,25 +96,36 @@ export function createArenaDressing(graphics, materials) {
     group.add(mesh);
     return mesh;
   };
-  const hw = ARENA.width / 2,
-    hd = ARENA.depth / 2;
-  sign(0, 0, 7.6, -hd + 0.012, 4.2);
-  sign(1, 0, 7.6, hd - 0.012, 4.2, Math.PI);
-  sign(2, -hw + 0.012, 3.3, -8, 2.3, Math.PI / 2);
-  sign(3, hw - 0.012, 3.3, 8, 2.3, -Math.PI / 2);
+  const hw = layout.width / 2,
+    hd = layout.depth / 2;
+  if (!layout.theme) {
+    sign(0, 0, Math.min(7.6, layout.wallHeight - 2.4), -hd + 0.012, 4.2);
+    sign(
+      1,
+      0,
+      Math.min(7.6, layout.wallHeight - 2.4),
+      hd - 0.012,
+      4.2,
+      Math.PI,
+    );
+    sign(2, -hw + 0.012, 3.3, -8, 2.3, Math.PI / 2);
+    sign(3, hw - 0.012, 3.3, 8, 2.3, -Math.PI / 2);
+  }
   // Sparse architectural courses make the actual 24m height legible, without
   // filling the court with props or adding collision/draw calls per detail.
   for (const side of [-1, 1]) {
-    for (const y of [4.8, 9.6, 14.4, 19.2, ARENA.wallHeight - 0.12]) {
+    for (const y of [4.8, 9.6, 14.4, 19.2, layout.wallHeight - 0.12].filter(
+      (y) => y < layout.wallHeight,
+    )) {
       solid(
-        new THREE.BoxGeometry(ARENA.width, 0.045, 0.035),
+        new THREE.BoxGeometry(layout.width, 0.045, 0.035),
         0,
         y,
         side * (hd - 0.018),
         0x758086,
       );
       solid(
-        new THREE.BoxGeometry(0.035, 0.045, ARENA.depth),
+        new THREE.BoxGeometry(0.035, 0.045, layout.depth),
         side * (hw - 0.018),
         y,
         0,
@@ -117,48 +133,48 @@ export function createArenaDressing(graphics, materials) {
       );
     }
     solid(
-      new THREE.BoxGeometry(ARENA.width, 0.14, 0.18),
+      new THREE.BoxGeometry(layout.width, 0.14, 0.18),
       0,
-      ARENA.wallHeight - 0.07,
+      layout.wallHeight - 0.07,
       side * (hd - 0.07),
       0xa3adaf,
     );
     solid(
-      new THREE.BoxGeometry(0.18, 0.14, ARENA.depth),
+      new THREE.BoxGeometry(0.18, 0.14, layout.depth),
       side * (hw - 0.07),
-      ARENA.wallHeight - 0.07,
+      layout.wallHeight - 0.07,
       0,
       0xa3adaf,
     );
   }
   for (const side of [1, -1]) {
-    const b = HALF_COVER[1],
-      angle = b.angle + (side < 0 ? Math.PI : 0);
+    const b = covers[1],
+      angle = (b.angle || 0) + (side < 0 ? Math.PI : 0);
     sign(
       side > 0 ? 0 : 1,
-      side * (b.x + Math.sin(b.angle) * (b.d / 2 + 0.014)),
+      side * (b.x + Math.sin(b.angle || 0) * (b.d / 2 + 0.014)),
       1.9,
-      side * (b.z + Math.cos(b.angle) * (b.d / 2 + 0.014)),
+      side * (b.z + Math.cos(b.angle || 0) * (b.d / 2 + 0.014)),
       2.3,
       angle,
     );
-    for (const slab of HALF_COVER)
+    for (const slab of covers)
       solid(
         new THREE.BoxGeometry(slab.w + 0.018, 0.13, slab.d + 0.018),
         slab.x * side,
         0.07,
         slab.z * side,
         0x657176,
-        slab.angle + (side < 0 ? Math.PI : 0),
+        (slab.angle || 0) + (side < 0 ? Math.PI : 0),
       );
-    for (const slab of HALF_COVER)
+    for (const slab of covers)
       solid(
         new THREE.BoxGeometry(slab.w + 0.025, 0.08, slab.d + 0.025),
         slab.x * side,
         slab.h - 0.04,
         slab.z * side,
         0xa7b0b2,
-        slab.angle + (side < 0 ? Math.PI : 0),
+        (slab.angle || 0) + (side < 0 ? Math.PI : 0),
       );
     const color = side > 0 ? 0xa96a59 : 0x547e89;
     for (const x of [-5.1, 5.1]) {
@@ -167,7 +183,7 @@ export function createArenaDressing(graphics, materials) {
           new THREE.PlaneGeometry(0.13, 1.4),
           x * side,
           0.012,
-          (ARENA.spawnZ - 1 - i * 1.6) * side,
+          (layout.spawnZ - 1 - i * 1.6) * side,
           color,
         );
         stripe.rotation.x = -Math.PI / 2;

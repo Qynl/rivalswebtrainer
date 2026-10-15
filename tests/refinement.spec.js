@@ -34,8 +34,8 @@ test("compact mirrored Arena has real ramp surfaces, grounded traversal, window 
     };
   });
   expect(layout).toEqual({
-    width: 26,
-    depth: 32,
+    width: 30,
+    depth: 38,
     ramps: 2,
     mirrored: true,
     shadow: true,
@@ -55,8 +55,8 @@ test("compact mirrored Arena has real ramp surfaces, grounded traversal, window 
     g.keys.add("KeyW");
     g.yaw = Math.PI;
     Object.assign(p, {
-      x: 8.5,
-      z: 6.8,
+      x: 10.5,
+      z: 9.8,
       y: 0,
       vx: 0,
       vz: 0,
@@ -103,7 +103,7 @@ test("compact mirrored Arena has real ramp surfaces, grounded traversal, window 
     };
   });
   console.log(JSON.stringify({ traversal }));
-  expect(traversal.up.y).toBeCloseTo(6.2);
+  expect(traversal.up.y).toBeCloseTo(4.4);
   expect(traversal.up.airborne).toBe(0);
   expect(traversal.up.maxRise).toBeLessThan(0.4);
   expect(traversal.down.y).toBeLessThan(0.2);
@@ -143,7 +143,7 @@ test("compact mirrored Arena has real ramp surfaces, grounded traversal, window 
     g.yaw = 0;
     Object.assign(p, {
       x: -1.2,
-      z: -10.85,
+      z: -12.85,
       y: 1,
       vx: 0,
       vz: 0,
@@ -155,6 +155,6 @@ test("compact mirrored Arena has real ramp surfaces, grounded traversal, window 
     g.keys.clear();
     return { z: p.z, y: p.y };
   });
-  expect(window.z).toBeLessThan(-13.38);
+  expect(window.z).toBeLessThan(-15.38);
   expect(errors).toEqual([]);
 });
