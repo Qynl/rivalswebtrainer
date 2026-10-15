@@ -73,6 +73,14 @@ Graphics use darker panel-seamed concrete, a compact edge HUD, distinct original
 
 See [the Arena scale report](docs/tight-tall-arena.md) for dimensions, visual checks and route/traversal validation. Dimensions are reconstruction estimates, not measured Roblox units.
 
+## Combat presentation polish
+
+- Directional bot leg motion for strafing/backpedaling, still knees at idle, and smoother crouch/air/landing transitions. These are visual poses, not changes to actor physics or hitboxes.
+- A small spring-eased running carry on ranged weapons. It recovers for ADS, recent firing, reloads and abilities; Shake off suppresses it. Mouse aim and bullet direction are unchanged.
+- Body/head/elimination confirmations share the existing compact marker. A mint, thicker elimination pulse cannot be overwritten by later shotgun pellets or splash hits. Self-eliminations no longer award a player kill.
+
+See [the animation and feedback report](docs/combat-presentation-polish.md) for scope and validation.
+
 ## Tactical positioning follow-up
 
 - Katana/Knife bots can deliberately route to reachable ramp-deck firing positions when a perceived enemy is at range, rather than using elevation only by accident.
@@ -110,13 +118,13 @@ See [the combat-readability report](docs/combat-readability-pass.md) for validat
 ## Tests
 
 ```sh
-npm test                   # 167 input, abilities, physics, movement, rigging, audio, rendering and combat tests
+npm test                   # 181 input, abilities, physics, movement, rigging, audio, rendering and combat tests
 npm run build              # Production build + offline cache generation
 npx playwright install chromium
 npm run test:browser       # Browser integration test
 ```
 
-You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tests. Most integration tests validate an actual WebGL frame and pointer lock, then disable rendering to run deterministic combat/AI checks efficiently on machines using software graphics. Dedicated graphics tests retain real rendering for all 23 weapon models, skeletal bots, pooled effects, contact-shading pixel comparisons, bloom resize and the Performance bypass. They exercise loadout selection, shots/headshots, reloads, jumps, grenade/smoke/molotov lifecycles, pause/settings, map selection, team bots, five-round victory, results, and mobile layout. The fourteen-test browser suite also covers wizard steps, draft cancellation, compact HUD dimensions, tall walls, real Bow/Medkit input, Flashbang throws and rematch selection. Additional browser tests check arena floor layers, actual stair traversal, slide-jump momentum, Shift/F controls, katana reflection, mouse spike filtering, graphics settings, and the production cache/reload with networking disabled.
+You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tests. Most integration tests validate an actual WebGL frame and pointer lock, then disable rendering to run deterministic combat/AI checks efficiently on machines using software graphics. Dedicated graphics tests retain real rendering for all 23 weapon models, skeletal bots, pooled effects, contact-shading pixel comparisons, bloom resize and the Performance bypass. They exercise loadout selection, shots/headshots, reloads, jumps, grenade/smoke/molotov lifecycles, pause/settings, map selection, team bots, five-round victory, results, and mobile layout. The fifteen-test browser suite also covers wizard steps, draft cancellation, compact HUD dimensions, tall walls, real Bow/Medkit input, Flashbang throws and rematch selection. Additional browser tests check arena floor layers, actual stair traversal, slide-jump momentum, Shift/F controls, katana reflection, mouse spike filtering, graphics settings, and the production cache/reload with networking disabled.
 
 ## Structure
 
@@ -133,9 +141,10 @@ You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tes
 - `src/bot-tactics.js`: visibility-aware selection, bounded reachable-cover search and route following.
 - `src/bot-actions.js`: cooldown-gated abilities, deliberate action selection, collision probes and player-like physical movement.
 - `src/bot-positioning.js`: bounded high-ground/flank plans, sightline-aware perch holds and collision/support-aware ground steering.
+- `src/bot-animation.js`: velocity-relative visual locomotion, eased stances and bounded landing compression.
 - `src/bot-visuals.js`: cached third-person melee weapons, grips and guard/swing poses.
 - `src/rigging.js`: analytic two-bone arm IK.
-- `src/combat-feedback.js`: camera-relative damage bearings, spatial mix and projected reticle spread.
+- `src/combat-feedback.js`: camera-relative damage bearings, spatial mix, projected reticle spread and prioritized hit confirmations.
 - `src/arena-dressing.js`: cached offline stencil atlas and non-colliding Arena wayfinding.
 - `src/graphics.js`: offline procedural textures, palette and sky.
 - `src/rendering.js`: depth-aware HDR finishing, antialiasing, soft bloom and render-target lifecycle.

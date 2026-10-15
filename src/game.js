@@ -1,3 +1,4 @@
+import { BotLocomotion } from "./bot-animation.js";
 import { positionBot, steerBotWish } from "./bot-positioning.js";
 import { ARENA } from "./arena-layout.js";
 import { updateBotWeapon } from "./bot-visuals.js";
@@ -1115,9 +1116,10 @@ export class Game {
           2.5,
         );
       }
-      if (source?.isPlayer) {
+      if (source?.isPlayer && source !== e && source.team !== e.team) {
         this.matchStats.kills++;
         this.audio.play("kill");
+        this.events.confirmKill?.(head);
       }
       this.events.kill(source?.name || "ARENA", e.name, head);
       if (this.range) {
@@ -1996,54 +1998,25 @@ export class Game {
     const m = e.model;
     if (!m) return;
     const speed = Math.hypot(e.vx, e.vz),
-      phase = e.animationPhase || this.clock * 10 + e.seed;
+      phase = e.animationPhase ?? this.clock * 10 + (e.seed || 0);
     const stride = e.grounded
       ? Math.sin(phase) * Math.min(0.65, speed * 0.06)
       : 0.14;
-    m.group.position.set(
-      e.x,
-      e.y + (e.grounded ? Math.abs(Math.sin(phase)) * 0.018 : 0),
-      e.z,
-    );
+    m.parts.locomotion ||= new BotLocomotion();
+    const pose = m.parts.locomotion.update(e, phase, dt, m.group.rotation.y);
+    m.group.position.set(e.x, e.y + pose.bob, e.z);
     const turn = Math.atan2(
       Math.sin(e.yaw - m.group.rotation.y),
       Math.cos(e.yaw - m.group.rotation.y),
     );
     m.group.rotation.y += turn * (1 - Math.exp(-18 * dt));
     const crouch = e.height < 1.4;
-    const air = !e.grounded;
-    m.parts.leftLeg.rotation.x = crouch ? 1.2 : air ? 0.55 : stride;
-    m.parts.rightLeg.rotation.x = crouch ? 0.35 : air ? 0.3 : -stride;
+    m.parts.leftLeg.rotation.set(pose.leftX, 0, pose.leftZ);
+    m.parts.rightLeg.rotation.set(pose.rightX, 0, pose.rightZ);
     if (m.parts.leftKnee) {
-      const targetLeft = crouch
-        ? -0.25
-        : air
-          ? -0.95
-          : -Math.max(0.05, -Math.sin(phase) * 0.85);
-      const targetRight = crouch
-        ? -1.3
-        : air
-          ? -1.15
-          : -Math.max(0.05, Math.sin(phase) * 0.85);
-      m.parts.leftKnee.rotation.x = THREE.MathUtils.damp(
-        m.parts.leftKnee.rotation.x,
-        targetLeft,
-        24,
-        dt,
-      );
-      m.parts.rightKnee.rotation.x = THREE.MathUtils.damp(
-        m.parts.rightKnee.rotation.x,
-        targetRight,
-        24,
-        dt,
-      );
-      m.parts.leftLeg.position.y = m.parts.rightLeg.position.y =
-        THREE.MathUtils.damp(
-          m.parts.leftLeg.position.y,
-          crouch ? 0.58 : 0.73,
-          22,
-          dt,
-        );
+      m.parts.leftKnee.rotation.x = pose.leftKnee;
+      m.parts.rightKnee.rotation.x = pose.rightKnee;
+      m.parts.leftLeg.position.y = m.parts.rightLeg.position.y = pose.hipY;
     }
     let aimPitch = 0;
     if (e.visible && e.targetEntity?.alive) {
@@ -2082,12 +2055,7 @@ export class Game {
         16,
         dt,
       );
-      m.parts.upperBody.position.y = THREE.MathUtils.damp(
-        m.parts.upperBody.position.y,
-        crouch ? 0.3 : 1,
-        20,
-        dt,
-      );
+      m.parts.upperBody.position.y = pose.bodyY;
       const shotAge =
           e.lastShotAt === undefined ? 10 : this.clock - e.lastShotAt,
         recoil = Math.exp(-shotAge * 28);
@@ -2374,6 +2342,8 @@ export class Game {
         dt,
         phase: this.walkPhase,
         speed: Math.hypot(p.vx, p.vz),
+        carryAllowed: !this.quickModel && w.slot < 2 && w.type !== "bow",
+        forwardSpeed: -p.vx * Math.sin(this.yaw) - p.vz * Math.cos(this.yaw),
         grounded: p.grounded,
         slide: this.slideTime > 0,
         aim: this.aiming,

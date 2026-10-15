@@ -78,3 +78,26 @@ export class DamageCompass {
     return this.slots;
   }
 }
+
+// Body/head/elimination priority prevents late shotgun pellets or splash hits
+// from erasing a kill confirmation. Uses a caller-supplied monotonic millisecond
+// clock so the UI can expire independently of paused simulation time.
+export class HitConfirmation {
+  constructor() {
+    this.clear();
+  }
+  clear() {
+    this.kind = 0;
+    this.until = 0;
+  }
+  sample(now) {
+    if (now >= this.until) this.clear();
+    return this.kind;
+  }
+  add(head, elimination, now) {
+    const next = elimination ? 3 : head ? 2 : 1;
+    if (this.sample(now) > next) return;
+    this.kind = next;
+    this.until = now + [0, 160, 210, 300][next];
+  }
+}

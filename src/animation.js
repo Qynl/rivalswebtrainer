@@ -35,8 +35,11 @@ export class WeaponAnimator {
     this.z = new Spring(-0.16);
     this.aim = new Spring();
     this.roll = new Spring();
+    this.carry = new Spring();
   }
   equip() {
+    this.carry.value = 0;
+    this.carry.velocity = 0;
     this.y.value = -0.46;
     this.y.velocity = 0.6;
     this.z.value = -0.08;
@@ -58,6 +61,27 @@ export class WeaponAnimator {
       lookX = 0,
       lookY = 0,
     } = state;
+    const age = Math.max(0, state.shotAge ?? 10);
+    const carrying =
+      state.carryAllowed &&
+      shake &&
+      grounded &&
+      !slide &&
+      !aim &&
+      !reloading &&
+      !swap &&
+      age > 0.25 &&
+      !state.guard &&
+      !state.swing &&
+      !state.dash &&
+      !state.heal &&
+      !state.throwing &&
+      !state.inspect;
+    const carry = this.carry.step(
+      carrying ? saturate(((state.forwardSpeed || 0) - 7) / 5) : 0,
+      dt,
+      22,
+    );
     const ads = this.aim.step(aim ? 1 : 0, dt, 24),
       motion = shake ? (1 - ads) * Math.min(speed / 11.5, 1.4) : 0;
     const reloadState = reloadPose(reloading ? reload : 0),
@@ -79,6 +103,7 @@ export class WeaponAnimator {
       swap * 0.65 -
       reloadState.lower * 0.04 -
       (slide ? 0.035 : 0) -
+      carry * 0.035 -
       (shake
         ? Math.max(
             -0.018,
@@ -86,7 +111,6 @@ export class WeaponAnimator {
           ) +
           (state.landing || 0) * 0.6
         : 0);
-    const age = state.shotAge ?? 10;
     const impulse =
       age < 0.16
         ? Math.exp(-age * 28) *
@@ -104,10 +128,12 @@ export class WeaponAnimator {
         impulse * 0.025 +
         reloadState.lower * 0.35 -
         swap * 0.6 +
-        lookY * (1 - ads),
-      reloadState.lower * 0.38 + 0.08 * (1 - ads),
+        lookY * (1 - ads) -
+        carry * 0.12,
+      reloadState.lower * 0.38 + 0.08 * (1 - ads) + carry * 0.08,
       this.roll.step(
-        -reloadState.lower * 0.3 -
+        carry * 0.1 -
+          reloadState.lower * 0.3 -
           (shake ? (state.strafe || 0) * 0.025 * (1 - ads) : 0) -
           (slide ? 0.05 : 0) -
           Math.sin(phase * 0.5) * 0.012 * stride,

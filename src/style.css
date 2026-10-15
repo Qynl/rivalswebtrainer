@@ -2147,6 +2147,12 @@ kbd {
 #hitmarker.headshot {
   transform: translate(-50%, -50%) scale(1.15);
 }
+#hitmarker.elimination {
+  transform: translate(-50%, -50%) scale(1.25);
+}
+#hitmarker.elimination path {
+  stroke-width: 3;
+}
 #damage-directions {
   position: absolute;
   left: 50%;

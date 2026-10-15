@@ -1,4 +1,8 @@
-import { DamageCompass, reticleGap } from "./combat-feedback.js";
+import {
+  DamageCompass,
+  HitConfirmation,
+  reticleGap,
+} from "./combat-feedback.js";
 import "./style.css";
 import { WeaponPreview } from "./weapon-preview.js";
 import { Game } from "./game.js";
@@ -48,6 +52,32 @@ let mode = 1,
   hurtTimeout,
   currentTab = "play",
   settingsFromPause = false;
+const hitConfirmation = new HitConfirmation();
+function resetHitMarker() {
+  clearTimeout(hitTimeout);
+  hitConfirmation.clear();
+  const marker = $("hitmarker");
+  marker.style.opacity = 0;
+  marker.classList.remove("headshot", "elimination");
+  marker.dataset.confirmation = "";
+}
+function showHitMarker(head = false, elimination = false) {
+  const now = performance.now();
+  hitConfirmation.add(head, elimination, now);
+  const kind = hitConfirmation.kind,
+    marker = $("hitmarker");
+  marker.style.color =
+    kind === 3 ? "#b5f5d8" : kind === 2 ? "#ffcb8f" : "white";
+  marker.classList.toggle("headshot", kind === 2);
+  marker.classList.toggle("elimination", kind === 3);
+  marker.dataset.confirmation = ["", "body", "head", "elimination"][kind];
+  marker.style.opacity = 1;
+  clearTimeout(hitTimeout);
+  hitTimeout = setTimeout(
+    resetHitMarker,
+    Math.max(0, hitConfirmation.until - now),
+  );
+}
 function toast(message) {
   $("toast").textContent = message;
   show("toast", true);
@@ -272,6 +302,7 @@ const events = {
     show("settings", false);
   },
   lobby() {
+    resetHitMarker();
     damageCompass.clear();
     for (const arc of damageArcs) arc.style.opacity = 0;
     game?.audio.clearSpatial?.();
@@ -287,11 +318,10 @@ const events = {
     switchTab("play");
   },
   hit(head) {
-    clearTimeout(hitTimeout);
-    $("hitmarker").style.color = head ? "#ffcb8f" : "white";
-    $("hitmarker").classList.toggle("headshot", head);
-    $("hitmarker").style.opacity = 1;
-    hitTimeout = setTimeout(() => ($("hitmarker").style.opacity = 0), 160);
+    showHitMarker(head);
+  },
+  confirmKill(head) {
+    showHitMarker(head, true);
   },
   hurt(source, amount) {
     if (game.player) damageCompass.add(game.player, source, amount, game.yaw);
@@ -322,7 +352,7 @@ const events = {
     for (const arc of damageArcs) arc.style.opacity = 0;
     $("kill-feed").replaceChildren();
     $("damage-vignette").style.opacity = 0;
-    $("hitmarker").style.opacity = 0;
+    resetHitMarker();
   },
   results(g) {
     show("results", true);
