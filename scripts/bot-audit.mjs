@@ -51,11 +51,11 @@ try {
     await page.evaluate((pose) => {
       const g = window.__arena,
         e = g.auditBot;
-      Object.assign(g.player, { x: 11.5, y: 0, z: 11 });
+      Object.assign(g.player, { x: 9, y: 0, z: -2 });
       Object.assign(e, {
-        x: 14.5,
+        x: 12,
         y: 0,
-        z: 8,
+        z: -5,
         vy: 0,
         vx: 0,
         vz: 0,
@@ -114,11 +114,11 @@ try {
           y: 1.1,
           vy: 8,
           vx: -8,
-          vz: 8,
+          vz: -5,
         });
       g.clock = 10;
       for (let i = 0; i < 80; i++) g.animateBot(e, 1 / 60);
-      g.camera.position.set(11.5, 1.6 + e.y * 0.5, 11);
+      g.camera.position.set(9, 1.6 + e.y * 0.5, -2);
       g.camera.lookAt(e.x, e.y + 0.95, e.z);
       g.camera.fov = 55;
       g.camera.updateProjectionMatrix();

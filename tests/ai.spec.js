@@ -39,8 +39,10 @@ test("3v3 bots navigate the compact Arena and keep fighting during a two-minute 
         if (
           ![e.x, e.y, e.z, e.vx, e.vy, e.vz].every(Number.isFinite) ||
           e.y < -0.001 ||
-          Math.abs(e.x) > 15.57 ||
-          Math.abs(e.z) > 20.57
+          e.x < g.world.bounds.minX - 0.001 ||
+          e.x > g.world.bounds.maxX + 0.001 ||
+          e.z < g.world.bounds.minZ - 0.001 ||
+          e.z > g.world.bounds.maxZ + 0.001
         )
           invalid++;
         maxY = Math.max(maxY, e.y);

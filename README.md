@@ -27,7 +27,7 @@ Mobile layouts support browsing/configuration, but combat requires desktop point
 ## Included
 
 - Three original arenas: **Concrete Arena**, **Skyline**, **Hangar 09**; elevated cover, walkable stairs, and collision.
-- Default Concrete Arena: a 32 × 42-metre compact gray-concrete layout inspired by the supplied references, with 19.2-metre perimeter walls, collision-matched diagonal slabs, opposing continuous ramp banks, mirrored window cover and taller interior cover.
+- Default Concrete Arena: a 26 × 32-metre compact gray-concrete layout inspired by the supplied references, with 24-metre perimeter walls, collision-matched diagonal slabs, opposing continuous ramp banks, mirrored window cover and 5.8–6.6-metre interior cover.
 - **1v1**, **2v2**, **3v3** team elimination, first to five rounds; countdowns, health-based timeout resolution, spectators, results, and rematches.
 - Four bot levels: **Rookie**, **Regular**, **Veteran**, **Elite**. A* navigation, line-of-sight perception, last-known positions, aim/reaction errors, strafing, jumps, and reload retreats. Bots use rifles plus rotating Scythe/Katana/Fists/Knife melee loadouts; they are not machine-learned replicas of real players.
 - Fixed-step movement with interpolated rendering, stronger gravity for less floaty jumps, uphill ramp-launch momentum, responsive ground acceleration/braking, precise air reversals, counter-strafing, slope-driven slides, grounded stair descent, momentum-preserving air steering and slide jumps, buffered jumps (140 ms), coyote time (100 ms), Fists/Bow double jump, Scythe dash, and explosive jumping.
@@ -63,6 +63,16 @@ Reloads animate magazine extraction/insertion, bolt motion and the support hand.
 
 Graphics use darker panel-seamed concrete, a compact edge HUD, distinct original weapon models and 3D loadout previews, original procedural concrete/metal/window textures, an atmospheric sky, environment-lit metal, rounded geometry, armored bots, building vents/windows, and emissive arena trims. The sky has drifting procedural clouds and a directional sun. Fixed-size combat pools add surface hit marks, debris, bouncing shell casings and muzzle-aligned tracers without allocating a new mesh for each hit. Everything is generated locally. The world is finished with depth-aware contact shading, two-sample MSAA, restrained quarter-resolution HDR bloom, gentle sharpening and a neutral color grade; the weapon overlay stays crisp. Reloads include a raised/banked receiver, magazine extraction, supporting-hand/wrist motion and a bolt rack. Equip, jump/landing inertia, strafing, throw follow-through, blade trails and eased bot deaths provide distinct action feedback. Enable **Performance mode** in Settings to reduce render resolution and bypass post-processing and dynamic shadows on slower hardware.
 
+## Tighter, taller Arena rebuild
+
+- **38% less floor area** than the previous 32 × 42 layout: now **26 × 32**, with full-size actors and unchanged gameplay movement/FOV settings.
+- **24-high perimeter**, **5.8–6.6-high cover**, taller window towers and **6.2-high ramp summits**. Sparse coping and height courses make the vertical proportions easier to read.
+- Repositioned mirrored cover, protected spawns and connected flank/centre routes. Both ramp decks meet the rear wall without a falling pocket.
+- Steep-ramp summit adhesion fixes a real downhill fall; explicit walkable summit navigation lets bots reach those decks through the ramp rather than a tall side.
+- Arena lobby overview stays inside the enclosure so the taller walls do not hide the court. No extra HUD clutter.
+
+See [the Arena scale report](docs/tight-tall-arena.md) for dimensions, visual checks and route/traversal validation. Dimensions are reconstruction estimates, not measured Roblox units.
+
 ## Player-like bot movement and melee
 
 Combat bots now choose real abilities rather than a cosmetic crouch and random jump:
@@ -90,13 +100,13 @@ See [the combat-readability report](docs/combat-readability-pass.md) for validat
 ## Tests
 
 ```sh
-npm test                   # 144 input, abilities, physics, movement, rigging, audio, rendering and combat tests
+npm test                   # 148 input, abilities, physics, movement, rigging, audio, rendering and combat tests
 npm run build              # Production build + offline cache generation
 npx playwright install chromium
 npm run test:browser       # Browser integration test
 ```
 
-You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tests. Most integration tests validate an actual WebGL frame and pointer lock, then disable rendering to run deterministic combat/AI checks efficiently on machines using software graphics. Dedicated graphics tests retain real rendering for all 23 weapon models, skeletal bots, pooled effects, contact-shading pixel comparisons, bloom resize and the Performance bypass. They exercise loadout selection, shots/headshots, reloads, jumps, grenade/smoke/molotov lifecycles, pause/settings, map selection, team bots, five-round victory, results, and mobile layout. The twelve-test browser suite also covers wizard steps, draft cancellation, compact HUD dimensions, tall walls, real Bow/Medkit input, Flashbang throws and rematch selection. Additional browser tests check arena floor layers, actual stair traversal, slide-jump momentum, Shift/F controls, katana reflection, mouse spike filtering, graphics settings, and the production cache/reload with networking disabled.
+You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tests. Most integration tests validate an actual WebGL frame and pointer lock, then disable rendering to run deterministic combat/AI checks efficiently on machines using software graphics. Dedicated graphics tests retain real rendering for all 23 weapon models, skeletal bots, pooled effects, contact-shading pixel comparisons, bloom resize and the Performance bypass. They exercise loadout selection, shots/headshots, reloads, jumps, grenade/smoke/molotov lifecycles, pause/settings, map selection, team bots, five-round victory, results, and mobile layout. The thirteen-test browser suite also covers wizard steps, draft cancellation, compact HUD dimensions, tall walls, real Bow/Medkit input, Flashbang throws and rematch selection. Additional browser tests check arena floor layers, actual stair traversal, slide-jump momentum, Shift/F controls, katana reflection, mouse spike filtering, graphics settings, and the production cache/reload with networking disabled.
 
 ## Structure
 
@@ -145,6 +155,7 @@ For controlled full-size screenshots of the updated weapons, bot rig and Arena:
 ```sh
 npm run audit:visual -- /tmp/arena-visuals
 npm run audit:bots -- /tmp/bot-poses
+npm run audit:arena -- /tmp/arena-scale
 ```
 
 This uses the development preview and the same `BROWSER_EXECUTABLE` override. Images go outside Git; the paused audit is not an FPS benchmark. Settings also include an independent **speed-based field of view** toggle.

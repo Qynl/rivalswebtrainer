@@ -2,7 +2,7 @@ import { createArenaDressing } from "./arena-dressing.js";
 import { batchFixedMeshes } from "./batching.js";
 import { muzzleFlash } from "./animation.js";
 import { ArenaAtmosphere } from "./atmosphere.js";
-import { ARENA, HALF_COVER } from "./arena-layout.js";
+import { ARENA, HALF_COVER, HALF_WINDOWS } from "./arena-layout.js";
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { ArenaGraphics, artColor } from "./graphics.js";
@@ -616,29 +616,54 @@ export class ArenaWorld {
         this.concrete(b.x * side, b.z * side, b.w, b.h, b.d, b.angle);
         this.contactShadow(b.x * side, b.z * side, b.w, b.d, b.angle);
       }
-      this.windowCover(-1.5 * side, -16 * side, 7, 3.8, 2.0);
-      this.windowCover(10 * side, -15.5 * side, 5.3, 3.3, 1.8);
-      this.windowCover(-1.7 * side, -side, 6.2, 4.4, 2.0, "z");
-      this.ramp(-10.5 * side, -13.4 * side, 4.2, 6.4, ARENA.rampRise, -side);
-      this.concrete(-10.5 * side, -17.6 * side, 4.2, ARENA.rampRise, 2);
-      this.contactShadow(-10.5 * side, -14.5 * side, 4.3, 8.5);
-      // A subtle, narrow expansion grid: no raised floor overlays or z-fighting.
-      this.floorMark(0, side * 19.6, 25, 0.025, 0x596971, 1);
+      for (const b of HALF_WINDOWS)
+        this.windowCover(b.x * side, b.z * side, b.w, b.h, b.d, b.axis);
+      this.ramp(
+        -ARENA.rampX * side,
+        -ARENA.rampZ * side,
+        ARENA.rampWidth,
+        ARENA.rampLength,
+        ARENA.rampRise,
+        -side,
+      );
+      this.concrete(
+        -ARENA.rampX * side,
+        -ARENA.platformZ * side,
+        ARENA.rampWidth,
+        ARENA.rampRise,
+        ARENA.platformLength,
+      );
+      // Explicit walkable summit: bots may reach it only through the ramp.
+      this.boxes[this.boxes.length - 1].walkable = true;
+      this.contactShadow(
+        -ARENA.rampX * side,
+        -ARENA.rampZ * side,
+        ARENA.rampWidth,
+        ARENA.rampLength + ARENA.platformLength,
+      );
+      this.floorMark(
+        0,
+        side * (depth / 2 - 1.1),
+        width - 4,
+        0.025,
+        0x596971,
+        1,
+      );
     }
-    for (let x = -12; x <= 12; x += 4.8)
+    for (let x = -width / 2 + 2.4; x < width / 2; x += 4.8)
       this.floorMark(x, 0, 0.014, depth - 0.1, 0x5c6971, 1);
-    for (let z = -16.8; z <= 17; z += 4.8)
+    for (let z = -depth / 2 + 2.4; z < depth / 2; z += 4.8)
       this.floorMark(0, z, width - 0.1, 0.014, 0x5c6971, 1);
     this.spawns = {
       0: [
         { x: 0, z: ARENA.spawnZ },
-        { x: -5.8, z: ARENA.spawnZ },
-        { x: 5.8, z: ARENA.spawnZ },
+        { x: -ARENA.spawnSpread, z: ARENA.spawnZ },
+        { x: ARENA.spawnSpread, z: ARENA.spawnZ },
       ],
       1: [
         { x: 0, z: -ARENA.spawnZ },
-        { x: 5.8, z: -ARENA.spawnZ },
-        { x: -5.8, z: -ARENA.spawnZ },
+        { x: ARENA.spawnSpread, z: -ARENA.spawnZ },
+        { x: -ARENA.spawnSpread, z: -ARENA.spawnZ },
       ],
     };
     this.size = width;

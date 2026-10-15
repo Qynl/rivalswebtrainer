@@ -391,7 +391,7 @@ export const MAPS = [
     id: "blockout",
     name: "Concrete Arena",
     short: "ARENA",
-    tag: "Tall walls. Angled cover. Vertical duels.",
+    tag: "Compact court. Towering cover. Vertical duels.",
   },
   {
     id: "rooftops",

@@ -39,7 +39,21 @@ const body = (z = -3.4) => ({
 });
 
 test("Arena is compact with tall perimeter and mirrored half-cover definitions", () => {
-  assert.equal(ARENA.width * ARENA.depth, 1344);
+  assert.equal(ARENA.width * ARENA.depth, 832);
+  assert.equal(ARENA.wallHeight, 24);
+  assert.ok(
+    Math.abs(ARENA.platformZ + ARENA.platformLength / 2 - ARENA.depth / 2) <
+      1e-8,
+  );
+  assert.ok(
+    Math.abs(
+      ARENA.platformZ -
+        ARENA.platformLength / 2 -
+        ARENA.rampZ -
+        ARENA.rampLength / 2,
+    ) < 1e-8,
+  );
+  assert.ok(HALF_COVER.every((b) => b.h >= 5.8));
   assert.ok(ARENA.width * ARENA.depth < (48 * 64) / 2);
   assert.ok(ARENA.wallHeight > 16.8);
   assert.equal(HALF_COVER.length, 3);
@@ -300,4 +314,89 @@ test("bot death collapse is eased over time and respects the platform height", (
   g.animateDeath(e, 0.2);
   assert.equal(e.model.group.rotation.z, 1.45);
   assert.ok(Math.abs(e.model.group.position.y - 4.6) < 1e-10);
+});
+
+const steepRamp = () => ({
+  ...ramp(),
+  maxY: 6.2,
+  ramp: { axis: "z", direction: 1, rise: 6.2 },
+});
+const summit = () => ({
+  minX: -2,
+  maxX: 2,
+  minZ: 3.2,
+  maxZ: 4.8,
+  minY: 0,
+  maxY: 6.2,
+  walkable: true,
+});
+test("steep ramp summit joins remain grounded when the capsule clears the platform lip", () => {
+  const boxes = [steepRamp(), summit()],
+    p = body(4);
+  p.y = 6.2;
+  p.vz = -8;
+  for (let i = 0; i < 58; i++) {
+    moveBody(p, 0, -0.14, boxes);
+    verticalStep(p, 1 / 60, boxes);
+    assert.equal(p.grounded, true);
+  }
+  assert.equal(p.y, 0);
+});
+test("navigation can reach a marked summit through the ramp without climbing a tall side", () => {
+  const boxes = [steepRamp(), summit()],
+    nav = new NavGrid(boxes, 16, 0.4, 20);
+  const path = nav.path({ x: 5, z: 1.6 }, { x: 0, z: 4 });
+  assert.ok(path.length > 10);
+  assert.ok(Math.abs(path.at(-1).y - 6.2) < 1e-5);
+  const entry = path.find((p) => Math.abs(p.x) < 2 && p.z > -3.2 && p.z < 3.2);
+  assert.ok(entry.y <= 0.4);
+  assert.ok(entry.z < -2.7);
+});
+test("an overhead solid blocks the marked summit and airborne actors never snap to a steep slope", () => {
+  const b = steepRamp(),
+    pad = summit(),
+    ceiling = { ...pad, minY: 7, maxY: 8, walkable: false };
+  const nav = new NavGrid([b, pad, ceiling], 16, 0.4, 20);
+  assert.equal(nav.blocked[nav.index(0, 4)], 1);
+  const p = body(3);
+  p.y = 6.2;
+  p.grounded = false;
+  p.vy = 5;
+  moveBody(p, 0, -0.14, [b, pad]);
+  assert.equal(p.y, 6.2);
+  verticalStep(p, 1 / 60, [b, pad]);
+  assert.ok(p.y > 6.2);
+  assert.equal(p.grounded, false);
+});
+
+test("Arena lobby camera stays inside the high walls without changing gameplay FOV settings", () => {
+  const previous = globalThis.requestAnimationFrame;
+  globalThis.requestAnimationFrame = () => {};
+  try {
+    const g = Object.create(Game.prototype);
+    Object.assign(g, {
+      last: 0,
+      state: "lobby",
+      frameCount: 0,
+      fpsTime: 0,
+      settings: { fov: 95 },
+      world: { mapId: "blockout" },
+      camera: new THREE.PerspectiveCamera(95, 1.6, 0.08, 180),
+      events: { fps() {} },
+      renderer: {},
+      renderWorld() {},
+    });
+    for (const t of [0, 10000, 100000, 500000]) {
+      g.frame(t);
+      assert.ok(Math.abs(g.camera.position.x) < ARENA.width / 2);
+      assert.ok(Math.abs(g.camera.position.z) < ARENA.depth / 2);
+      assert.ok(g.camera.position.y > Math.max(...HALF_COVER.map((b) => b.h)));
+      assert.ok(g.camera.position.y < ARENA.wallHeight);
+      assert.ok(g.camera.getWorldDirection(new THREE.Vector3()).y < -0.5);
+    }
+    assert.equal(g.settings.fov, 95);
+  } finally {
+    if (previous) globalThis.requestAnimationFrame = previous;
+    else delete globalThis.requestAnimationFrame;
+  }
 });

@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { batchFixedMeshes } from "./batching.js";
-import { HALF_COVER } from "./arena-layout.js";
+import { ARENA, HALF_COVER } from "./arena-layout.js";
 
 // Painted, offline wayfinding. Deliberately no new collision or extra cover.
 function stencilAtlas(graphics) {
@@ -91,10 +91,46 @@ export function createArenaDressing(graphics, materials) {
     group.add(mesh);
     return mesh;
   };
-  sign(0, 0, 6, -20.988, 5.4);
-  sign(1, 0, 6, 20.988, 5.4, Math.PI);
-  sign(2, -15.988, 3.3, -11, 2.6, Math.PI / 2);
-  sign(3, 15.988, 3.3, 11, 2.6, -Math.PI / 2);
+  const hw = ARENA.width / 2,
+    hd = ARENA.depth / 2;
+  sign(0, 0, 7.6, -hd + 0.012, 4.2);
+  sign(1, 0, 7.6, hd - 0.012, 4.2, Math.PI);
+  sign(2, -hw + 0.012, 3.3, -8, 2.3, Math.PI / 2);
+  sign(3, hw - 0.012, 3.3, 8, 2.3, -Math.PI / 2);
+  // Sparse architectural courses make the actual 24m height legible, without
+  // filling the court with props or adding collision/draw calls per detail.
+  for (const side of [-1, 1]) {
+    for (const y of [4.8, 9.6, 14.4, 19.2, ARENA.wallHeight - 0.12]) {
+      solid(
+        new THREE.BoxGeometry(ARENA.width, 0.045, 0.035),
+        0,
+        y,
+        side * (hd - 0.018),
+        0x758086,
+      );
+      solid(
+        new THREE.BoxGeometry(0.035, 0.045, ARENA.depth),
+        side * (hw - 0.018),
+        y,
+        0,
+        0x758086,
+      );
+    }
+    solid(
+      new THREE.BoxGeometry(ARENA.width, 0.14, 0.18),
+      0,
+      ARENA.wallHeight - 0.07,
+      side * (hd - 0.07),
+      0xa3adaf,
+    );
+    solid(
+      new THREE.BoxGeometry(0.18, 0.14, ARENA.depth),
+      side * (hw - 0.07),
+      ARENA.wallHeight - 0.07,
+      0,
+      0xa3adaf,
+    );
+  }
   for (const side of [1, -1]) {
     const b = HALF_COVER[1],
       angle = b.angle + (side < 0 ? Math.PI : 0);
@@ -115,14 +151,23 @@ export function createArenaDressing(graphics, materials) {
         0x657176,
         slab.angle + (side < 0 ? Math.PI : 0),
       );
+    for (const slab of HALF_COVER)
+      solid(
+        new THREE.BoxGeometry(slab.w + 0.025, 0.08, slab.d + 0.025),
+        slab.x * side,
+        slab.h - 0.04,
+        slab.z * side,
+        0xa7b0b2,
+        slab.angle + (side < 0 ? Math.PI : 0),
+      );
     const color = side > 0 ? 0xa96a59 : 0x547e89;
-    for (const x of [-6.3, 6.3]) {
+    for (const x of [-5.1, 5.1]) {
       for (let i = 0; i < 3; i++) {
         const stripe = solid(
           new THREE.PlaneGeometry(0.13, 1.4),
           x * side,
           0.012,
-          (17.5 - i * 2) * side,
+          (ARENA.spawnZ - 1 - i * 1.6) * side,
           color,
         );
         stripe.rotation.x = -Math.PI / 2;
@@ -132,7 +177,7 @@ export function createArenaDressing(graphics, materials) {
           new THREE.PlaneGeometry(0.11, 0.75),
           (x + (angle > 0 ? 0.2 : -0.2)) * side,
           0.014,
-          11.3 * side,
+          8.5 * side,
           color,
         );
         arrow.rotation.set(-Math.PI / 2, 0, angle + (side < 0 ? Math.PI : 0));

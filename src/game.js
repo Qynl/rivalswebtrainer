@@ -1,3 +1,4 @@
+import { ARENA } from "./arena-layout.js";
 import { updateBotWeapon } from "./bot-visuals.js";
 import {
   BOT_MELEES,
@@ -2220,9 +2221,21 @@ export class Game {
     if (this.state === "lobby") {
       this.accumulator = 0;
       const a = 0.62 + Math.sin(t * 0.00006) * 0.04;
-      this.camera.position.set(43 * Math.sin(a), 31, 43 * Math.cos(a));
-      this.camera.fov = 48;
-      this.camera.lookAt(-7, 0, -3);
+      if (this.world?.mapId === "blockout") {
+        // The former orbit was outside the perimeter: taller walls hid the
+        // court. Keep the Arena overview inside the enclosure, above cover.
+        this.camera.position.set(
+          ARENA.width * 0.38 * Math.sin(a),
+          ARENA.wallHeight * 0.9,
+          ARENA.depth * 0.4 * Math.cos(a),
+        );
+        this.camera.fov = 70;
+        this.camera.lookAt(-ARENA.width * 0.1, 2, -ARENA.depth * 0.08);
+      } else {
+        this.camera.position.set(43 * Math.sin(a), 31, 43 * Math.cos(a));
+        this.camera.fov = 48;
+        this.camera.lookAt(-7, 0, -3);
+      }
       this.camera.updateProjectionMatrix();
     } else if (this.state !== "paused" && this.state !== "results") {
       const step = SIMULATION_STEP;

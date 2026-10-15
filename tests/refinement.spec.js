@@ -34,8 +34,8 @@ test("compact mirrored Arena has real ramp surfaces, grounded traversal, window 
     };
   });
   expect(layout).toEqual({
-    width: 32,
-    depth: 42,
+    width: 26,
+    depth: 32,
     ramps: 2,
     mirrored: true,
     shadow: true,
@@ -55,8 +55,8 @@ test("compact mirrored Arena has real ramp surfaces, grounded traversal, window 
     g.keys.add("KeyW");
     g.yaw = Math.PI;
     Object.assign(p, {
-      x: 10.5,
-      z: 9.7,
+      x: 8.5,
+      z: 6.8,
       y: 0,
       vx: 0,
       vz: 0,
@@ -76,14 +76,34 @@ test("compact mirrored Arena has real ramp surfaces, grounded traversal, window 
     const up = { y: p.y, z: p.z, airborne, maxRise };
     g.yaw = 0;
     let downhillAirborne = 0;
+    const downhillFrames = [];
     for (let i = 0; i < 64; i++) {
       g.updatePlayer(1 / 60);
-      if (!p.grounded) downhillAirborne++;
+      if (!p.grounded) {
+        downhillAirborne++;
+        downhillFrames.push({
+          frame: i,
+          x: p.x,
+          y: p.y,
+          z: p.z,
+          vy: p.vy,
+          vz: p.vz,
+        });
+      }
     }
     g.keys.clear();
-    return { up, down: { y: p.y, z: p.z, airborne: downhillAirborne } };
+    return {
+      up,
+      down: {
+        y: p.y,
+        z: p.z,
+        airborne: downhillAirborne,
+        frames: downhillFrames,
+      },
+    };
   });
-  expect(traversal.up.y).toBeCloseTo(4.4);
+  console.log(JSON.stringify({ traversal }));
+  expect(traversal.up.y).toBeCloseTo(6.2);
   expect(traversal.up.airborne).toBe(0);
   expect(traversal.up.maxRise).toBeLessThan(0.4);
   expect(traversal.down.y).toBeLessThan(0.2);
@@ -122,8 +142,8 @@ test("compact mirrored Arena has real ramp surfaces, grounded traversal, window 
     g.keys.add("KeyW");
     g.yaw = 0;
     Object.assign(p, {
-      x: -1,
-      z: -14.65,
+      x: -1.2,
+      z: -10.85,
       y: 1,
       vx: 0,
       vz: 0,
@@ -135,6 +155,6 @@ test("compact mirrored Arena has real ramp surfaces, grounded traversal, window 
     g.keys.clear();
     return { z: p.z, y: p.y };
   });
-  expect(window.z).toBeLessThan(-16.9);
+  expect(window.z).toBeLessThan(-13.38);
   expect(errors).toEqual([]);
 });

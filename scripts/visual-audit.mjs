@@ -38,7 +38,7 @@ try {
     g.state = "playing";
     g.range = true;
     g.clock = 10;
-    Object.assign(g.player, { x: 6, y: 0, z: 7, vx: 0, vy: 0, vz: 0 });
+    Object.assign(g.player, { x: 0, y: 0, z: 14.3, vx: 0, vy: 0, vz: 0 });
     g.yaw = 0;
     g.pitch = 0;
     g.renderPrevious = null;

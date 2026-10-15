@@ -11,7 +11,8 @@
     "test:browser": "playwright test",
     "test:soak": "node scripts/soak.mjs",
     "audit:visual": "node scripts/visual-audit.mjs",
-    "audit:bots": "node scripts/bot-audit.mjs"
+    "audit:bots": "node scripts/bot-audit.mjs",
+    "audit:arena": "node scripts/arena-audit.mjs"
   },
   "dependencies": {
     "three": "^0.180.0"

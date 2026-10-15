@@ -121,8 +121,16 @@ export function moveBody(body, dx, dz, boxes) {
       for (const b of boxes)
         if (b.ramp && circleBox(body.x, body.z, body.radius, b)) {
           const top = surfaceHeight(b, body.x, body.z);
+          // At a steep ramp's flat summit the capsule still overlaps the
+          // platform lip until its centre is one radius downhill. Once clear,
+          // allow that accumulated descent instead of launching into a fall.
+          const slope = rampGradient(b);
+          const lip =
+            top < body.y && Math.abs(body.y - b.maxY) < 0.06
+              ? body.radius * Math.hypot(slope.x, slope.z)
+              : 0;
           if (
-            Math.abs(top - body.y) <= 0.4 + EPSILON &&
+            Math.abs(top - body.y) <= 0.4 + lip + EPSILON &&
             canOccupy(body, body.x, top, body.z, boxes)
           )
             body.y = top;
@@ -224,18 +232,18 @@ export class NavGrid {
         const i = z * this.n + x,
           p = this.point(i);
         for (const b of boxes)
-          if (b.ramp && circleBox(p.x, p.z, 0.01, b)) {
+          if ((b.ramp || b.walkable) && circleBox(p.x, p.z, 0.01, b)) {
             this.heights[i] = Math.max(
               this.heights[i],
               surfaceHeight(b, p.x, p.z),
             );
-            this.slopes[i] = 1;
+            if (b.ramp) this.slopes[i] = 1;
           }
         this.blocked[z * this.n + x] = boxes.some(
           (b) =>
             !b.ramp &&
-            b.maxY > 0.5 &&
-            b.minY < 1.9 &&
+            b.maxY > this.heights[i] + 0.5 &&
+            b.minY < this.heights[i] + 1.9 &&
             circleBox(p.x, p.z, 0.5, b),
         )
           ? 1

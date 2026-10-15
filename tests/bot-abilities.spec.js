@@ -34,9 +34,9 @@ test("AI chooses quick dash/guard, chains slide-jump/double-jump, equips melee a
     g.resize();
     const reset = (id) => {
       Object.assign(p, {
-        x: 14.5,
+        x: 12,
         y: 0,
-        z: 3,
+        z: -0.5,
         vx: 0,
         vy: 0,
         vz: 0,
@@ -49,9 +49,9 @@ test("AI chooses quick dash/guard, chains slide-jump/double-jump, equips melee a
         target: false,
         meleeId: id,
         activeWeapon: "rifle",
-        x: 14.5,
+        x: 12,
         y: 0,
-        z: 18,
+        z: 14,
         vx: 0,
         vy: 0,
         vz: -10,
@@ -104,7 +104,7 @@ test("AI chooses quick dash/guard, chains slide-jump/double-jump, equips melee a
       g.updateBot(bot, 1 / 120);
     };
     const draw = () => {
-      g.camera.position.set(11.5, 2, 20);
+      g.camera.position.set(9, 3, 5);
       g.camera.lookAt(bot.x, bot.y + 1, bot.z);
       g.camera.fov = 70;
       g.camera.updateProjectionMatrix();
@@ -132,7 +132,7 @@ test("AI chooses quick dash/guard, chains slide-jump/double-jump, equips melee a
     draw();
     const health = bot.health,
       playerHealth = p.health;
-    g.bullet(p, new THREE.Vector3(14.5, 1, 3), new THREE.Vector3(0, 0, 1), {
+    g.bullet(p, new THREE.Vector3(12, 1, -0.5), new THREE.Vector3(0, 0, 1), {
       damage: 13,
       head: 1.65,
       range: 100,
@@ -149,9 +149,9 @@ test("AI chooses quick dash/guard, chains slide-jump/double-jump, equips melee a
     };
     reset("fists");
     bot.activeWeapon = "fists";
-    p.x = -14;
-    p.z = -14;
-    bot.path = [16, 14, 12, 10, 8, 6].map((z) => ({ x: 14.5, z }));
+    p.x = -11.5;
+    p.z = -11.5;
+    bot.path = [12, 10, 8, 6, 4, 2].map((z) => ({ x: 12, z }));
     let sawLow = false,
       sawAir = false;
     for (let i = 0; i < 160; i++) {
@@ -169,8 +169,8 @@ test("AI chooses quick dash/guard, chains slide-jump/double-jump, equips melee a
       ),
     };
     reset("knife");
-    bot.z = 10;
-    p.z = 8;
+    bot.z = 7.5;
+    p.z = 5.5;
     const before = p.health;
     for (let i = 0; i < 65; i++) tick();
     draw();
