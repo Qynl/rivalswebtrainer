@@ -28,6 +28,20 @@ export function reloadPose(progress) {
   const rack = Math.sin(saturate((p - 0.78) / 0.16) * Math.PI);
   return { lower, extract, rack };
 }
+// Time-based mechanisms return to rest between shots even under sustained recoil.
+export function mechanismPose(age = Infinity) {
+  if (!Number.isFinite(age) || age < 0) return { bolt: 0, pump: 0 };
+  const pulse = (start, peak, end) =>
+    age <= start || age >= end
+      ? 0
+      : age < peak
+        ? smooth((age - start) / (peak - start))
+        : 1 - smooth((age - peak) / (end - peak));
+  return {
+    bolt: pulse(0, 0.018, 0.085) * 0.045,
+    pump: pulse(0.045, 0.145, 0.31) * 0.075,
+  };
+}
 export class WeaponAnimator {
   constructor() {
     this.x = new Spring(0.09);
@@ -141,7 +155,8 @@ export class WeaponAnimator {
         20,
       ),
     );
-    const parts = model.userData;
+    const parts = model.userData,
+      mechanism = mechanismPose(age);
     if (parts.magazine) {
       const m = parts.magazine;
       m.position.copy(m.userData.restPosition);
@@ -152,15 +167,18 @@ export class WeaponAnimator {
     if (parts.bolt) {
       const b = parts.bolt;
       b.position.copy(b.userData.restPosition);
-      b.position.z += Math.min(0.045, kick * 0.4) + reloadState.rack * 0.055;
+      const locked =
+        parts.weaponId === "pistol" &&
+        state.ammo === 0 &&
+        (!reloading || reload < 0.87);
+      b.position.z += locked
+        ? 0.045
+        : mechanism.bolt + reloadState.rack * 0.055;
     }
     if (parts.pump) {
       const p = parts.pump;
       p.position.copy(p.userData.restPosition);
-      p.position.z +=
-        Math.max(0, Math.sin(((state.shotAge || 0) * Math.PI) / 0.28)) *
-        0.075 *
-        ((state.shotAge || 0) < 0.28 ? 1 : 0);
+      p.position.z += mechanism.pump;
     }
     if (parts.hands?.[1]) {
       const h = parts.hands[1];
@@ -174,8 +192,7 @@ export class WeaponAnimator {
           (h.userData.sleeve.userData.restRotationX || 0) +
           reloadState.extract * 0.25;
       h.rotation.z = -reloadState.lower * 0.25;
-      if (parts.pump && age < 0.28)
-        h.position.z += Math.max(0, Math.sin((age * Math.PI) / 0.28)) * 0.075;
+      if (parts.pump) h.position.z += mechanism.pump;
     }
     if (parts.rocket) {
       parts.rocket.position.copy(parts.rocket.userData.restPosition);

@@ -73,6 +73,14 @@ Graphics use darker panel-seamed concrete, a compact edge HUD, distinct original
 
 See [the Arena scale report](docs/tight-tall-arena.md) for dimensions, visual checks and route/traversal validation. Dimensions are reconstruction estimates, not measured Roblox units.
 
+## Impact and weapon-mechanism polish
+
+- Concrete hits now mix small angular chips, expanding dust and brief spark flecks. Debris launches away from the surface, with cosmetic chip bounces on ground and raised support. Existing particle/decal/tracer/casing pool limits are unchanged.
+- Bolts cycle per shot instead of staying back with sustained recoil. Shotgun pumping starts after firing, with the support hand following the same cycle.
+- Handgun irons and serrations move with the slide; its magazine visibly extracts during reload. The empty slide locks back and releases near the end of reload. These are visual changes, not changes to weapon timing or aim.
+
+See [the impact and mechanism report](docs/impact-and-mechanisms.md) for validation and limits.
+
 ## Combat presentation polish
 
 - Directional bot leg motion for strafing/backpedaling, still knees at idle, and smoother crouch/air/landing transitions. These are visual poses, not changes to actor physics or hitboxes.
@@ -118,13 +126,13 @@ See [the combat-readability report](docs/combat-readability-pass.md) for validat
 ## Tests
 
 ```sh
-npm test                   # 181 input, abilities, physics, movement, rigging, audio, rendering and combat tests
+npm test                   # 193 input, abilities, physics, movement, rigging, audio, rendering and combat tests
 npm run build              # Production build + offline cache generation
 npx playwright install chromium
 npm run test:browser       # Browser integration test
 ```
 
-You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tests. Most integration tests validate an actual WebGL frame and pointer lock, then disable rendering to run deterministic combat/AI checks efficiently on machines using software graphics. Dedicated graphics tests retain real rendering for all 23 weapon models, skeletal bots, pooled effects, contact-shading pixel comparisons, bloom resize and the Performance bypass. They exercise loadout selection, shots/headshots, reloads, jumps, grenade/smoke/molotov lifecycles, pause/settings, map selection, team bots, five-round victory, results, and mobile layout. The fifteen-test browser suite also covers wizard steps, draft cancellation, compact HUD dimensions, tall walls, real Bow/Medkit input, Flashbang throws and rematch selection. Additional browser tests check arena floor layers, actual stair traversal, slide-jump momentum, Shift/F controls, katana reflection, mouse spike filtering, graphics settings, and the production cache/reload with networking disabled.
+You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tests. Most integration tests validate an actual WebGL frame and pointer lock, then disable rendering to run deterministic combat/AI checks efficiently on machines using software graphics. Dedicated graphics tests retain real rendering for all 23 weapon models, skeletal bots, pooled effects, contact-shading pixel comparisons, bloom resize and the Performance bypass. They exercise loadout selection, shots/headshots, reloads, jumps, grenade/smoke/molotov lifecycles, pause/settings, map selection, team bots, five-round victory, results, and mobile layout. The sixteen-test browser suite also covers wizard steps, draft cancellation, compact HUD dimensions, tall walls, real Bow/Medkit input, Flashbang throws and rematch selection. Additional browser tests check arena floor layers, actual stair traversal, slide-jump momentum, Shift/F controls, katana reflection, mouse spike filtering, graphics settings, and the production cache/reload with networking disabled.
 
 ## Structure
 

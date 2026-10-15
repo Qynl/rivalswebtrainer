@@ -652,9 +652,19 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
     box(0.24, -0.32, -0.52, 0.095, 0.2, 0.12, grip).rotation.x = -0.23;
     barrel(-0.81, 0.025, 0.07);
     guard(-0.63);
+    const detailsStart = g.children.length;
     sights(-0.77, -0.51);
     for (let i = 0; i < 5; i++)
       box(0.3, -0.15, -0.55 + i * 0.011, 0.012, 0.075, 0.005, dark);
+    // The irons and serrations belong to the reciprocating slide, not the frame.
+    for (const detail of [...g.children].slice(detailsStart)) {
+      detail.position.sub(g.userData.bolt.position);
+      g.userData.bolt.add(detail);
+    }
+    mergeStatic(g.userData.bolt, new Set());
+    const mag = box(0.24, -0.39, -0.505, 0.079, 0.16, 0.1, dark);
+    mag.rotation.x = -0.23;
+    g.userData.magazine = rememberPart(mag);
     if (hands) hand(0.24, -0.36, -0.49);
   } else if (id === "uzi") {
     receiver(0.29);
