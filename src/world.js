@@ -536,7 +536,7 @@ export class ArenaWorld {
           )
           .replace(
             "#include <map_fragment>",
-            "vec3 panelNormal=abs(normalize(vPanelNormal));vec2 panelUv=panelNormal.y>max(panelNormal.x,panelNormal.z)?vPanelPosition.xz:panelNormal.x>panelNormal.z?vPanelPosition.zy:vPanelPosition.xy;diffuseColor*=texture2D(map,panelUv/2.4);",
+            "vec3 panelNormal=abs(normalize(vPanelNormal));vec2 panelUv=panelNormal.y>max(panelNormal.x,panelNormal.z)?vPanelPosition.xz:panelNormal.x>panelNormal.z?vPanelPosition.zy:vPanelPosition.xy;diffuseColor*=texture2D(map,panelUv/2.4);vec2 slab=floor(panelUv/2.4);diffuseColor.rgb*=.97+.05*fract(sin(dot(slab,vec2(12.9898,78.233)))*43758.5453);",
           );
       };
       material.customProgramCacheKey = () => "concrete-reference-v1";
@@ -990,6 +990,22 @@ export function createViewModel(id, data, options) {
       cylinder(0.24, 0.04, z - 0.19, 0.058, 0.03, accent);
     }
     if (id === "shotgun") box(0.24, -0.2, -1.09, 0.22, 0.16, 0.26, accent);
+  }
+  g.userData.weaponId = id;
+  if (id === "katana" || id === "scythe") {
+    const trail = new THREE.Mesh(
+      new THREE.TorusGeometry(0.43, 0.009, 4, 32, Math.PI * 0.9),
+      new THREE.MeshBasicMaterial({
+        color: 0xe6f8ff,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+      }),
+    );
+    trail.position.set(-0.08, 0.04, -0.8);
+    trail.visible = false;
+    g.add(trail);
+    g.userData.slashTrail = trail;
   }
   g.position.set(0, -0.03, 0);
   g.traverse((o) => {

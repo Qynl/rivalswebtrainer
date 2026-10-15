@@ -36,6 +36,12 @@ export class WeaponAnimator {
     this.aim = new Spring();
     this.roll = new Spring();
   }
+  equip() {
+    this.y.value = -0.46;
+    this.y.velocity = 0.6;
+    this.z.value = -0.08;
+    this.roll.value = 0.2;
+  }
   update(model, state) {
     const {
       dt,
@@ -67,19 +73,37 @@ export class WeaponAnimator {
       Math.cos(phase) * 0.006 * stride -
       kick * 0.34 -
       swap * 0.65 -
-      reloadState.lower * 0.1 -
-      (slide ? 0.035 : 0);
-    const poseZ = -0.16 + ads * 0.14 + kick * 0.35;
+      reloadState.lower * 0.04 -
+      (slide ? 0.035 : 0) -
+      (shake
+        ? Math.max(
+            -0.018,
+            Math.min(0.025, (state.verticalSpeed || 0) * 0.0015),
+          ) +
+          (state.landing || 0) * 0.6
+        : 0);
+    const age = state.shotAge ?? 10;
+    const impulse =
+      age < 0.16
+        ? Math.exp(-age * 28) *
+          Math.sin(Math.min(1, age / 0.022) * Math.PI * 0.5)
+        : 0;
+    const poseZ = -0.16 + ads * 0.14 + kick * 0.35 + impulse * 0.024;
     model.position.set(
       this.x.step(poseX, dt, 26),
       this.y.step(poseY, dt, 24),
       this.z.step(poseZ, dt, 26),
     );
     model.rotation.set(
-      kick * 0.7 - reloadState.lower * 0.25 + lookY * (1 - ads),
-      reloadState.lower * 0.17 + 0.08 * (1 - ads),
+      kick * 0.7 +
+        impulse * 0.025 +
+        reloadState.lower * 0.35 -
+        swap * 0.6 +
+        lookY * (1 - ads),
+      reloadState.lower * 0.38 + 0.08 * (1 - ads),
       this.roll.step(
-        -reloadState.lower * 0.22 -
+        -reloadState.lower * 0.3 -
+          (shake ? (state.strafe || 0) * 0.025 * (1 - ads) : 0) -
           (slide ? 0.05 : 0) -
           Math.sin(phase * 0.5) * 0.012 * stride,
         dt,
@@ -110,9 +134,15 @@ export class WeaponAnimator {
     if (parts.hands?.[1]) {
       const h = parts.hands[1];
       h.position.copy(h.userData.restPosition);
-      h.position.y -= reloadState.extract * 0.16;
-      h.position.z += reloadState.lower * 0.14;
+      h.position.y -= reloadState.extract * 0.22;
+      h.position.z += reloadState.lower * 0.27;
+      h.position.x -= reloadState.extract * 0.045;
+      h.rotation.x = -reloadState.extract * 0.4;
+      if (h.userData.sleeve)
+        h.userData.sleeve.rotation.x = reloadState.extract * 0.25;
       h.rotation.z = -reloadState.lower * 0.25;
+      if (parts.pump && age < 0.28)
+        h.position.z += Math.max(0, Math.sin((age * Math.PI) / 0.28)) * 0.075;
     }
     if (parts.rotor) parts.rotor.rotation.z += dt * (state.spin || 0) * 100;
     if (parts.string?.isLine) {
@@ -135,13 +165,36 @@ export class WeaponAnimator {
       model.rotation.set(-0.23, 0.2, 0.06);
       model.position.y += 0.055 + Math.sin((state.time || 0) * 5) * 0.005;
     }
+    if (state.throwing > 0) {
+      const t = 1 - state.throwing / 0.36,
+        reach = Math.sin(t * Math.PI);
+      model.position.z -= reach * 0.2;
+      model.position.y += reach * 0.11;
+      model.rotation.x -= reach * 0.6;
+      model.rotation.z += reach * 0.16;
+    }
+    if (parts.slashTrail) {
+      parts.slashTrail.visible = false;
+      parts.slashTrail.material.opacity = 0;
+    }
     if (state.swing > 0) {
       const t = 1 - state.swing / 0.28;
       const cut = smooth(t / 0.48) * (1 - smooth((t - 0.5) / 0.5));
-      model.rotation.z -= cut * 1.05;
-      model.rotation.y -= cut * 0.6;
-      model.rotation.x -= Math.sin(t * Math.PI) * 0.15;
-      model.position.x -= cut * 0.06;
+      if (parts.weaponId === "fists" || parts.weaponId === "knife") {
+        model.position.z -= cut * 0.24;
+        model.position.x -= cut * 0.035;
+        model.rotation.x -= cut * 0.16;
+      } else {
+        model.rotation.z -= cut * 1.05;
+        model.rotation.y -= cut * 0.6;
+        model.rotation.x -= Math.sin(t * Math.PI) * 0.15;
+        model.position.x -= cut * 0.06;
+        if (parts.slashTrail) {
+          parts.slashTrail.visible = t > 0.17 && t < 0.72;
+          parts.slashTrail.material.opacity =
+            Math.sin(saturate((t - 0.17) / 0.55) * Math.PI) * 0.35;
+        }
+      }
     }
     if (state.inspect > 0 && !state.guard && !reloading) {
       const t = 1 - state.inspect / 1.8,

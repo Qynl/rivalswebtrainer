@@ -3,7 +3,8 @@
 - Work started (UTC): **2026-10-15T05:15:46+00:00**.
 - Implementation/regression pass completed (UTC): **2026-10-15T05:45:03+00:00**.
 - Elapsed through that point: **29.3 minutes**.
-- The user's requested two-hour work period is not represented as two hours of hands-on coding. A separately timed **120-minute isolated endurance run** began at **2026-10-15T05:44:36.328Z**; its result is pending below.
+- The user subsequently rejected a two-hour endurance run, requested a ten-minute limit, and asked for a larger graphics/animation pass. The two-hour process was stopped; it was not completed or counted as a pass.
+- First push: **057fa91**, before this latest graphics/animation revision.
 
 ## Completed implementation
 
@@ -19,6 +20,16 @@ Compact mirrored Arena reconstruction with taller cover, real ramp collision/sup
 ## Endurance runs
 
 1. Initial accelerated development run: Chromium's tab crashed after about **496 seconds**, during concurrent browser-suite activity. Last completed batch: **71**, or **146,970 simulation frames**. Last resource sample: **194 geometries, 11 textures, 17 shader programs**. This was **not a pass**; the cause was not conclusively established.
-2. Isolated run: audio generation disabled because simulation time is accelerated; real WebGL draws remain enabled. Requested duration: **120 minutes**. No concurrent browser-suite runs or source hot reloads are planned during this run. **Result pending.**
+2. Isolated 120-minute run: **cancelled at the user’s request after 103 seconds**, 19 batches / 39,330 simulation frames. Browser closure followed the explicit stop; this was not a spontaneous application failure or a completed pass.
+3. A first ten-minute attempt after the visual pass was intentionally restarted after 50 seconds / four batches when review found that consecutive same-slot items did not force a model refresh. The harness now resets the slot and asserts the actual model ID before rendering, and checks WebGL errors after every weapon draw.
+4. Corrected isolated ten-minute run started **2026-10-15T06:00:10.730Z**. No concurrent browser suite or application hot reloads. **Result pending.**
 
 The endurance check is not a hardware-FPS benchmark and cannot establish exact Roblox equivalence.
+
+## Latest revision checks
+
+- **79/79 unit tests passed**.
+- **8/8 browser tests passed** in a single full suite, including actual contact-shading pixel comparisons, resize, Performance bypass and disconnected production reload.
+- Production build passed.
+- The latest pass adds depth-aware contact shading, MSAA, richer lighting/panels, SCAR-style side hardware, sleeved arms, improved equip/reload/pump/recoil/movement action, blade trails, throw follow-through and eased bot death animation.
+- Endurance uses software-rendered Chromium at half resolution with audio/shadows disabled and post-processing enabled; it is not a real-hardware FPS measurement.

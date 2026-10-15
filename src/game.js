@@ -1,3 +1,4 @@
+import { ArenaRenderer } from "./rendering.js";
 import { WeaponAnimator } from "./animation.js";
 import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
@@ -44,8 +45,8 @@ export class Game {
       180,
     );
     this.camera.rotation.order = "YXZ";
-    this.scene.add(new THREE.HemisphereLight(0xddeaf5, 0x515f6a, 1.1));
-    const sun = new THREE.DirectionalLight(0xfff3e6, 2.25);
+    this.scene.add(new THREE.HemisphereLight(0xddeaf5, 0x515f6a, 0.85));
+    const sun = new THREE.DirectionalLight(0xfff3e6, 2.6);
     sun.position.set(-20, 38, 15);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
@@ -66,10 +67,13 @@ export class Game {
     this.weaponScene = new THREE.Scene();
     this.weaponScene.environment = this.environmentMap.texture;
     this.weaponScene.environmentIntensity = 0.8;
-    this.weaponScene.add(new THREE.HemisphereLight(0xe6eff6, 0x54616b, 2.2));
-    const wl = new THREE.DirectionalLight(0xffdfba, 3);
+    this.weaponScene.add(new THREE.HemisphereLight(0xe6eff6, 0x424e5b, 1.15));
+    const wl = new THREE.DirectionalLight(0xffebd5, 2.8);
     wl.position.set(-2, 3, 1);
     this.weaponScene.add(wl);
+    const rim = new THREE.DirectionalLight(0xbadbf2, 1.4);
+    rim.position.set(-3, 2, -3);
+    this.weaponScene.add(rim);
     this.weaponCamera = new THREE.PerspectiveCamera(
       70,
       innerWidth / innerHeight,
@@ -102,6 +106,7 @@ export class Game {
     this.player = null;
     this.score = [0, 0];
     this.matchStats = { shots: 0, hits: 0, kills: 0, deaths: 0, headshots: 0 };
+    this.presentation = new ArenaRenderer(this.renderer);
     this.mouseLook = new MouseLook();
     this.weaponAnimator = new WeaponAnimator();
     this.lookSway = { x: 0, y: 0 };
@@ -254,6 +259,7 @@ export class Game {
     this.camera.updateProjectionMatrix();
     this.weaponCamera.aspect = innerWidth / innerHeight;
     this.weaponCamera.updateProjectionMatrix();
+    this.presentation?.resize();
   }
   setSettings(settings) {
     this.settings = settings;
@@ -262,6 +268,7 @@ export class Game {
       Math.min(devicePixelRatio, settings.performance ? 1 : 1.75),
     );
     this.renderer.shadowMap.enabled = !settings.performance;
+    this.presentation?.resize();
   }
   preview(id) {
     this.world.build(id);
@@ -454,6 +461,7 @@ export class Game {
     this.deflectTime = 0;
     this.slot = slot;
     this.inspectTime = 0;
+    this.throwTime = 0;
     this.bowCharge = 0;
     this.bowRelease = false;
     this.spinTime = 0;
@@ -478,6 +486,7 @@ export class Game {
     );
     this.viewModel.scale.setScalar(0.78);
     this.weaponScene.add(this.viewModel);
+    this.weaponAnimator?.equip();
     this.switchTime = 0.22;
     this.audio.play("switch");
     this.events.update(this);
@@ -729,6 +738,7 @@ export class Game {
       );
     } else if (w.type === "rocket" || w.type === "launcher" || w.slot === 3) {
       this.spawnProjectile(p, origin, forward, id);
+      if (w.slot === 3) this.throwTime = 0.36;
       this.matchStats.shots++;
     } else if (w.type === "melee") {
       this.swingTime = 0.28;
@@ -967,8 +977,8 @@ export class Game {
     if (e.health <= 0) {
       e.alive = false;
       if (e.model) {
-        e.model.group.rotation.z = 1.45;
-        e.model.group.position.y = 0.2;
+        e.deathTime = 0;
+        e.deathRoll = e.model.group.rotation.z;
       }
       if (e.isPlayer) {
         this.matchStats.deaths++;
@@ -1438,8 +1448,21 @@ export class Game {
     }
     this.trigger = false;
   }
+  animateDeath(e, dt) {
+    if (e.model) {
+      e.deathTime = (e.deathTime || 0) + dt;
+      const t = THREE.MathUtils.smoothstep(e.deathTime, 0, 0.3);
+      e.model.group.rotation.z = THREE.MathUtils.lerp(
+        e.deathRoll || 0,
+        1.45,
+        t,
+      );
+      e.model.group.position.y = e.y + 0.2 * t + 0.08 * Math.sin(t * Math.PI);
+    }
+  }
   updateBot(e, dt) {
     if (!e.alive) {
+      this.animateDeath(e, dt);
       if (this.range && this.clock >= e.respawnAt) {
         e.alive = true;
         e.health = 100;
@@ -1673,6 +1696,7 @@ export class Game {
     this.deflectCooldown = Math.max(0, (this.deflectCooldown || 0) - dt);
     this.swingTime = Math.max(0, (this.swingTime || 0) - dt);
     this.inspectTime = Math.max(0, (this.inspectTime || 0) - dt);
+    this.throwTime = Math.max(0, (this.throwTime || 0) - dt);
     this.guardFlash = Math.max(0, (this.guardFlash || 0) - dt);
     if (this.quickMeleeTime > 0) {
       this.quickMeleeTime -= dt;
@@ -1725,6 +1749,7 @@ export class Game {
         }
       }
     } else if (this.state === "roundend") {
+      for (const e of this.entities) if (!e.alive) this.animateDeath(e, dt);
       this.roundEndTime -= dt;
       if (this.roundEndTime <= 0) {
         if (Math.max(...this.score) >= 5) this.finish();
@@ -1732,6 +1757,11 @@ export class Game {
       }
     }
     this.updateEffects(dt);
+  }
+  renderWorld() {
+    if (this.presentation && !this.settings.performance)
+      this.presentation.render(this.scene, this.camera);
+    else this.renderer.render(this.scene, this.camera);
   }
   frame(t) {
     const elapsed = Math.max(0, (t - this.last) / 1000);
@@ -1766,7 +1796,7 @@ export class Game {
       this.events.tick(this);
     } else this.accumulator = 0;
     this.renderer.autoClear = true;
-    this.renderer.render(this.scene, this.camera);
+    this.renderWorld();
     if (this.state !== "lobby" && this.player?.alive && this.viewModel) {
       this.renderer.autoClear = false;
       this.renderer.clearDepth();
@@ -1873,6 +1903,10 @@ export class Game {
         swing: this.swingTime,
         guard: this.deflectTime > 0,
         inspect: this.inspectTime,
+        throwing: this.throwTime,
+        verticalSpeed: p.vy,
+        landing: this.landingDip,
+        strafe: (p.vx * Math.cos(this.yaw) - p.vz * Math.sin(this.yaw)) / 11.5,
       });
       look.x *= Math.exp(-18 * dt);
       look.y *= Math.exp(-18 * dt);

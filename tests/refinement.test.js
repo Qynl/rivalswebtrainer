@@ -255,3 +255,46 @@ test("Scythe dash preserves upward jump momentum instead of flattening the jump"
   assert.equal(p.vy, 12);
   assert.equal(Math.hypot(p.vx, p.vz), 28);
 });
+
+test("blade trails follow the cut and disappear on recovery; fists use a straight jab", () => {
+  const katana = createViewModel("katana", WEAPONS.katana),
+    a = new WeaponAnimator();
+  a.update(katana, { dt: 1 / 60, swing: 0.14 });
+  assert.equal(katana.userData.slashTrail.visible, true);
+  assert.ok(katana.userData.slashTrail.material.opacity > 0);
+  a.update(katana, { dt: 1 / 60, swing: 0 });
+  assert.equal(katana.userData.slashTrail.visible, false);
+  const fists = createViewModel("fists", WEAPONS.fists),
+    b = new WeaponAnimator();
+  b.update(fists, { dt: 1 / 60, swing: 0.14 });
+  assert.ok(fists.position.z < -0.35);
+  assert.ok(Math.abs(fists.rotation.z) < 0.01);
+});
+test("equip starts below the frame and recovers without drifting weapon parts", () => {
+  const m = createViewModel("rifle", WEAPONS.rifle),
+    a = new WeaponAnimator();
+  a.equip();
+  assert.ok(a.y.value < -0.4);
+  for (let i = 0; i < 180; i++)
+    a.update(m, {
+      dt: 1 / 60,
+      swap: Math.max(0, 0.22 - i / 60),
+      reloading: i < 60,
+      reload: i / 60,
+      shotAge: 10,
+    });
+  assert.ok(Math.abs(m.position.y + 0.1) < 1e-6);
+  const h = m.userData.hands[1];
+  assert.ok(h.position.distanceTo(h.userData.restPosition) < 1e-10);
+  assert.ok(Math.abs(h.rotation.x) < 1e-10);
+  assert.equal(h.userData.sleeve.rotation.x, 0);
+});
+test("bot death collapse is eased over time and respects the platform height", () => {
+  const g = Object.create(Game.prototype),
+    e = { y: 4.4, deathRoll: 0, model: { group: new THREE.Group() } };
+  g.animateDeath(e, 0.1);
+  assert.ok(e.model.group.rotation.z > 0 && e.model.group.rotation.z < 1.45);
+  g.animateDeath(e, 0.2);
+  assert.equal(e.model.group.rotation.z, 1.45);
+  assert.ok(Math.abs(e.model.group.position.y - 4.6) < 1e-10);
+});

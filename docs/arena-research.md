@@ -33,10 +33,11 @@ No trustworthy published dimensions, Roblox stud measurements, collision export 
 
 ## Rendering decisions
 
-- Neutral sky/fill and a warmer directional key rather than strong purple weapon lighting.
-- Darker matte floor, panel seams, contact shadows and dynamic sun shadows.
+- A clearer blue sky, neutral fill, warmer sun, and a separate cool rim light for the weapon overlay rather than strong purple lighting.
+- Darker matte floor, panel seams with subtle slab-to-slab variation, contact shadows and dynamic sun shadows.
+- A single depth-aware finishing pass adds 12-tap local ambient occlusion, restrained sharpening and a neutral grade. The world render target uses two-sample MSAA; weapons are drawn afterwards. Performance mode bypasses the pass entirely.
 - Softer sky wisps instead of repeated hard-edged cloud stamps.
-- Static weapon details are batched by material; moving parts remain separate. The current first-person rifle contains 17 meshes versus 51 in the previous factory (node traversal measurement). This reduces weapon draw submissions; it is **not** a claim of a threefold frame-rate improvement.
+- Static weapon details are batched by material; moving parts remain separate. The first-person rifle initially fell from 51 to 17 meshes, and the latest pass uses 23 with additional side hardware and articulated black/white sleeves (node traversal measurements). This reduces weapon draw submissions; it is **not** a claim of a threefold frame-rate improvement.
 - Compact HUD and pre-match wizard retained; no extra permanent animation/debug panels.
 - All content is generated locally and remains available offline after production caching.
 
@@ -44,4 +45,12 @@ No trustworthy published dimensions, Roblox stud measurements, collision export 
 
 Unit tests cover ramp ascent/descent, side blocking, ceiling clearance, launch momentum, slope-aware navigation, exact spring integration at 30/60/144 Hz, repeated reload reset, geometry batching and limb pivots. Browser tests also check the actual generated layout is mirrored, ramp traversal remains grounded, window apertures can be traversed, and live reload/inspect controls work.
 
-The optional `npm run test:soak -- --minutes 10` repeatedly exercises all 23 loadout items, movement, jumping, effects, projectile cleanup, weapon re-equipping and real WebGL draws. It checks finite entity state and bounded geometry/texture/program allocations. It is a stability/resource check on software-rendered Chromium, not a hardware FPS benchmark. Change `10` to `120` to request a two-hour endurance run; the script does not silently run two hours by default.
+The optional `npm run test:soak -- --minutes 10` repeatedly exercises all 23 loadout items, movement, jumping, effects, projectile cleanup, weapon re-equipping and real WebGL draws. It checks finite entity state and bounded geometry/texture/program allocations. It is a stability/resource check on software-rendered Chromium, not a hardware FPS benchmark. The user explicitly limited this validation to ten minutes. The accelerated run uses half-resolution rendering, audio and dynamic shadows disabled, and the depth-aware world pass enabled. Each rendered model is checked against its requested weapon ID, including consecutive same-slot items; WebGL errors are checked after each draw.
+
+## Latest graphics and animation pass
+
+- Reload presentation now raises and banks the receiver while the support hand tracks the magazine; the wrist and sleeve articulate separately, and the shotgun hand follows the pump.
+- Equipping starts below the frame; firing adds a short local impulse, and movement adds modest jump/landing and lateral weapon inertia. These are weapon-space changes, not mouse pitch/yaw recoil.
+- Fists/knife use forward jabs; Katana/Scythe retain sweeping cuts with a short fading blade trail. Utility throws have a follow-through.
+- Bot deaths ease into a fall over 0.3 seconds at their current platform height, including the round-ending elimination. This is an authored collapse, not a physics ragdoll.
+- A real WebGL regression scene compares occlusion on/off pixel output, checks target resizing and GL errors, and verifies the Performance-mode bypass. Unit tests cover equip/reload recovery, trail cleanup and platform-height death easing.

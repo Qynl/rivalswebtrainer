@@ -120,9 +120,9 @@ export class ArenaGraphics {
     c.height = 1024;
     const g = c.getContext("2d");
     const gradient = g.createLinearGradient(0, 0, 0, 1024);
-    gradient.addColorStop(0, id === "blockout" ? "#96a7b4" : "#3b78a9");
-    gradient.addColorStop(0.35, id === "blockout" ? "#c5cdd3" : "#9cc5df");
-    gradient.addColorStop(0.52, id === "blockout" ? "#e1e5e7" : "#dfddce");
+    gradient.addColorStop(0, id === "blockout" ? "#527a9c" : "#3b78a9");
+    gradient.addColorStop(0.35, id === "blockout" ? "#adc6d6" : "#9cc5df");
+    gradient.addColorStop(0.52, id === "blockout" ? "#d9e1e4" : "#dfddce");
     gradient.addColorStop(0.7, "#a9bdc7");
     gradient.addColorStop(1, "#718c9f");
     g.fillStyle = gradient;

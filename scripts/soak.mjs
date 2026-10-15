@@ -31,6 +31,7 @@ await page.evaluate(() => {
   g.frame = () => {};
   g.renderer.setPixelRatio(0.5);
   g.renderer.shadowMap.enabled = false;
+  g.presentation.resize();
   g.audio.play = () => {};
   g.audio.noiseHit = () => {};
   g.world.build("blockout");
@@ -50,6 +51,7 @@ try {
         const { WEAPONS } = await import("/src/data.js");
         const g = window.__arena;
         let frames = 0;
+        const rendered = [];
         for (const [id, w] of Object.entries(WEAPONS)) {
           g.state = "playing";
           g.range = true;
@@ -63,7 +65,12 @@ try {
           g.player.vz = 0;
           g.loadout[w.slot] = id;
           g.ammunition[w.slot] = { mag: w.mag, reserve: w.reserve || 100 };
+          // Consecutive entries share a slot. Force a refresh, rather than
+          // accidentally rendering the previous model with the next gun's stats.
+          g.slot = -1;
           g.equip(w.slot);
+          if (g.viewModel.userData.weaponId !== id)
+            throw new Error("Wrong rendered weapon: " + id);
           g.cooldown = 0;
           g.blindTime = 0;
           g.keys.clear();
@@ -99,14 +106,19 @@ try {
           g.keys.clear();
           g.mouseDown = false;
           g.renderer.autoClear = true;
-          g.renderer.render(g.scene, g.camera);
+          g.renderWorld();
           g.renderer.autoClear = false;
           g.renderer.clearDepth();
           g.renderer.render(g.weaponScene, g.weaponCamera);
-          g.renderer.getContext().finish();
+          const gl = g.renderer.getContext();
+          gl.finish();
+          if (gl.getError() !== gl.NO_ERROR)
+            throw new Error("WebGL error while drawing " + id);
+          rendered.push(id);
         }
         return {
           frames,
+          renderedItems: rendered.length,
           geometries: g.renderer.info.memory.geometries,
           textures: g.renderer.info.memory.textures,
           programs: g.renderer.info.programs.length,

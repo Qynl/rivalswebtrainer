@@ -9,6 +9,7 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
   if (data.slot === 2 || ["grenade", "smoke", "molotov", "rpg"].includes(id))
     return null;
   const g = new THREE.Group();
+  g.userData.weaponId = id;
   const mats = {};
   const material = (color, metal = 0.45, rough = 0.4) => {
     const key = `${color}:${metal}:${rough}`;
@@ -80,7 +81,22 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
       fabric = material(0x293740, 0, 0.95);
     box(0, 0, 0, 0.11, 0.095, 0.15, skin, h);
     box(0, -0.025, 0.07, 0.12, 0.09, 0.09, fabric, h);
-    box(0, -0.04, 0.22, 0.105, 0.105, 0.24, skin, h);
+    const sleeve = new THREE.Group();
+    sleeve.position.set(0, -0.04, 0.08);
+    h.add(sleeve);
+    h.userData.sleeve = sleeve;
+    box(0, 0, 0.14, 0.115, 0.115, 0.25, fabric, sleeve);
+    box(
+      0,
+      0.008,
+      0.16,
+      0.103,
+      0.105,
+      0.18,
+      material(0xdce3e5, 0, 0.92),
+      sleeve,
+    );
+    box(0, 0.002, 0.025, 0.12, 0.12, 0.045, fabric, sleeve);
     // A thumb, knuckle strip and separate finger ridges make a readable grip.
     box(-0.052, -0.025, -0.02, 0.035, 0.06, 0.065, skin, h).rotation.z = -0.35;
     for (let i = 0; i < 3; i++)
@@ -472,6 +488,31 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
       hand(0.24, -0.34, -0.5);
       hand(0.24, -0.29, -0.94);
     }
+  }
+  if (id === "rifle") {
+    // Readable SCAR-style hardware on both sides, including the side visible in FPS.
+    for (const side of [-1, 1]) {
+      const x = 0.24 + side * 0.073;
+      box(x, -0.145, -0.69, 0.008, 0.055, 0.12, dark);
+      box(x + side * 0.005, -0.145, -0.695, 0.008, 0.033, 0.075, steel);
+      for (let i = 0; i < 5; i++)
+        box(x, -0.14, -0.87 - i * 0.032, 0.009, 0.027, 0.013, dark);
+      cyl(x, -0.182, -0.58, 0.012, 0.01, dark, "x");
+      const selector = box(
+        x + side * 0.006,
+        -0.18,
+        -0.59,
+        0.009,
+        0.009,
+        0.036,
+        silver,
+      );
+      selector.rotation.x = -0.35;
+      for (const z of [-0.57, -0.78])
+        cyl(x + side * 0.005, -0.12, z, 0.007, 0.009, silver, "x");
+    }
+    for (let i = 0; i < 5; i++)
+      box(0.24, -0.39 + i * 0.018, -0.54, 0.08, 0.006, 0.007, dark);
   }
   if (data.slot < 2 && data.type !== "bow" && data.type !== "flame") {
     const flash = muzzleFlash(

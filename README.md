@@ -61,18 +61,18 @@ Scythe dash recharges in **3 seconds**. Katana's frontal guard lasts **1.1 secon
 
 Reloads animate magazine extraction/insertion, bolt motion and the support hand. Weapons ease into ADS/equip positions; T inspects them. Bots animate around hip/shoulder joints instead of rotating entire limbs around their centres. Static weapon geometry is batched by material to reduce draw submissions.
 
-Graphics use darker panel-seamed concrete, a compact edge HUD, distinct original weapon models and 3D loadout previews, original procedural concrete/metal/window textures, an atmospheric sky, environment-lit metal, rounded geometry, armored bots, building vents/windows, and emissive arena trims. Everything is generated locally. Enable **Performance mode** in Settings to reduce render resolution and disable dynamic shadows on slower hardware.
+Graphics use darker panel-seamed concrete, a compact edge HUD, distinct original weapon models and 3D loadout previews, original procedural concrete/metal/window textures, an atmospheric sky, environment-lit metal, rounded geometry, armored bots, building vents/windows, and emissive arena trims. Everything is generated locally. The world is finished with depth-aware contact shading, two-sample MSAA, gentle sharpening and a neutral color grade; the weapon overlay stays crisp. Reloads include a raised/banked receiver, magazine extraction, supporting-hand/wrist motion and a bolt rack. Equip, jump/landing inertia, strafing, throw follow-through, blade trails and eased bot deaths provide distinct action feedback. Enable **Performance mode** in Settings to reduce render resolution and bypass post-processing and dynamic shadows on slower hardware.
 
 ## Tests
 
 ```sh
-npm test                   # 76 input, abilities, physics, movement, navigation, animation and combat tests
+npm test                   # 79 input, abilities, physics, movement, navigation, animation and combat tests
 npm run build              # Production build + offline cache generation
 npx playwright install chromium
 npm run test:browser       # Browser integration test
 ```
 
-You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tests. The integration tests validate an actual WebGL frame and pointer lock, then disable rendering to run deterministic combat/AI checks efficiently on machines using software graphics. They exercise loadout selection, shots/headshots, reloads, jumps, grenade/smoke/molotov lifecycles, pause/settings, map selection, team bots, five-round victory, results, and mobile layout. Seven browser integration tests also cover wizard steps, draft cancellation, compact HUD dimensions, tall walls, real Bow/Medkit input, Flashbang throws and rematch selection. Additional browser tests check arena floor layers, actual stair traversal, slide-jump momentum, Shift/F controls, katana reflection, mouse spike filtering, graphics settings, and the production cache/reload with networking disabled.
+You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tests. The integration tests validate an actual WebGL frame and pointer lock, then disable rendering to run deterministic combat/AI checks efficiently on machines using software graphics. They exercise loadout selection, shots/headshots, reloads, jumps, grenade/smoke/molotov lifecycles, pause/settings, map selection, team bots, five-round victory, results, and mobile layout. The eight-test browser suite also covers wizard steps, draft cancellation, compact HUD dimensions, tall walls, real Bow/Medkit input, Flashbang throws and rematch selection. Additional browser tests check arena floor layers, actual stair traversal, slide-jump momentum, Shift/F controls, katana reflection, mouse spike filtering, graphics settings, and the production cache/reload with networking disabled.
 
 ## Structure
 
@@ -87,6 +87,7 @@ You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tes
 - `src/audio.js`: synthesized sound effects.
 - `src/input.js`: pointer-lock mouse-packet validation.
 - `src/graphics.js`: offline procedural textures, palette and sky.
+- `src/rendering.js`: depth-aware world finishing pass, antialiasing, render-target lifecycle and resize handling.
 - `src/main.js`, `src/style.css`, `index.html`: lobby, loadout, guide, HUD, menus.
 - `vite.config.js`: bundling, preview-host support and production offline cache.
 
@@ -100,8 +101,8 @@ With the development preview running, an optional stability/resource run exercis
 
 ```sh
 npm run test:soak -- --minutes 10
-# A two-hour endurance run, if explicitly wanted:
-npm run test:soak -- --minutes 120
 ```
+
+The soak forces each of the 23 actual view models to be equipped, including consecutive weapons in the same slot, and checks for WebGL errors after every draw. It uses half-resolution rendering with audio and dynamic shadows disabled; the contact-shading pass remains enabled.
 
 Use `BROWSER_EXECUTABLE` when Chromium is installed outside Playwright's default location. Do not edit/rebuild the app during this development-server soak, because Vite hot reload resets the test session. This is not a hardware FPS benchmark.
