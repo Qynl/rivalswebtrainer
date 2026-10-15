@@ -62,6 +62,10 @@ test("corrected Bow faces downrange with a left grip/right draw in hip fire and 
       g.renderer.autoClear = true;
       g.events.update(g);
       return {
+        bodySkew: Math.max(...[p.bowUpper, p.bowLower].flatMap(limb =>
+          limb.children.find(o => o.geometry?.type === "TubeGeometry")
+            .geometry.parameters.path.getPoints(96).map(v => Math.abs(v.x)))),
+        bodyArrowOffset: Math.abs(p.bowUpper.position.x - p.arrowNock.x),
         forward: tip.clone().sub(nock).normalize().z,
         tipZ: tip.z,
         nockZ: nock.z,
@@ -76,6 +80,8 @@ test("corrected Bow faces downrange with a left grip/right draw in hip fire and 
         pitch: g.pitch,
       };
     }, pose);
+    expect(r.bodySkew).toBeLessThan(1e-10);
+    expect(r.bodyArrowOffset).toBeLessThan(0.02);
     expect(r.forward).toBeLessThan(-0.99);
     expect(r.tipZ).toBeLessThan(r.nockZ);
     if (pose !== "ads") expect(r.gripX).toBeLessThan(0);

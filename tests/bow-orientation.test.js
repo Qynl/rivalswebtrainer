@@ -10,7 +10,7 @@ test("Bow is left-hand held with rearward limbs/string and an arrow pointing for
   const m = createViewModel("bow", WEAPONS.bow),
     p = m.userData,
     a = new WeaponAnimator();
-  assert.equal(p.bowOrientation, "right-handed-forward-v3");
+  assert.equal(p.bowOrientation, "planar-forward-v4");
   assert.ok(p.bowGripPoint.x < 0);
   assert.ok(p.hipYaw < 0);
   assert.ok(p.drawHand.rotation.y > 0.5);
@@ -89,7 +89,7 @@ test("world Bow shares the corrected facing and both operator wrists target the 
   );
   const p = m.parts,
     w = p.onlineSocket.userData.weapon;
-  assert.equal(w.userData.bowOrientation, "right-handed-forward-v3");
+  assert.equal(w.userData.bowOrientation, "planar-forward-v4");
   assert.ok(
     p.botLeftGrip.distanceTo(
       w.userData.bowGripPoint.clone().multiplyScalar(0.85).add(w.position),
@@ -101,4 +101,29 @@ test("world Bow shares the corrected facing and both operator wrists target the 
     ) < 1e-10,
   );
   Game.prototype.disposeVisual.call({}, m.group);
+});
+
+test("Bow limb backbones bend in the arrow/string plane, not sideways across the grip", () => {
+  const m = createViewModel("bow", WEAPONS.bow), p = m.userData;
+  for (const [limb, cam] of [[p.bowUpper, p.bowTopCam], [p.bowLower, p.bowBottomCam]]) {
+    const tube = limb.children.find(o => o.geometry?.type === "TubeGeometry"),
+      curve = tube.geometry.parameters.path,
+      points = curve.points;
+    // Inspect actual generated geometry, not just an orientation label or anchor.
+    for (const point of curve.getPoints(96)) assert.ok(Math.abs(point.x) < 1e-10, "body must not sweep sideways");
+    assert.ok(points[2].z > points[1].z);
+    assert.ok(points.at(-1).z > points[2].z, "tips must sweep toward the archer");
+    assert.equal(limb.position.x, cam.position.x);
+    assert.equal(limb.position.x, p.bowGripPoint.x);
+    assert.ok(Math.abs(limb.position.x - p.arrowNock.x) < .02);
+    // The string should be behind, not crossing through the middle of the limb.
+    const tip = points.at(-1).clone().add(limb.position);
+    for (const point of points.slice(0, -1)) {
+      const y = point.y + limb.position.y,
+        t = (y - tip.y) / (p.arrowNock.y - tip.y),
+        stringZ = THREE.MathUtils.lerp(tip.z, p.arrowNock.z, t);
+      assert.ok(stringZ - (point.z + limb.position.z) > .027);
+    }
+  }
+  Game.prototype.disposeVisual.call({}, m);
 });

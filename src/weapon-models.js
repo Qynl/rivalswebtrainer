@@ -487,8 +487,8 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
     }
   } else if (id === "bow") {
     g.userData.hipYaw = -0.08;
-    g.userData.bowOrientation = "right-handed-forward-v3";
-    g.userData.bowGripPoint = new THREE.Vector3(-0.34, -0.11, -0.7);
+    g.userData.bowOrientation = "planar-forward-v4";
+    g.userData.bowGripPoint = new THREE.Vector3(-0.24, -0.11, -0.7);
     g.userData.bowPullPoint = new THREE.Vector3(-0.23, -0.08, -0.52);
     g.userData.arrowTip = new THREE.Vector3(-0.23, -0.055, -1.3025);
     g.userData.arrowNock = new THREE.Vector3(-0.23, -0.055, -0.54);
@@ -499,16 +499,17 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
     g.userData.limbs = limbs;
     for (const sign of [-1, 1]) {
       const pivot = new THREE.Group();
-      pivot.position.set(-0.34, 0.015, -0.75);
+      pivot.position.set(-0.24, 0.015, -0.75);
       limbs.add(pivot);
       g.userData[sign > 0 ? "bowUpper" : "bowLower"] = pivot;
       const points = [
         [0, sign * 0.08, 0],
-        [0.01, sign * 0.25, 0.015],
-        [0.065, sign * 0.39, 0.08],
-        [0.1, sign * 0.47, 0.13],
+        [0, sign * 0.25, 0.025],
+        [0, sign * 0.39, 0.085],
+        [0, sign * 0.47, 0.13],
       ];
       pivot.userData.tipPosition = new THREE.Vector3(...points.at(-1));
+      // Bend only toward the archer in the string plane, never sideways across it.
       tube(points, 0.027, carbon, pivot);
       cyl(0, sign * 0.08, 0, 0.034, 0.045, silver, "x", pivot);
       tube(
@@ -528,19 +529,19 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
         spoke.rotation.x = (i * Math.PI) / 4;
       }
     }
-    box(-0.34, -0.04, -0.75, 0.07, 0.29, 0.095, carbon);
+    box(-0.24, -0.04, -0.75, 0.07, 0.29, 0.095, carbon);
     for (let i = 0; i < 5; i++)
-      box(-0.34, -0.005 - i * 0.024, -0.695, 0.075, 0.01, 0.013, grip);
+      box(-0.24, -0.005 - i * 0.024, -0.695, 0.075, 0.01, 0.013, grip);
     for (const y of [-0.16, 0.1])
-      cyl(-0.385, y, -0.75, 0.011, 0.014, silver, "x");
+      cyl(-0.285, y, -0.75, 0.011, 0.014, silver, "x");
     const sight = new THREE.Mesh(
       new THREE.TorusGeometry(0.035, 0.006, 6, 16),
       silver,
     );
-    sight.position.set(-0.265, 0.03, -0.86);
-    box(-0.304, -0.01, -0.8, 0.09, 0.014, 0.12, silver);
+    sight.position.set(-0.165, 0.03, -0.86);
+    box(-0.204, -0.01, -0.8, 0.09, 0.014, 0.12, silver);
     g.add(sight);
-    box(-0.265, 0.03, -0.86, 0.007, 0.007, 0.014, material(0x9ee0b3, 0.3, 0.3));
+    box(-0.165, 0.03, -0.86, 0.007, 0.007, 0.014, material(0x9ee0b3, 0.3, 0.3));
     // Aim through the actual sight, not the nock (which lets the pulling hand cover the target).
     g.userData.adsPoint = sight.position.clone();
     const string = new THREE.Line(
@@ -554,7 +555,7 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
     string.frustumCulled = false;
     g.add(string);
     g.userData.string = string;
-    box(-0.34, -0.07, -0.75, 0.055, 0.16, 0.06, grip);
+    box(-0.24, -0.07, -0.75, 0.055, 0.16, 0.06, grip);
     const arrow = new THREE.Group();
     g.add(arrow);
     g.userData.arrow = arrow;
@@ -572,7 +573,7 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
       box(-0.23, -0.055, -0.62, 0.045, 0.004, 0.085, silver, arrow).rotation.z =
         a;
     if (hands) {
-      hand(-0.34, -0.11, -0.7);
+      hand(-0.24, -0.11, -0.7);
       g.userData.drawHand = hand(-0.23, -0.08, -0.52);
       g.userData.drawHand.rotation.y = 1;
       g.userData.drawHand.userData.sleeve.scale.z = 0.72;

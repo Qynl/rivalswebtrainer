@@ -168,7 +168,7 @@ See [the combat-readability report](docs/combat-readability-pass.md) for validat
 ## Tests
 
 ```sh
-npm test                   # 279 input, abilities, physics, movement, rigging, audio, rendering and combat tests
+npm test                   # 280 input, abilities, physics, movement, rigging, audio, rendering and combat tests
 npm run build              # Production build + offline cache generation
 npx playwright install chromium
 npm run test:browser       # Browser integration test
@@ -245,4 +245,4 @@ node scripts/movement-audit.mjs <revision>  # requires that revision's local Git
 
 This samples both controllers and their own physics constants at 600 Hz without checking out another branch. It reports acceleration, stopping, reversal drift and flat slide travel in trainer units—not measured Roblox values or hardware FPS. The latest values and trade-offs are in [the implementation report](docs/hour-pass.md).
 
-Bow direction regression notes: [forward-facing Bow correction](docs/bow-direction.md).
+Bow direction regression notes: [Bow body-plane correction](docs/bow-direction.md).

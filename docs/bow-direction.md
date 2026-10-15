@@ -1,13 +1,16 @@
-# Forward-facing Bow correction
+# Bow body-plane correction
 
-The earlier Bow looked backwards in the supplied first-person screenshot: its limb tips swept toward the target and its right-side grip/draw pose read incorrectly. This correction changes the actual shared model/rig, not the projectile aim or camera.
+The earlier handedness/direction fix did not resolve the user's complaint about the **curved body/limbs**. Its limb backbone still swept sideways by 10 cm between the riser and cams. This made the body twisted relative to the arrow/string plane; the previous orientation tests did not check that geometry.
 
-- Left hand holds the bow on the left; the right hand pulls the string, with its forearm angled back toward the right shoulder. Hip yaw points inward toward the crosshair.
-- Limb tips/cams now sweep toward the archer, behind the riser. The string nock stays behind those tips; the arrowhead stays ahead of the riser and points along local **negative Z** throughout draw.
-- String endpoints and cams are calculated from the real animated limb-tip transform. This removes the previous guessed endpoint positions and keeps all axes attached through rest, partial draw and full draw.
-- The sight has a connected mounting bracket; pivot bushings are attached to the limbs instead of appearing as floating ovals in front of them.
-- World-held Bows use the same facing; operator wrists target the actual left-grip and right-pull coordinates.
-- Arrow speed, damage, 0.8-second charge, gravity, release/re-nocking and mouse aim are unchanged. Self-immunity and RPG/Knife combos remain intact.
-- The existing low-ammo color no longer warns on a completely full one-round Bow/RPG magazine.
+## Current correction
 
-Validation: 279 Node tests pass. Three new unit regressions cover facing/handedness, exact limb/cam/string linkage across draw, forward arrow geometry, material validity, clear ADS and world wrist alignment. Five real Chromium checks passed together, including rest/full-draw/ADS screenshots, actual forward arrow release/re-nocking, the existing loadout/Bow input flow, trickshots and all 26 rendered weapon models. The updated production build passes. Screenshots are inspection artifacts in `/tmp`, not committed assets. Software WebGL checks establish correctness, not a representative device frame rate.
+- Upper and lower limb backbones now curve only in the vertical/fore-aft plane. They no longer bend laterally across the grip. Their tips sweep toward the archer, not toward the target.
+- Riser, pivot bushings, grip and cams share the same lateral axis, within 1 cm of the arrow/string. The sight and its bracket follow the riser; the support hand and world-held operator wrist follow the actual grip.
+- This is a change to the shared model geometry, **not** another whole-weapon flip. The existing left-hold/right-draw orientation, pulling-hand rotation and limb/cam/string animation remain intact.
+- Arrow direction stays local **negative Z**. Arrow speed, damage, charge duration, gravity, release/re-nocking, camera aim, self-immunity and RPG/Knife combos are unchanged.
+
+## Validation
+
+- 280 Node tests pass. The added regression samples the actual TubeGeometry curve, checks that it does not sweep sideways, checks body/grip/cam/arrow alignment, and verifies that the resting string clears the middle of each limb.
+- Five focused Chromium tests passed together: Bow rest/full-draw/ADS and actual arrow release/re-nocking, loadout/input flow, explosive-launch/Knife trickshots, operator rendering and all 26 weapon models. The Bow browser test additionally checks the real loaded limb curves, so an old laterally bent model fails even if its arrow still flies forward.
+- Rest, full-draw and ADS screenshots were inspected. Production build passes. Software WebGL validation is not a hardware frame-rate measurement.
