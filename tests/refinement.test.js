@@ -1,3 +1,4 @@
+import { weaponPresentation } from "../src/weapon-presentation.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as THREE from "three";
@@ -303,7 +304,9 @@ test("equip starts below the frame and recovers without drifting weapon parts", 
       reload: i / 60,
       shotAge: 10,
     });
-  assert.ok(Math.abs(m.position.y + 0.1) < 1e-6);
+  assert.ok(
+    Math.abs(m.position.y - (-0.1 + weaponPresentation("rifle").y)) < 1e-6,
+  );
   const h = m.userData.hands[1];
   assert.ok(h.position.distanceTo(h.userData.restPosition) < 1e-10);
   assert.ok(Math.abs(h.rotation.x) < 1e-10);

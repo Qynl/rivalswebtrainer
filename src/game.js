@@ -1,3 +1,4 @@
+import { weaponPresentation } from "./weapon-presentation.js";
 import { operatorPose } from "./operator-pose.js";
 import { weaponFeel, shotEnvelope } from "./weapon-feel.js";
 import { updateScopeGlint } from "./scope-glint.js";
@@ -733,7 +734,9 @@ export class Game {
       this.loadout[slot],
       WEAPONS[this.loadout[slot]],
     );
-    this.viewModel.scale.setScalar(0.78);
+    this.viewModel.scale.setScalar(
+      weaponPresentation(this.loadout[slot]).scale,
+    );
     this.weaponScene.add(this.viewModel);
     this.weaponAnimator?.equip();
     this.switchTime = equipTime;

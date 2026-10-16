@@ -2,21 +2,22 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 
 export const WEAPON_FINISHES = Object.freeze({
-  rifle: 0xb7a480,
-  burst: 0x65775e,
-  smg: 0x546d78,
-  sniper: 0x778870,
-  pistol: 0x91a0a5,
-  revolver: 0xaab4b5,
-  burstpistol: 0x537c83,
-  dualpistols: 0x938477,
-  uzi: 0x70818a,
-  shotgun: 0x656b6d,
-  shorty: 0x88745f,
-  launcher: 0x9a835e,
-  minigun: 0x71817d,
-  paintball: 0x7ba9ac,
-  flame: 0x887154,
+  rifle: 0xc0a16f,
+  burst: 0x758c68,
+  smg: 0x638391,
+  sniper: 0x78905f,
+  pistol: 0xa5b2b8,
+  revolver: 0xbfc8ce,
+  burstpistol: 0x4b8b92,
+  dualpistols: 0x9a8770,
+  uzi: 0x718b96,
+  shotgun: 0x728187,
+  shorty: 0xa18b69,
+  launcher: 0xb79c62,
+  minigun: 0x768b8c,
+  paintball: 0x51aeb3,
+  flame: 0x997640,
+  rpg: 0x788556,
 });
 // Purpose-built secondary forms, not a bigger primitive receiver. This runs once,
 // before the model's normal material batching, for FPS, showroom and remote use.
@@ -128,11 +129,11 @@ export function detailWeapon(
         leg.rotation.y = side * 0.07;
         fastener(0.24 + side * 0.09, -0.16, -0.97);
       }
-      cyl(0.24, 0.09, -0.75, 0.029, 0.05, black, "y");
+      cyl(0.24, 0.132, -0.75, 0.033, 0.055, black, "y");
       for (let i = 0; i < 7; i++)
         box(
           0.235 + (i % 2) * 0.009,
-          0.118,
+          0.164,
           -0.772 + i * 0.007,
           0.034,
           0.007,

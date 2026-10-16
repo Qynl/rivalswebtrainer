@@ -1,3 +1,4 @@
+import { weaponPresentation } from "./weapon-presentation.js";
 import { knifeStabPose, sniperBoltPose } from "./weapon-actions.js";
 import * as THREE from "three";
 import { BOW_DRAW_TIME } from "./combat-rules.js";
@@ -127,9 +128,10 @@ export class WeaponAnimator {
     const reloadState = reloadPose(reloading ? reload : 0),
       stride = grounded ? motion : motion * 0.12;
     const profile = model.userData.poseOffset || {};
+    const framing = weaponPresentation(model.userData.weaponId);
     const sight = model.userData.adsPoint;
-    const hipX = 0.09 + (profile.x || 0),
-      hipY = -0.1 + (profile.y || 0);
+    const hipX = 0.09 + (profile.x || 0) + framing.x,
+      hipY = -0.1 + (profile.y || 0) + framing.y;
     const aimX = sight ? -sight.x * model.scale.x : hipX - 0.277;
     const aimY = sight ? -sight.y * model.scale.y : hipY - 0.015;
     const poseX =
@@ -153,7 +155,12 @@ export class WeaponAnimator {
         : 0);
     const impulse = shotEnvelope(age, model.userData.weaponId);
     const poseZ =
-      -0.16 + (profile.z || 0) + ads * 0.14 + kick * 0.35 + impulse * 0.024;
+      -0.16 +
+      (profile.z || 0) +
+      framing.z +
+      ads * 0.14 +
+      kick * 0.35 +
+      impulse * 0.024;
     model.position.set(
       this.x.step(poseX, dt, 26),
       this.y.step(poseY, dt, 24),

@@ -1,3 +1,4 @@
+import { signatureWeapon } from "./weapon-signatures.js";
 import { createScopeGlint } from "./scope-glint.js";
 import { buildSecondary } from "./secondary-models.js";
 import { detailWeapon, WEAPON_FINISHES } from "./weapon-detailing.js";
@@ -24,8 +25,8 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
   const dark = material(0x202832, 0.35, 0.6),
     steel = material(
       WEAPON_FINISHES[id] || 0x596777,
-      id === "rifle" ? 0.25 : 0.7,
-      id === "rifle" ? 0.65 : 0.3,
+      id === "rifle" ? 0.3 : 0.62,
+      id === "rifle" ? 0.55 : 0.38,
     ),
     silver = material(0xb8c6ce, 0.7, 0.25);
   const grip = material(0x363d43, 0.05, 0.9),
@@ -847,7 +848,7 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
     stock();
     barrel(
       id === "sniper" ? -1.23 : -1.07,
-      0.026,
+      id === "sniper" ? 0.034 : 0.026,
       id === "sniper" ? 0.58 : 0.37,
     );
     box(0.24, -0.16, -0.94, 0.13, 0.11, 0.22, dark);
@@ -856,22 +857,36 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
       box(0.24, -0.094, -0.85 - i * 0.037, 0.14, 0.012, 0.018, steel);
     }
     if (id === "sniper") {
-      g.userData.adsPoint = new THREE.Vector3(0.24, 0.028, -0.545);
+      g.userData.adsPoint = new THREE.Vector3(0.24, 0.04, -0.505);
       g.userData.magazine = rememberPart(
         box(0.24, -0.31, -0.75, 0.1, 0.12, 0.15, dark),
       );
-      cyl(0.24, 0.028, -0.74, 0.053, 0.34, dark);
-      cyl(0.24, 0.028, -0.91, 0.063, 0.035, steel);
-      cyl(0.24, 0.028, -0.57, 0.055, 0.04, steel);
-      const lens = new THREE.MeshStandardMaterial({
-        color: 0x4f91a9,
-        metalness: 0.65,
-        roughness: 0.1,
+      cyl(0.24, 0.04, -0.74, 0.057, 0.37, dark);
+      cyl(0.24, 0.04, -0.945, 0.083, 0.09, steel);
+      cyl(0.24, 0.04, -0.547, 0.068, 0.075, steel);
+      cyl(0.24, 0.04, -0.505, 0.062, 0.009, dark);
+      cyl(0.24, 0.04, -0.993, 0.076, 0.009, dark);
+      const lens = new THREE.MeshPhysicalMaterial({
+        color: 0x347f96,
+        metalness: 0.45,
+        roughness: 0.16,
+        clearcoat: 1,
+        clearcoatRoughness: 0.07,
       });
-      cyl(0.24, 0.028, -0.545, 0.048, 0.005, lens);
-      cyl(0.24, 0.028, -0.932, 0.057, 0.005, lens);
-      box(0.24, -0.06, -0.7, 0.036, 0.095, 0.1, dark);
-      cyl(0.3, 0.028, -0.74, 0.025, 0.06, steel, "x");
+      const rearGlass = add(
+        new THREE.SphereGeometry(0.057, 20, 12),
+        lens,
+        0.24,
+        0.04,
+        -0.503,
+      );
+      rearGlass.scale.z = 0.14;
+      cyl(0.24, 0.04, -0.999, 0.069, 0.005, lens);
+      for (const z of [-0.83, -0.64]) {
+        box(0.24, -0.052, z, 0.06, 0.09, 0.045, dark);
+        cyl(0.24, 0.04, z, 0.064, 0.03, steel);
+      }
+      cyl(0.308, 0.04, -0.74, 0.029, 0.065, steel, "x");
       const bolt = new THREE.Group();
       bolt.position.set(0.31, -0.15, -0.57);
       g.add(bolt);
@@ -886,9 +901,10 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
       );
       bolt.attach(handle);
       g.userData.sniperBolt = rememberPart(bolt);
-      g.userData.scopeFront = new THREE.Vector3(0.24, 0.028, -0.936);
+      g.userData.scopeFront = new THREE.Vector3(0.24, 0.04, -1.004);
       if (!hands) {
         g.userData.scopeGlint = createScopeGlint();
+        g.userData.scopeGlint.position.copy(g.userData.scopeFront);
         g.add(g.userData.scopeGlint);
       }
     } else {
@@ -961,6 +977,17 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
       box(0.24, -0.39 + i * 0.018, -0.54, 0.08, 0.006, 0.007, dark);
   }
   detailWeapon(g, id, data, {
+    box,
+    cyl,
+    tube,
+    material,
+    dark,
+    steel,
+    silver,
+    grip,
+    hands,
+  });
+  signatureWeapon(g, id, data, {
     box,
     cyl,
     tube,

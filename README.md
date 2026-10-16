@@ -285,3 +285,12 @@ See [the player/gun feedback report](docs/player-gun-feedback.md) and [multiplay
 Movement is now less exaggerated: run/melee speed **10.6/12**, a **0.27 s** slide with a smaller boost, **0.72 s** slide cooldown, and a **1.57-unit** flat jump. Slides require actual movement, releasing movement brakes them, and slide-jumps no longer multiply velocity or add an extra upward kick. Air steering remains directional but takes a readable turn rather than snapping around. Held Space no longer chains automatic jumps; tap again for another jump or the equipped Fists/Bow extra jump.
 
 Camera bob is halved, landing dip is smaller, and slide FOV expansion is reduced from 6° to 2°. Mouse yaw/pitch, weapon recoil presentation, collision, rocket/launcher trickshot launches, and 120 Hz offline/online shared physics are retained. Bot locomotion is tuned to the same pace. See [movement tuning and validation](docs/controlled-movement.md) for exact changes; these values supersede older movement reports.
+
+
+## Larger, clearer weapon models
+
+All **17 primary/secondary models** now have individual first-person sizes and forward framing instead of one small shared 0.78 scale. Sniper gets the largest emphasis: a wider long-range chassis, larger reflective scope glass, twin scope mounts, folded bipod detail and a ported muzzle brake. The other guns gain clearer two-tone finishes, larger readable handguards/mechanisms and class-specific details. Bow keeps its corrected limb/string orientation.
+
+The actual gun-only render audit measured Sniper at **about twice its previous pixel area**, with every gun showing increased screen presence. Hands are excluded from that measurement. ADS alignment, recoil/confirmed-hit presentation, reload mechanisms and gameplay aim remain intact; weapon stats and the calmer movement tuning are unchanged.
+
+Loadout cards now fit physical weapon geometry rather than invisible muzzle/glint meshes, and the angled preview camera keeps paired pistols inside the frame. See [the arsenal visual report](docs/arsenal-visuals.md) for measurements and validation. A published static copy requires the updated frontend/assets to be republished; pushing code alone does not verify that deployment.

@@ -2,6 +2,26 @@ import * as THREE from "three";
 import { createViewModel } from "./world.js";
 import { WEAPONS } from "./data.js";
 
+// Invisible muzzle flashes and the glint billboard are not part of a gun's
+// physical silhouette. Counting the 1x1 glint quad made Sniper cards shrink.
+export function weaponDisplayBounds(root, target = new THREE.Box3()) {
+  root.updateWorldMatrix(true, true);
+  target.makeEmpty();
+  const box = new THREE.Box3();
+  root.traverseVisible((object) => {
+    if (
+      !object.geometry ||
+      ["volumetric-muzzle-crown", "sniper-scope-glint"].includes(object.name)
+    )
+      return;
+    object.geometry.computeBoundingBox();
+    target.union(
+      box.copy(object.geometry.boundingBox).applyMatrix4(object.matrixWorld),
+    );
+  });
+  return target;
+}
+
 export class WeaponPreview {
   constructor(canvas) {
     this.canvas = canvas;
@@ -46,7 +66,7 @@ export class WeaponPreview {
     }
     model.position.set(0, 0, 0);
     model.updateMatrixWorld(true);
-    const bounds = new THREE.Box3().setFromObject(model),
+    const bounds = weaponDisplayBounds(model),
       center = bounds.getCenter(new THREE.Vector3());
     model.position.sub(center);
     const pivot = new THREE.Group();
@@ -59,11 +79,10 @@ export class WeaponPreview {
       height = this.canvas.clientHeight || 180;
     this.renderer.setSize(width, height, false);
     this.camera.aspect = width / height;
-    const extent = new THREE.Box3()
-      .setFromObject(pivot)
-      .getSize(new THREE.Vector3());
+    const displayBounds = weaponDisplayBounds(pivot);
+    const extent = displayBounds.getSize(new THREE.Vector3());
     const halfFov = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
-    const distance =
+    let distance =
       Math.max(
         extent.y / (2 * halfFov),
         extent.x / (2 * halfFov * this.camera.aspect),
@@ -73,6 +92,23 @@ export class WeaponPreview {
     this.camera.position.set(distance * 0.14, distance * 0.12, distance);
     this.camera.lookAt(0, 0, 0);
     this.camera.updateProjectionMatrix();
+    // The slightly elevated three-quarter camera needs a real projected fit.
+    // An axis-only estimate cropped the outside of the paired pistols.
+    const point = new THREE.Vector3();
+    for (let pass = 0; pass < 3; pass++) {
+      this.camera.updateMatrixWorld(true);
+      let fill = 0;
+      for (const x of [displayBounds.min.x, displayBounds.max.x])
+        for (const y of [displayBounds.min.y, displayBounds.max.y])
+          for (const z of [displayBounds.min.z, displayBounds.max.z]) {
+            point.set(x, y, z).project(this.camera);
+            fill = Math.max(fill, Math.abs(point.x), Math.abs(point.y));
+          }
+      if (fill <= 0.94) break;
+      distance *= fill / 0.94;
+      this.camera.position.set(distance * 0.14, distance * 0.12, distance);
+      this.camera.lookAt(0, 0, 0);
+    }
     this.renderer.render(this.scene, this.camera);
   }
 }
