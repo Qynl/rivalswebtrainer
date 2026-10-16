@@ -168,7 +168,7 @@ test("slide lowers the actual hitbox; slide-jump cancels the slide and preserves
   assert.equal(e.sliding, 0);
   assert.equal(e.grounded, false);
   assert.ok(e.vy > 6 && e.vy <= MOVEMENT.jumpSpeed);
-  assert.ok(Math.hypot(e.vx, e.vz) > 10);
+  assert.ok(Math.hypot(e.vx, e.vz) > MOVEMENT.runSpeed);
   assert.ok(Math.hypot(e.vx, e.vz) <= MOVEMENT.slideMaxSpeed);
   assert.equal(e.height, 1.9);
 });

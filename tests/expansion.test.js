@@ -329,8 +329,8 @@ test("ground slide is a short burst with less than six metres of travel", () => 
   const start = g.player.z;
   for (let i = 0; i < 24; i++) g.updatePlayer(1 / 60);
   assert.ok(g.slideTime < 1e-6);
-  assert.ok(start - g.player.z < 6);
-  assert.ok(start - g.player.z > 3);
+  assert.ok(start - g.player.z < 3);
+  assert.ok(start - g.player.z > 2);
 });
 
 test("a projectile cannot spawn on the far side of a wall pressed against its muzzle", () => {

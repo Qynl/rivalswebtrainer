@@ -53,7 +53,7 @@ async function network() {
   return { net, client };
 }
 test("peer invitations use normalized protocol-scoped IDs and default requires no API", () => {
-  assert.equal(peerId("ABC123"), "rivalsweb-v2-abc123");
+  assert.equal(peerId("ABC123"), "rivalsweb-v3-abc123");
   assert.equal(new MultiplayerClient().mode, "peer");
   assert.equal(new MultiplayerClient({ mode: "server" }).mode, "server");
 });
@@ -251,7 +251,7 @@ test("movement uses disposable state but action edges retain reliable delivery",
       type: "input",
       input: { seq: 2, actions: [{ id: 1, type: "jump" }] },
     });
-    assert.equal(fast, 1);
+    assert.equal(fast, 2);
     assert.equal(conn.sent[0].input.actions[0].type, "jump");
   } finally {
     net.close();

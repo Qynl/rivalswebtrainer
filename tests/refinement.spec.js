@@ -67,7 +67,7 @@ test("compact mirrored Arena has real ramp surfaces, grounded traversal, window 
     let airborne = 0,
       maxRise = 0,
       previous = 0;
-    for (let i = 0; i < 41; i++) {
+    for (let i = 0; i < 55; i++) {
       g.updatePlayer(1 / 60);
       if (!p.grounded) airborne++;
       maxRise = Math.max(maxRise, p.y - previous);
@@ -153,7 +153,7 @@ test("compact mirrored Arena has real ramp surfaces, grounded traversal, window 
       grounded: false,
       jumps: 1,
     });
-    for (let i = 0; i < 25; i++) g.updatePlayer(1 / 60);
+    for (let i = 0; i < 45; i++) g.updatePlayer(1 / 60);
     g.keys.clear();
     return { z: p.z, y: p.y };
   });

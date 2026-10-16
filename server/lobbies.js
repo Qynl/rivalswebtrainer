@@ -127,7 +127,7 @@ export class LobbyService {
     if (!c || !message || typeof message !== "object") return;
     const now = this.now(),
       elapsed = Math.max(0, (now - c.lastBudget) / 1000);
-    c.tokens = Math.min(80, c.tokens + elapsed * 45);
+    c.tokens = Math.min(160, c.tokens + elapsed * 120);
     c.lastBudget = now;
     if (c.tokens < 1) return;
     c.tokens--;
@@ -361,8 +361,8 @@ export class LobbyService {
         if (before !== room.match.phase) this.publish(room);
       }
     this.lastSnapshot += dt;
-    if (this.lastSnapshot >= 1 / 20) {
-      this.lastSnapshot %= 1 / 20;
+    if (this.lastSnapshot >= 1 / 30) {
+      this.lastSnapshot %= 1 / 30;
       for (const room of this.rooms.values())
         if (room.match) {
           const packet = { type: "snapshot", snapshot: room.match.snapshot() },

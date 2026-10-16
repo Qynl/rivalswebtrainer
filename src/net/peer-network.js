@@ -102,7 +102,7 @@ export class BrowserPeerNetwork {
       if (this.closed) return;
       if (error.type === "peer-unavailable")
         this.joinFailed(
-          "Lobby not found. Ask the host for the current invite code and keep their game open.",
+          "Lobby not found. Both players should refresh the updated game, then use a new invite code and keep the host’s game open.",
         );
       else this.client.patch({ error: "Peer connection: " + error.message });
     });
@@ -239,7 +239,7 @@ export class BrowserPeerNetwork {
   sendState(conn, data) {
     const lane = conn?.stateLane;
     if (lane?.readyState !== "open") return false;
-    if (lane.bufferedAmount > 32768) {
+    if (lane.bufferedAmount > 8192) {
       this.metrics.dropped++;
       return true;
     }
@@ -429,12 +429,24 @@ export class BrowserPeerNetwork {
         this.client.stopSession(true);
         this.client.patch({ room: null, error: "" });
         this.localLobby();
-      } else if (
-        packet.type === "input" &&
-        !packet.input.actions?.length &&
-        this.sendState(this.remote, JSON.stringify(packet))
-      ) {
-        this.metrics.inputsSent++;
+      } else if (packet.type === "input") {
+        // Held movement must never wait for a reliable jump/fire/reload ACK.
+        // Actions repeat on the disposable lane, with an independent reliable
+        // recovery copy; authority de-duplicates action IDs without old controls.
+        const fast = this.sendState(this.remote, JSON.stringify(packet));
+        if (fast) this.metrics.inputsSent++;
+        const action = packet.input.actions?.at(-1)?.id;
+        const now = performance.now();
+        if (
+          !fast ||
+          (action !== undefined &&
+            (this.remote.lastReliableAction !== action ||
+              now - (this.remote.lastActionCopyAt || 0) > 250))
+        ) {
+          this.remote.lastReliableAction = action;
+          this.remote.lastActionCopyAt = now;
+          this.safeSend(this.remote, packet);
+        }
       } else this.safeSend(this.remote, packet);
       return;
     }

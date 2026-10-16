@@ -15,14 +15,14 @@ const TIMERS = [
 ];
 const STATS = ["shots", "hits", "kills", "deaths", "headshots"];
 const HEADER = 23,
-  PLAYER = 94,
+  PLAYER = 98,
   PROJECTILE = 24,
   ZONE = 19,
   MAGIC = 0x5256;
 const finite = (value, fallback = 0) =>
   Number.isFinite(value) ? value : fallback;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, finite(value)));
-// 587 bytes for an ordinary 3v3 frame, without JSON's repeated names/keys or
+// 611 bytes for an ordinary 3v3 frame, without JSON's repeated names/keys or
 // double-precision decimal strings. Control and combat events remain reliable.
 export function encodeSnapshot(snapshot) {
   const players = snapshot.players.slice(0, 6),
@@ -61,7 +61,7 @@ export function encodeSnapshot(snapshot) {
       offset += 4;
     };
   u16(MAGIC);
-  u8(1);
+  u8(2);
   u32(snapshot.matchId || 1);
   u16(snapshot.round);
   f32(snapshot.time);
@@ -92,6 +92,7 @@ export function encodeSnapshot(snapshot) {
     u8(p.slot);
     for (const id of p.loadout) u8(WEAPON_IDS.indexOf(id));
     u32(p.lastSeq);
+    f32(p.inputTime);
     u32(p.lastAction);
     for (const ammo of p.ammo) {
       u16(ammo.mag == null ? 65535 : ammo.mag);
@@ -146,7 +147,7 @@ export function decodeSnapshot(data, metadata) {
       if (!Number.isFinite(n)) throw Error("Nonfinite snapshot");
       return n;
     };
-  if (bytes.length < HEADER || u16() !== MAGIC || u8() !== 1)
+  if (bytes.length < HEADER || u16() !== MAGIC || u8() !== 2)
     throw Error("Invalid snapshot version");
   const matchId = u32(),
     round = u16(),
@@ -200,6 +201,7 @@ export function decodeSnapshot(data, metadata) {
     p.weapon = p.loadout[p.slot];
     p.lastSeq = u32();
     if (p.lastSeq === 0xffffffff) p.lastSeq = -1;
+    p.inputTime = f32();
     p.lastAction = u32();
     p.ammo = Array.from({ length: 4 }, () => {
       let mag = u16(),

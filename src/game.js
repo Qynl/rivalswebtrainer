@@ -317,6 +317,8 @@ export class Game {
       if (!e.repeat && this.state === "playing")
         this.network?.keyAction(e.code);
       if (e.repeat || this.state !== "playing") return;
+      if (["KeyW", "KeyA", "KeyS", "KeyD"].includes(e.code))
+        this.network?.sendInput();
       if (e.code === "Space") this.jump();
       if (
         e.code === "KeyC" ||
@@ -330,7 +332,11 @@ export class Game {
       if (e.code === "KeyT" && !this.reloadTime) this.inspectTime = 1.8;
       if (/^Digit[1-4]$/.test(e.code)) this.equip(+e.code.slice(-1) - 1);
     });
-    window.addEventListener("keyup", (e) => this.keys.delete(e.code));
+    window.addEventListener("keyup", (e) => {
+      this.keys.delete(e.code);
+      if (["KeyW", "KeyA", "KeyS", "KeyD"].includes(e.code))
+        this.network?.sendInput();
+    });
     window.addEventListener("mousedown", (e) => {
       if (
         document.pointerLockElement !== this.canvas ||
@@ -2042,7 +2048,7 @@ export class Game {
     if (!wasGrounded && p.grounded) {
       p.landingGrace = MOVEMENT.landingGrace;
       if (fallingVelocity < -3) {
-        this.landingDip = Math.min(0.035, -fallingVelocity * 0.002);
+        this.landingDip = Math.min(0.018, -fallingVelocity * 0.001);
         this.audio.play("land", Math.min(1, -fallingVelocity / 18));
         if (fallingVelocity < -10)
           this.combatFX?.burst(v3(p.x, p.y + 0.07, p.z), 0xb3afa5, 4);
@@ -2894,6 +2900,7 @@ export class Game {
           break;
         }
       }
+      this.network?.present?.(renderDt);
       this.updateCamera(renderDt, this.accumulator / step);
       this.events.tick(this);
     } else this.accumulator = 0;
@@ -2924,7 +2931,7 @@ export class Game {
       const bob =
         p.grounded && !this.crouched && this.settings.shake
           ? Math.sin(this.walkPhase) *
-            0.009 *
+            0.004 *
             Math.min(1, speed / MOVEMENT.runSpeed)
           : 0;
       const stance = this.crouched ? 1.03 : 1.66;
@@ -2973,7 +2980,7 @@ export class Game {
           (this.settings.dynamicFov === false
             ? 0
             : this.slideTime > 0
-              ? 2
+              ? 0.8
               : clamp(
                   (Math.hypot(p.vx, p.vz) - MOVEMENT.runSpeed) * 0.18,
                   0,

@@ -43,6 +43,7 @@ test("two real browser clients join a private lobby, ready up and share an autho
       g.audio.volume = 0;
       window.__netTick = setInterval(() => {
         g.simulate(1 / 120);
+        g.network?.present(1 / 120);
         g.events.tick(g);
       }, 1000 / 120);
     });

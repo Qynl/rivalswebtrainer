@@ -269,41 +269,52 @@ export class Match {
   }
   input(id, input) {
     const g = this.contexts.get(id);
-    if (!g || input.seq <= g.lastSeq) return;
+    if (!g) return;
+    const fresh = input.seq > g.lastSeq;
+    if (!fresh && !input.actions.some((a) => a.id > g.lastAction)) return;
     if (g.selectingLoadout) input = { ...input, paused: true };
-    g.lastSeq = input.seq;
-    g.lastInputAt = this.time;
-    g.yaw = input.yaw;
-    g.pitch = input.pitch;
-    g.player.yaw = input.yaw;
-    g.keys.clear();
-    if (!input.paused)
-      KEYS.forEach((key, i) => {
-        if (input.keys & (1 << i)) g.keys.add(key);
-      });
-    const fire = !input.paused && input.fire,
-      old = g.mouseDown;
-    g.mouseDown = fire;
-    if (fire && !old) g.queueFire();
-    if (input.paused) {
-      g.fireBufferedUntil = g.burstCount = g.bowCharge = 0;
-      g.trigger = g.firePulse = g.bowRelease = false;
+    if (fresh) {
+      g.inputPaused = input.paused;
+      g.lastSeq = input.seq;
+      g.lastInputAt = this.time;
+      g.yaw = input.yaw;
+      g.pitch = input.pitch;
+      g.player.yaw = input.yaw;
+      g.keys.clear();
+      if (!input.paused)
+        KEYS.forEach((key, i) => {
+          if (input.keys & (1 << i)) g.keys.add(key);
+        });
+      const fire = !input.paused && input.fire,
+        old = g.mouseDown;
+      g.mouseDown = fire;
+      if (fire && !old) g.queueFire();
+      if (input.paused) {
+        g.fireBufferedUntil = g.burstCount = g.bowCharge = 0;
+        g.trigger = g.firePulse = g.bowRelease = false;
+      }
+      if (old && !fire && WEAPONS[g.loadout[g.slot]].type === "bow")
+        g.bowRelease = true;
+      const w = WEAPONS[g.loadout[g.slot]];
+      g.aiming =
+        !input.paused &&
+        input.aim &&
+        w.slot < 2 &&
+        g.deflectTime <= 0 &&
+        !(g.quickUtilityTime > 0) &&
+        !(g.quickMeleeTime > 0);
     }
-    if (old && !fire && WEAPONS[g.loadout[g.slot]].type === "bow")
-      g.bowRelease = true;
-    const w = WEAPONS[g.loadout[g.slot]];
-    g.aiming =
-      !input.paused &&
-      input.aim &&
-      w.slot < 2 &&
-      g.deflectTime <= 0 &&
-      !(g.quickUtilityTime > 0) &&
-      !(g.quickMeleeTime > 0);
     for (const action of input.actions.sort((a, b) => a.id - b.id)) {
       if (action.id <= g.lastAction) continue;
       g.lastAction = action.id;
       this.room.members.get(id).lastAction = action.id;
-      if (this.phase !== "playing" || !g.player.alive || input.paused) continue;
+      if (
+        this.phase !== "playing" ||
+        !g.player.alive ||
+        g.inputPaused ||
+        input.paused
+      )
+        continue;
       const currentWeapon = WEAPONS[g.loadout[g.slot]];
       if (action.type === "fire") {
         g.firePulse = true;
@@ -331,7 +342,7 @@ export class Match {
   rewind(g, run) {
     if (!this.history.length) return run();
     const target =
-      this.time - Math.min(0.18, Math.max(0, g.latency || 0) / 2 + 0.075);
+      this.time - Math.min(0.25, Math.max(0, g.latency || 0) + 0.055);
     let a = this.history[0],
       b = this.history.at(-1);
     for (let i = 1; i < this.history.length; i++)
@@ -531,6 +542,7 @@ export class Match {
             reserve: Number.isFinite(a.reserve) ? a.reserve : null,
           })),
           lastSeq: g.lastSeq,
+          inputTime: g.lastInputAt,
           lastAction: g.lastAction,
           slide: g.slideTime,
           dash: g.dashTime,

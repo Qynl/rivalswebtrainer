@@ -116,8 +116,8 @@ test("all arena floors have distinct layers; real stairs and slide jumps stay st
       slideTime: g.slideTime,
     };
   });
-  expect(slide.boosted).toBeGreaterThan(12);
-  expect(slide.speed).toBeGreaterThan(12);
+  expect(slide.boosted).toBeCloseTo(9.4);
+  expect(slide.speed).toBeCloseTo(9.4);
   expect(slide.y).toBeGreaterThan(0.5);
   expect(slide.slideTime).toBe(0);
   expect(errors).toEqual([]);

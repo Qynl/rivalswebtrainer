@@ -112,7 +112,7 @@ test("a full airborne reversal crosses zero without entering a sideways orbit at
     p.z = 0;
     p.vx = 14;
     p.grounded = false;
-    for (let i = 0; i < fps * 0.8; i++) {
+    for (let i = 0; i < fps * 1.25; i++) {
       accelerate(p, { x: -1, z: 0 }, MOVEMENT.runSpeed, 1 / fps);
       p.x += p.vx / fps;
       p.z += p.vz / fps;

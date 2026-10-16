@@ -98,7 +98,7 @@ test("live slide buffering, slide-jump aim, descending stairs and optional speed
     key("KeyW");
     let airborne = 0,
       maxDrop = 0;
-    for (let i = 0; i < 50; i++) {
+    for (let i = 0; i < 80; i++) {
       const y = p.y;
       g.simulate(1 / 60);
       g.updateCamera(1 / 60);
@@ -109,6 +109,7 @@ test("live slide buffering, slide-jump aim, descending stairs and optional speed
     g.aiming = false;
     g.slideTime = 0.3;
     g.camera.fov = 95;
+    g.baseCameraFov = 95;
     g.settings.fov = 95;
     g.updateCamera(1 / 60);
     return {
@@ -121,13 +122,13 @@ test("live slide buffering, slide-jump aim, descending stairs and optional speed
       fixedFov: g.camera.fov,
     };
   });
-  expect(report.runDistance).toBeGreaterThan(9);
-  expect(report.runDistance).toBeLessThan(10);
+  expect(report.runDistance).toBeGreaterThan(6.06);
+  expect(report.runDistance).toBeLessThan(6.08);
   expect(report.sliding).toBe(true);
   expect(report.jump.slide).toBe(0);
-  expect(report.jump.vy).toBeGreaterThan(11.2);
-  expect(report.jump.vy).toBeLessThan(12);
-  expect(report.jump.speed).toBeGreaterThan(18);
+  expect(report.jump.vy).toBeCloseTo(7.3);
+  expect(report.jump.speed).toBeGreaterThan(8.9);
+  expect(report.jump.speed).toBeLessThan(9.4);
   expect(report.originError).toBeLessThan(1e-10);
   expect(report.buffered).toBe(true);
   expect(report.stairs.airborne).toBe(0);

@@ -1,3 +1,4 @@
+import { PredictionHistory } from "./prediction-history.js";
 import { updateProjectileTrail } from "../projectile-feedback.js";
 import { moveBody, canOccupy, GRAVITY } from "../physics.js";
 import * as THREE from "three";
@@ -15,6 +16,7 @@ export class MultiplayerSession {
     this.buffer = new SnapshotBuffer(client.mode === "peer" ? 0.06 : 0.075, {
       adaptive: client.mode === "peer",
     });
+    this.prediction = new PredictionHistory();
     this.seq = 0;
     this.actionId = 0;
     this.actions = [];
@@ -110,6 +112,7 @@ export class MultiplayerSession {
       this.entities.set(state.id, e);
     }
     this.correction.set(0, 0, 0);
+    this.prediction?.clear();
     this.buffer.clear();
   }
   receive(snapshot) {
@@ -238,29 +241,36 @@ export class MultiplayerSession {
       g.audio.play("death");
     }
     if (snapshot.phase === "playing" && self.alive) {
-      const lead = Math.min(0.08, this.client.rtt / 2000 + 0.015),
-        target = new THREE.Vector3(
-          self.x + self.vx * lead,
-          self.y,
-          self.z + self.vz * lead,
-        );
-      if (!self.grounded) target.y += self.vy * lead;
-      this.correction
-        .copy(target)
-        .sub(new THREE.Vector3(g.player.x, g.player.y, g.player.z));
-      if (this.correction.length() > 4) {
-        Object.assign(g.player, {
-          x: self.x,
-          y: self.y,
-          z: self.z,
-          vx: self.vx,
-          vy: self.vy,
-          vz: self.vz,
-          grounded: self.grounded,
-        });
-        this.correction.set(0, 0, 0);
+      const error = this.prediction?.error(self, snapshot.time);
+      if (error) {
+        this.correction.set(error.x, error.y, error.z);
+        if (this.correction.length() > 3) {
+          const x = g.player.x + error.x,
+            y = g.player.y + error.y,
+            z = g.player.z + error.z;
+          if (canOccupy(g.player, x, y, z, g.world.boxes)) {
+            g.player.x = x;
+            g.player.y = y;
+            g.player.z = z;
+            this.prediction.applied(error.x, error.y, error.z);
+          } else {
+            Object.assign(g.player, {
+              x: self.x,
+              y: self.y,
+              z: self.z,
+              vx: self.vx,
+              vy: self.vy,
+              vz: self.vz,
+              grounded: self.grounded,
+            });
+            this.prediction.clear();
+          }
+          g.renderPrevious = { x: g.player.x, y: g.player.y, z: g.player.z };
+          this.correction.set(0, 0, 0);
+        }
       }
     }
+
     for (const state of snapshot.players) {
       if (state.id === this.id) continue;
       const e = this.entities.get(state.id);
@@ -557,10 +567,12 @@ export class MultiplayerSession {
       (bits, key, i) => bits | (g.keys.has(key) ? 1 << i : 0),
       0,
     );
+    const seq = ++this.seq;
+    this.prediction?.sent(seq, g.clock, g.player);
     this.client.send({
       type: "input",
       input: {
-        seq: ++this.seq,
+        seq,
         yaw: g.yaw,
         pitch: g.pitch,
         keys,
@@ -600,17 +612,15 @@ export class MultiplayerSession {
     const heldWeapon = WEAPONS[g.loadout[g.slot]];
     if (g.mouseDown && ["auto", "flame"].includes(heldWeapon.type))
       this.predictShot();
-    this.sendTime += dt;
-    if (this.sendTime >= 1 / 30) {
-      this.sendTime %= 1 / 30;
-      this.sendInput();
-    }
     if (g.state === "playing" && g.player.alive && !g.selectingLoadout) {
       g.updatePlayer(dt);
       const factor = 1 - Math.exp(-dt * 9);
       const cx = this.correction.x * factor,
         cz = this.correction.z * factor;
+      const beforeX = g.player.x,
+        beforeZ = g.player.z;
       moveBody(g.player, cx, cz, g.world.boxes);
+      this.prediction?.applied(g.player.x - beforeX, 0, g.player.z - beforeZ);
       this.correction.x -= cx;
       this.correction.z -= cz;
       if (Math.abs(this.correction.y) > 0.015 && !g.player.jumps) {
@@ -625,11 +635,22 @@ export class MultiplayerSession {
           )
         ) {
           g.player.y += dy;
+          this.prediction?.applied(0, dy, 0);
           this.correction.y -= dy;
         }
       }
     }
+    this.prediction?.record(g.clock, g.player);
+    this.sendTime += dt;
+    if (this.sendTime >= 1 / 60) {
+      this.sendTime %= 1 / 60;
+      this.sendInput();
+    }
+
     if (g.state === "roundend" && g.player.alive) g.player.vx = g.player.vz = 0;
+  }
+  present(dt) {
+    const g = this.game;
     const remote = this.buffer.sample(performance.now() / 1000);
     for (const state of remote || []) {
       if (state.id === this.id) continue;

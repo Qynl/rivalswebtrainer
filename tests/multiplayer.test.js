@@ -413,7 +413,7 @@ test("binary 3v3 snapshots stay below one kilobyte and round-trip ammo, abilitie
     const metadata = new Map(snapshot.players.map((p) => [p.index, p])),
       bytes = encodeSnapshot(snapshot),
       decoded = decodeSnapshot(bytes, metadata);
-    assert.equal(bytes.byteLength, 587);
+    assert.equal(bytes.byteLength, 611);
     assert.equal(decoded.players[0].shotSide, 1);
     assert.ok(bytes.byteLength < 1024);
     for (const key of [

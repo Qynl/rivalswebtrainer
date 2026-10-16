@@ -3,32 +3,32 @@ import { clamp, GRAVITY } from "./physics.js";
 export const SIMULATION_STEP = 1 / 120;
 
 export const MOVEMENT = Object.freeze({
-  runSpeed: 10.6,
-  meleeSpeed: 12,
-  groundAcceleration: 105,
-  groundBraking: 135,
-  counterAcceleration: 155,
-  airAcceleration: 34,
+  runSpeed: 8,
+  meleeSpeed: 9.2,
+  groundAcceleration: 80,
+  groundBraking: 125,
+  counterAcceleration: 130,
+  airAcceleration: 22,
   airSpeedCap: 28,
-  airTurnRate: 7.5,
-  airReverseAcceleration: 75,
-  jumpSpeed: 9.7,
-  doubleJumpSpeed: 9.4,
+  airTurnRate: 4.5,
+  airReverseAcceleration: 48,
+  jumpSpeed: 7.8,
+  doubleJumpSpeed: 7.6,
   coyoteTime: 0.1,
   jumpBuffer: 0.14,
   landingGrace: 0.05,
   slideBuffer: 0.12,
-  slideStartSpeed: 5.5,
+  slideStartSpeed: 4.5,
   slideBrakeDrag: 7.5,
-  rampJumpFactor: 0.18,
-  rampJumpMax: 1.5,
-  slideDuration: 0.27,
-  slideCooldown: 0.72,
-  slideBoost: 2.4,
-  slideMinSpeed: 8,
-  slideMaxSpeed: 16.5,
-  slideDrag: 2.4,
-  slideTurnRate: 3.8,
+  rampJumpFactor: 0.1,
+  rampJumpMax: 0.8,
+  slideDuration: 0.19,
+  slideCooldown: 1.0,
+  slideBoost: 1.4,
+  slideMinSpeed: 6.6,
+  slideMaxSpeed: 11.8,
+  slideDrag: 3.2,
+  slideTurnRate: 2.8,
 });
 
 // A little ramp assistance, not a second launch on top of a slide jump.
@@ -71,6 +71,9 @@ export function accelerate(body, wish, speed, dt) {
     if (distance > 1e-8) {
       body.vx += (dx / distance) * amount;
       body.vz += (dz / distance) * amount;
+    } else {
+      body.vx = wx * targetSpeed;
+      body.vz = wz * targetSpeed;
     }
   } else if (input > 0) {
     const cruise = Math.min(

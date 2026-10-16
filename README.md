@@ -29,7 +29,7 @@ Mobile layouts support browsing/configuration, but combat requires desktop point
 - Five original arenas: **Concrete Arena**, **Skyline**, **Hangar 09**, **Foundry**, **Courtyard**; elevated cover, walkable stairs, and collision.
 - Default Concrete Arena: a 40 × 50-metre gray-concrete layout inspired by the supplied references, with 14-metre perimeter walls, collision-matched diagonal slabs, opposing ramp banks, mirrored window cover, 4.2–4.8-metre interior cover, and two long 3.2-high playable upper galleries with four access ramps.
 - **1v1**, **2v2**, **3v3** team elimination, first to five rounds; five-second preparation countdowns, health-based timeout resolution, spectators, results, and rematches.
-- Four bot levels: **Rookie**, **Regular**, **Veteran**, **Elite**. A* navigation, line-of-sight perception, last-known positions, aim/reaction errors, strafing, jumps, and reload retreats. Bots use rifles plus rotating Scythe/Katana/Fists/Knife melee loadouts; they are not machine-learned replicas of real players.
+- Four bot levels: **Rookie**, **Regular**, **Veteran**, **Elite**. A\* navigation, line-of-sight perception, last-known positions, aim/reaction errors, strafing, jumps, and reload retreats. Bots use rifles plus rotating Scythe/Katana/Fists/Knife melee loadouts; they are not machine-learned replicas of real players.
 - **150 HP** for players, bots and range targets; capped healing, normalized health bars and confirmed-hit floating damage numbers above opponents. Knife front/side hits deal **40**; behind-facing backstabs deal **150**.
 - **M** opens the four-step weapon picker during the five-second round preparation only. An already-open picker may finish after the countdown, while bots move and fight; only your own movement/input stays locked. Unchanged slots keep their ammunition.
 - Fixed-step movement with interpolated rendering, stronger gravity for less floaty jumps, uphill ramp-launch momentum, responsive ground acceleration/braking, precise air reversals, counter-strafing, slope-driven slides, grounded stair descent, momentum-preserving air steering and slide jumps, buffered jumps (140 ms), coyote time (100 ms), Fists/Bow double jump, Scythe dash, and explosive jumping.
@@ -45,21 +45,21 @@ Mobile layouts support browsing/configuration, but combat requires desktop point
 
 ## Controls
 
-| Input             | Action                                                                                      |
-| ----------------- | ------------------------------------------------------------------------------------------- |
-| WASD              | Move; steer in all directions in the air, including reversing                               |
-| Mouse             | Look (capture/recenter spikes are filtered; recoil does not rewrite look pitch)             |
-| Left mouse        | Shoot / melee strike / throw / heal; hold and release to fire Bow                           |
-| Right mouse       | ADS; Scythe dash or Katana guard when equipped; quick Medkit heal                           |
-| F                 | Quick melee-slot ability: **Knife stab**, Scythe dash or Katana guard; keeps current slot/ammo |
-| G                 | Quick utility throw / 25-HP quick Medkit; keeps your selected weapon and its ammunition       |
-| Space             | Jump and cancel slide; press again for Fists/Bow double jump (no automatic held-key hops)                           |
-| C / Shift / Ctrl  | Controlled 0.27-second slide; short landing buffer; steer, release movement to brake, or jump to cancel        |
-| 1–4 / mouse wheel | Equip a loadout slot                                                                        |
-| M                 | Change weapons during five-second round preparation; an open picker can finish afterward    |
-| T                 | Inspect weapon (firing, aiming, switching or reloading cancels the inspection)              |
-| R                 | Reload                                                                                      |
-| Escape            | Pause / release mouse                                                                       |
+| Input             | Action                                                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------------------------- |
+| WASD              | Move; steer in all directions in the air, including reversing                                           |
+| Mouse             | Look (capture/recenter spikes are filtered; recoil does not rewrite look pitch)                         |
+| Left mouse        | Shoot / melee strike / throw / heal; hold and release to fire Bow                                       |
+| Right mouse       | ADS; Scythe dash or Katana guard when equipped; quick Medkit heal                                       |
+| F                 | Quick melee-slot ability: **Knife stab**, Scythe dash or Katana guard; keeps current slot/ammo          |
+| G                 | Quick utility throw / 25-HP quick Medkit; keeps your selected weapon and its ammunition                 |
+| Space             | Jump and cancel slide; press again for Fists/Bow double jump (no automatic held-key hops)               |
+| C / Shift / Ctrl  | Controlled 0.19-second slide; short landing buffer; steer, release movement to brake, or jump to cancel |
+| 1–4 / mouse wheel | Equip a loadout slot                                                                                    |
+| M                 | Change weapons during five-second round preparation; an open picker can finish afterward                |
+| T                 | Inspect weapon (firing, aiming, switching or reloading cancels the inspection)                          |
+| R                 | Reload                                                                                                  |
+| Escape            | Pause / release mouse                                                                                   |
 
 Scythe dash recharges in **3 seconds**. Katana's frontal guard lasts **1.1 seconds** and has a **3.5-second cooldown**. It reflects bullets back along a real collision-tested ray; rear attacks, melee, and explosives are not blocked. Shooting is disabled during the guard. With Knife in your melee slot, **F** performs a quick stab after a **105 ms windup**, without switching away from your gun. It deals **40 front/side / 150 rear** damage, checks range/cone/cover at impact, and has a separate **0.55-second recovery**, so an RPG firing cooldown does not block an aerial follow-up. Fists still do not automatically punch with F.
 
@@ -120,7 +120,7 @@ See [the React and combat report](docs/react-combat-startup.md) for the full che
 ## Multiplayer, upper Arena and Flamethrower
 
 - Browser-hosted six-player invite lobbies, short codes/links, team/readiness/loadout controls, first-to-five rounds, forfeits and rematches. No game-backend setup; host leaving ends the match.
-- **PeerJS + real WebRTC data channels by default**, using free hosted discovery and default ICE services. Worker-hosted authority targets 120 Hz with 20 Hz compact binary snapshots on an unordered, zero-retransmission state channel, plus reliable lobby/combat control, local prediction, adaptive interpolation and bounded hitscan rewind. Third-party service availability, network conditions and the host device still matter.
+- **PeerJS + real WebRTC data channels by default**, using free hosted discovery and default ICE services. Worker-hosted authority targets 120 Hz with 30 Hz compact binary snapshots on an unordered, zero-retransmission state channel, plus reliable lobby/combat control, local prediction, adaptive interpolation and bounded hitscan rewind. Third-party service availability, network conditions and the host device still matter.
 - Optional legacy `?network=server` mode retains Geckos/WebSocket adapters, public rooms and binary snapshots for people deliberately operating a dedicated backend. It is not required by the static site.
 - Arena floor area grows **75.4%**, with **200 m² of actual upper-floor lanes**, low upper cover and four accessible ramps.
 - Flamethrower gains a continuous turbulent shader jet, blue ignition, detached wisps, animated heated nozzle/valve/pilot, pressure vibration and smoothly looping audio in bounded GPU/audio pools.
@@ -203,7 +203,7 @@ You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tes
 - `src/game.js`: game loop, input, combat, bots, round state machine, effects.
 - `src/world.js`: procedural arenas and actor animation; `src/character-model.js`: original articulated Striker character models.
 - `src/weapon-models.js`, `src/weapon-detailing.js`, `src/weapon-preview.js`: detailed procedural weapons and the static loadout turntable; `src/weapon-feel.js`: viewmodel-only impulse and ADS profiles.
-- `src/physics.js`: swept circle/AABB/rotated-cover collision, vertical movement, and rectangular ground-grid A* navigation.
+- `src/physics.js`: swept circle/AABB/rotated-cover collision, vertical movement, and rectangular ground-grid A\* navigation.
 - `src/arena-layout.js`: Arena dimensions and mirrored half-layout (visual estimates, not verified Roblox measurements).
 - `src/map-layouts.js`: authored Foundry/Courtyard layouts and non-colliding themed dressing.
 - `src/throwables.js`: detailed airborne utilities and bounded animated fire.
@@ -269,7 +269,6 @@ This samples both controllers and their own physics constants at 600 Hz without 
 
 Bow direction regression notes: [Bow body-plane correction](docs/bow-direction.md).
 
-
 ## Player animation, gun feel and multiplayer responsiveness
 
 - More readable team markings, articulated boots, breathing, turn/stride poses, blinking and confirmed armor-hit reactions; the visible head sits closer to the actual damage region. Slightly more forgiving shared body-hit bounds do not alter movement collision, HP or weapon damage.
@@ -279,13 +278,11 @@ Bow direction regression notes: [Bow body-plane correction](docs/bow-direction.m
 
 See [the player/gun feedback report](docs/player-gun-feedback.md) and [multiplayer architecture and limits](docs/multiplayer.md).
 
-
 ## Controlled movement pass
 
-Movement is now less exaggerated: run/melee speed **10.6/12**, a **0.27 s** slide with a smaller boost, **0.72 s** slide cooldown, and a **1.57-unit** flat jump. Slides require actual movement, releasing movement brakes them, and slide-jumps no longer multiply velocity or add an extra upward kick. Air steering remains directional but takes a readable turn rather than snapping around. Held Space no longer chains automatic jumps; tap again for another jump or the equipped Fists/Bow extra jump.
+Movement is now less exaggerated: run/melee speed **8/9.2**, a **0.19 s** slide with a smaller boost, **1 s** slide cooldown, and a **1.01-unit** flat jump. Slides require actual movement, releasing movement brakes them, and slide-jumps no longer multiply velocity or add an extra upward kick. Air steering remains directional but takes a readable turn rather than snapping around. Held Space no longer chains automatic jumps; tap again for another jump or the equipped Fists/Bow extra jump.
 
-Camera bob is halved, landing dip is smaller, and slide FOV expansion is reduced from 6° to 2°. Mouse yaw/pitch, weapon recoil presentation, collision, rocket/launcher trickshot launches, and 120 Hz offline/online shared physics are retained. Bot locomotion is tuned to the same pace. See [movement tuning and validation](docs/controlled-movement.md) for exact changes; these values supersede older movement reports.
-
+Camera bob and landing dip are reduced again, and slide FOV expansion is only 0.8°. Mouse yaw/pitch, weapon recoil presentation, collision, rocket/launcher trickshot launches, and 120 Hz offline/online shared physics are retained. Bots retain the shared jump/slide/air mechanics and their difficulty-specific run speeds. See [movement tuning and validation](docs/controlled-movement.md) for exact changes; these values supersede older movement reports.
 
 ## Larger, clearer weapon models
 
@@ -294,7 +291,6 @@ All **17 primary/secondary models** now have individual first-person sizes and f
 The actual gun-only render audit measured Sniper at **about twice its previous pixel area**, with every gun showing increased screen presence. Hands are excluded from that measurement. ADS alignment, recoil/confirmed-hit presentation, reload mechanisms and gameplay aim remain intact; weapon stats and the calmer movement tuning are unchanged.
 
 Loadout cards now fit physical weapon geometry rather than invisible muzzle/glint meshes, and the angled preview camera keeps paired pistols inside the frame. See [the arsenal visual report](docs/arsenal-visuals.md) for measurements and validation. A published static copy requires the updated frontend/assets to be republished; pushing code alone does not verify that deployment.
-
 
 ## Map and environment polish
 
@@ -310,7 +306,6 @@ routes, controlled movement and weapon rules are preserved. New art is batched i
 4–7 additional batches per map, with cached offline-generated textures and no new
 per-frame lights. See [the map-art report](docs/map-art.md) and run
 `npm run audit:maps -- /tmp/map-art` for reproducible overview/eye-level renders.
-
 
 ## Broader presentation polish
 
@@ -329,3 +324,9 @@ per-frame lights. See [the map-art report](docs/map-art.md) and run
 
 See [implementation and validation](docs/broad-polish.md). The controlled movement,
 all-gun sizing and backend-free multiplayer architecture are retained.
+
+## Joining-player responsiveness pass
+
+The host and guest now use the same acknowledged-input historical reconciliation rather than pulling a moving guest toward an old snapshot. Replaceable movement continues at **60 Hz plus immediate WASD transitions** while jump/fire/reload actions recover independently on reliable control. Snapshots run at **30 Hz**, packet limits support the actual input rate, and remote character/FX animation runs once per rendered frame instead of every physics tick. Authoritative damage, ammo, collision and the no-backend PeerJS architecture are preserved.
+
+A real two-browser WebRTC regression with added delay, jitter, state loss and slower reliable action delivery measured **25.555 units host / 25.531 guest** over identical inputs, with no backwards movement-correction steps. This is a controlled test, not a promise of zero Internet latency. **Both players should refresh the updated site and create a new lobby** because protocol 3 / binary grammar 2 is intentionally incompatible with earlier builds. The separately hosted public site still needs to publish the new frontend. See [networking details and measurements](docs/multiplayer.md).

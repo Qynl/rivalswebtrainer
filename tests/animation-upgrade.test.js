@@ -95,7 +95,7 @@ test("ADS and Knife pose cross the binary wire without growing ordinary frames",
       meta = new Map(s.players.map((p) => [p.index, p]));
     const bytes = encodeSnapshot(s),
       decoded = decodeSnapshot(bytes, meta);
-    assert.equal(bytes.length, 23 + 94 * 2);
+    assert.equal(bytes.length, 23 + 98 * 2);
     const p = decoded.players.find((p) => p.id === "p0");
     assert.equal(p.aiming, true);
     assert.equal(p.knifeStab, true);

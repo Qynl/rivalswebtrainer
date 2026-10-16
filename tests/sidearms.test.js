@@ -60,7 +60,7 @@ test("new roster appends IDs without changing old binary weapon indices", () => 
   assert.equal(keys.indexOf("pistol"), 11);
   assert.equal(keys.indexOf("medkit"), 22);
   assert.deepEqual(keys.slice(-3), ids);
-  assert.equal(PROTOCOL, 2);
+  assert.equal(PROTOCOL, 3);
 });
 test("dual shots alternate flash, slide and actual muzzle; the idle slide remains still", () => {
   const m = createViewModel("dualpistols", WEAPONS.dualpistols),

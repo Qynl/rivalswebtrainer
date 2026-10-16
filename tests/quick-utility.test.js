@@ -208,7 +208,7 @@ test("compact binary snapshots preserve quick utility without expanding the pack
           new Map(snap.players.map((p) => [p.index, p])),
         ),
         self = decoded.players[0];
-      assert.equal(bytes.length, 23 + 94 * 2);
+      assert.equal(bytes.length, 23 + 98 * 2);
       assert.ok(
         Math.abs(self.quickUtility - (id === "medkit" ? 0.8 : 0.48)) < 0.001,
       );

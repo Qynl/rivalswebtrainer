@@ -119,6 +119,7 @@ test("static-only browser-hosted match: invite, loadout, ready, real data channe
         g.audio.volume = 0;
         window.__netTick = setInterval(() => {
           g.simulate(1 / 120);
+          g.network?.present(1 / 120);
           g.events.tick(g);
         }, 1000 / 120);
       });
@@ -495,13 +496,11 @@ test("six real RTC clients share worker-authoritative 3v3 binary state without s
           clients[0].latestState.players.filter((p) => p.team === team).length,
       ),
       worker: clients[0].connection.service.isWorker,
-      guests: clients
-        .slice(1)
-        .map((c) => ({
-          snapshots: c.connection.metrics.snapshotsReceived,
-          unordered: !c.connection.remote.stateLane.ordered,
-          retransmits: c.connection.remote.stateLane.maxRetransmits,
-        })),
+      guests: clients.slice(1).map((c) => ({
+        snapshots: c.connection.metrics.snapshotsReceived,
+        unordered: !c.connection.remote.stateLane.ordered,
+        retransmits: c.connection.remote.stateLane.maxRetransmits,
+      })),
       hostSnapshots: clients[0].connection.metrics.snapshotsSent,
     };
   });
@@ -522,4 +521,177 @@ test("six real RTC clients share worker-authoritative 3v3 binary state without s
   });
   expect(requests).toEqual([]);
   expect(errors).toEqual([]);
+});
+
+test("host and delayed joining player keep equal responsive movement over real RTC with jitter and dropped state", async ({
+  browser,
+  page,
+}) => {
+  test.setTimeout(120000);
+  const guest = await browser.newPage({
+    viewport: { width: 800, height: 600 },
+  });
+  const requests = [],
+    errors = [];
+  try {
+    await prepare(page, requests, errors);
+    await prepare(guest, requests, errors);
+    await page.click("#create-lobby");
+    const code = await page.getByTestId("room-code").textContent();
+    await guest.getByLabel("Lobby code").fill(code);
+    await guest.getByRole("button", { name: "JOIN ↗", exact: true }).click();
+    await expect(page.locator(".mp-player")).toHaveCount(2);
+    await guest.click("#ready-online");
+    await page.click("#start-online");
+    await guest.waitForFunction(
+      () => window.__arena?.network?.latest.phase === "playing",
+      null,
+      { timeout: 20000 },
+    );
+    await page.waitForFunction(
+      () => window.__arena?.network?.latest.phase === "playing",
+    );
+    // Real WebRTC and worker authority; only transport latency is synthetic.
+    // Hold reliable action traffic for longer than state to reproduce head-of-line
+    // blocking without asking an external service to shape the network.
+    await guest.evaluate(() => {
+      const net = window.__multiplayer.connection;
+      const sendState = net.sendState.bind(net),
+        safeSend = net.safeSend.bind(net),
+        deliver = net.deliver.bind(net);
+      let outbound = 0,
+        inbound = 0;
+      net.sendState = (conn, packet) => {
+        const n = ++outbound;
+        if (n % 17 !== 0)
+          setTimeout(
+            () => sendState(conn, packet),
+            80 + Math.sin(n * 0.7) * 12,
+          );
+        return true;
+      };
+      net.safeSend = (conn, packet) =>
+        setTimeout(
+          () => safeSend(conn, packet),
+          packet.type === "input" ? 260 : 80,
+        );
+      net.deliver = (packet) => {
+        if (packet.type !== "snapshot") return deliver(packet);
+        const n = ++inbound;
+        if (n % 19 !== 0)
+          setTimeout(() => deliver(packet), 80 + Math.cos(n * 0.4) * 12);
+      };
+    });
+    const run = (page) =>
+      page.evaluate(() => {
+        const g = window.__arena;
+        Object.defineProperty(document, "pointerLockElement", {
+          configurable: true,
+          get: () => g.canvas,
+        });
+        g.state = "playing";
+        g.selectingLoadout = false;
+        g.keys.clear();
+        g.audio.volume = 0;
+        const n = g.network;
+        const report = {
+          distance: 0,
+          reverse: 0,
+          samples: 0,
+          maxCorrection: 0,
+          responseMs: [],
+          actionAck: false,
+        };
+        let previous = performance.now(),
+          accumulator = 0,
+          elapsed = 0,
+          phase = -1,
+          pressedAt = 0,
+          responded = true,
+          jumped = false;
+        window.__equalDone = false;
+        const timer = setInterval(() => {
+          const now = performance.now();
+          accumulator += Math.min(0.08, (now - previous) / 1000);
+          previous = now;
+          while (accumulator >= 1 / 120 && elapsed < 5.4) {
+            const next = Math.floor(elapsed / 0.6) % 3;
+            if (next !== phase) {
+              phase = next;
+              g.keys.clear();
+              if (next < 2) g.keys.add(next === 0 ? "KeyD" : "KeyA");
+              pressedAt = now;
+              responded = next === 2;
+              n.sendInput();
+            }
+            if (!jumped && elapsed > 1.5) {
+              jumped = true;
+              n.action("jump");
+              g.jump();
+            }
+            const x = g.player.x,
+              z = g.player.z;
+            g.clock += 1 / 120;
+            n.step(1 / 120);
+            const dx = g.player.x - x,
+              dz = g.player.z - z;
+            report.distance += Math.hypot(dx, dz);
+            report.samples++;
+            if (
+              Math.hypot(g.player.vx, g.player.vz) > 3 &&
+              dx * g.player.vx + dz * g.player.vz < -1e-5
+            )
+              report.reverse++;
+            report.maxCorrection = Math.max(
+              report.maxCorrection,
+              Math.hypot(n.correction.x, n.correction.z),
+            );
+            if (!responded && Math.hypot(g.player.vx, g.player.vz) > 0.3) {
+              report.responseMs.push(now - pressedAt);
+              responded = true;
+            }
+            elapsed += 1 / 120;
+            accumulator -= 1 / 120;
+          }
+          // Render-side skeleton/FX presentation runs once, not for every fixed tick.
+          n.present(1 / 60);
+          if (elapsed >= 5.4) {
+            clearInterval(timer);
+            g.keys.clear();
+            n.sendInput();
+            report.actionAck =
+              n.latest.players.find((p) => p.id === n.id).lastAction >= 1;
+            report.snapshots = n.buffer.frames.length;
+            report.worker =
+              window.__multiplayer.connection.role === "host"
+                ? window.__multiplayer.connection.service.isWorker
+                : true;
+            window.__equalReport = report;
+            window.__equalDone = true;
+          }
+        }, 8);
+      });
+    await Promise.all([run(page), run(guest)]);
+    await Promise.all([
+      page.waitForFunction(() => window.__equalDone),
+      guest.waitForFunction(() => window.__equalDone),
+    ]);
+    const host = await page.evaluate(() => window.__equalReport),
+      joining = await guest.evaluate(() => window.__equalReport);
+    console.log(JSON.stringify({ realRtcMovementEquality: { host, joining } }));
+    expect(joining.distance / host.distance).toBeGreaterThan(0.95);
+    expect(joining.distance / host.distance).toBeLessThan(1.05);
+    for (const report of [host, joining]) {
+      expect(report.distance).toBeGreaterThan(22);
+      expect(report.reverse).toBe(0);
+      expect(report.maxCorrection).toBeLessThan(0.65);
+      expect(Math.max(...report.responseMs)).toBeLessThan(60);
+      expect(report.actionAck).toBe(true);
+      expect(report.worker).toBe(true);
+    }
+    expect(requests).toEqual([]);
+    expect(errors).toEqual([]);
+  } finally {
+    await guest.close();
+  }
 });

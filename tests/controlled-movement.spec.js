@@ -43,18 +43,18 @@ test("real C/Shift/Space controls give short slides, controlled jumps and no hel
   });
   await page.keyboard.down("KeyD");
   await page.evaluate(() => window.__arena.__motionStep(15));
-  expect(await page.evaluate(() => window.__arena.player.vx)).toBeCloseTo(10.6);
+  expect(await page.evaluate(() => window.__arena.player.vx)).toBeCloseTo(8);
   await page.keyboard.down("KeyC");
   const entry = await page.evaluate(() => {
     const g = window.__arena;
     return { x: g.player.x, speed: g.player.vx, slide: g.slideTime };
   });
-  expect(entry.speed).toBeCloseTo(13);
-  expect(entry.slide).toBeCloseTo(0.27);
+  expect(entry.speed).toBeCloseTo(9.4);
+  expect(entry.slide).toBeCloseTo(0.19);
   await page.keyboard.up("KeyC");
   const burst = await page.evaluate(() => {
     const g = window.__arena;
-    g.__motionStep(33);
+    g.__motionStep(24);
     return {
       x: g.player.x,
       slide: g.slideTime,
@@ -64,15 +64,15 @@ test("real C/Shift/Space controls give short slides, controlled jumps and no hel
       pitch: g.pitch,
     };
   });
-  expect(burst.x - entry.x).toBeGreaterThan(1.7);
-  expect(burst.x - entry.x).toBeLessThan(3);
+  expect(burst.x - entry.x).toBeGreaterThan(1.2);
+  expect(burst.x - entry.x).toBeLessThan(1.65);
   expect(burst.slide).toBe(0);
-  expect(burst.fov - burst.base).toBeLessThan(2.1);
+  expect(burst.fov - burst.base).toBeLessThan(0.9);
   expect(burst.yaw).toBe(0);
   expect(burst.pitch).toBe(0);
-  await page.evaluate(() => window.__arena.__motionStep(65));
+  await page.evaluate(() => window.__arena.__motionStep(100));
   await page.keyboard.down("ShiftLeft");
-  expect(await page.evaluate(() => window.__arena.slideTime)).toBeCloseTo(0.27);
+  expect(await page.evaluate(() => window.__arena.slideTime)).toBeCloseTo(0.19);
   await page.keyboard.down("Space");
   const jump = await page.evaluate(() => ({
     slide: window.__arena.slideTime,
@@ -80,8 +80,8 @@ test("real C/Shift/Space controls give short slides, controlled jumps and no hel
     speed: window.__arena.player.vx,
   }));
   expect(jump.slide).toBe(0);
-  expect(jump.vy).toBeCloseTo(9.7);
-  expect(jump.speed).toBeCloseTo(13);
+  expect(jump.vy).toBeCloseTo(7.8);
+  expect(jump.speed).toBeCloseTo(9.4);
   await page.keyboard.up("ShiftLeft");
   await page.keyboard.up("KeyD");
   const flight = await page.evaluate(() => {
@@ -99,15 +99,15 @@ test("real C/Shift/Space controls give short slides, controlled jumps and no hel
       vx: g.player.vx,
     };
   });
-  expect(flight.apex).toBeGreaterThan(1.55);
-  expect(flight.apex).toBeLessThan(1.58);
+  expect(flight.apex).toBeGreaterThan(1.0);
+  expect(flight.apex).toBeLessThan(1.03);
   expect(flight.holding).toBe(true);
   expect(flight.grounded).toBe(true);
   expect(flight.jumps).toBe(0);
   expect(flight.vx).toBe(0);
   await page.keyboard.up("Space");
   await page.keyboard.down("Space");
-  expect(await page.evaluate(() => window.__arena.player.vy)).toBeCloseTo(9.7);
+  expect(await page.evaluate(() => window.__arena.player.vy)).toBeCloseTo(7.8);
   await page.keyboard.up("Space");
   await page.evaluate(() => {
     const g = window.__arena;

@@ -229,7 +229,7 @@ test("reverse air control brakes along the input axis instead of orbiting sidewa
   accelerate(p, { x: -1, z: 0 }, MOVEMENT.runSpeed, 1 / 60);
   assert.ok(p.vx < 21 && p.vx > 18);
   assert.ok(Math.abs(p.vz) < 1e-10);
-  for (let i = 0; i < 60; i++)
+  for (let i = 0; i < 110; i++)
     accelerate(p, { x: -1, z: 0 }, MOVEMENT.runSpeed, 1 / 60);
   assert.ok(p.vx < -20);
 });
@@ -307,7 +307,7 @@ test("a wall collision spends the blocked air momentum instead of allowing a fre
   ]);
   assert.equal(p.vx, 0);
   assert.equal(p.airCarrySpeed, 0);
-  for (let i = 0; i < 60; i++)
+  for (let i = 0; i < 110; i++)
     accelerate(p, { x: -1, z: 0 }, MOVEMENT.runSpeed, 1 / 60);
   assert.ok(Math.hypot(p.vx, p.vz) <= MOVEMENT.runSpeed + 1e-8);
 });

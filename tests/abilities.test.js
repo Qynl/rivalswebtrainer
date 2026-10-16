@@ -117,7 +117,7 @@ test("air movement can reverse, not just drift sideways", () => {
   const p = actor(0, 0);
   p.grounded = false;
   p.vx = 14;
-  for (let i = 0; i < 48; i++) accelerate(p, { x: -1, z: 0 }, 7.8, 1 / 60);
+  for (let i = 0; i < 75; i++) accelerate(p, { x: -1, z: 0 }, 7.8, 1 / 60);
   assert.ok(p.vx < -13);
   assert.ok(Math.abs(p.vz) < 0.001);
   assert.ok(Math.hypot(p.vx, p.vz) > 13);
@@ -126,9 +126,9 @@ test("air movement can steer through both lateral directions", () => {
   const p = actor(0, 0);
   p.grounded = false;
   p.vz = -14;
-  for (let i = 0; i < 10; i++) accelerate(p, { x: 1, z: 0 }, 7.8, 1 / 60);
+  for (let i = 0; i < 22; i++) accelerate(p, { x: 1, z: 0 }, 7.8, 1 / 60);
   assert.ok(p.vx > 13);
-  for (let i = 0; i < 48; i++) accelerate(p, { x: -1, z: 0 }, 7.8, 1 / 60);
+  for (let i = 0; i < 75; i++) accelerate(p, { x: -1, z: 0 }, 7.8, 1 / 60);
   assert.ok(p.vx < -13);
 });
 test("F triggers Scythe dash without switching slots, shooting or consuming ammo", () => {

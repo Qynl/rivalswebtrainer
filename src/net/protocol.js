@@ -1,5 +1,5 @@
 import { WEAPONS } from "../data.js";
-export const PROTOCOL = 2,
+export const PROTOCOL = 3,
   MAX_PLAYERS = 6,
   ONLINE_MAPS = ["blockout", "foundry", "courtyard"];
 export const DEFAULT_LOADOUT = ["rifle", "pistol", "fists", "grenade"];
