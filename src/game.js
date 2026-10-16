@@ -122,8 +122,11 @@ export class Game {
       180,
     );
     this.camera.rotation.order = "YXZ";
-    this.scene.add(new THREE.HemisphereLight(0xddeaf5, 0x515f6a, 0.85));
+    const fill = new THREE.HemisphereLight(0xddeaf5, 0x515f6a, 0.85);
+    fill.name = "arena-fill";
+    this.scene.add(fill);
     const sun = new THREE.DirectionalLight(0xfff3e6, 2.6);
+    sun.name = "arena-sun";
     sun.position.set(-20, 38, 15);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);

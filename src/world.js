@@ -4,6 +4,7 @@ import { EXTRA_COURTS, dressCourt } from "./map-layouts.js";
 import { createArenaDressing } from "./arena-dressing.js";
 import { batchFixedMeshes } from "./batching.js";
 import { muzzleFlash } from "./animation.js";
+import { applyMapLighting, createMapArchitecture } from "./map-art.js";
 import { ArenaAtmosphere } from "./atmosphere.js";
 import { ARENA, HALF_COVER, HALF_WINDOWS } from "./arena-layout.js";
 import * as THREE from "three";
@@ -229,6 +230,7 @@ export class ArenaWorld {
         layout.cover || HALF_COVER,
         layout.windows || HALF_WINDOWS,
       );
+      this.finishMapArt(layout, layout.cover || HALF_COVER);
       return;
     }
     const roof = id === "rooftops",
@@ -413,8 +415,34 @@ export class ArenaWorld {
         );
       building.material = this.materials.get(key);
     }
+    this.finishMapArt(null, [], floor);
     this.nav = new NavGrid(this.boxes, 48, 1.5);
     // Combat/LOS can run before the first render, including right after a round reset.
+    this.group.updateMatrixWorld(true);
+  }
+  finishMapArt(layout, covers, floor) {
+    if (floor) {
+      const key = "detailed-floor-" + this.mapId;
+      if (!this.materials.has(key))
+        this.materials.set(
+          key,
+          new THREE.MeshStandardMaterial({
+            color: this.mapId === "rooftops" ? 0x85949d : 0x899195,
+            roughness: 0.9,
+            map: this.graphics.texture("floor"),
+            roughnessMap: this.graphics.texture("floor-roughness"),
+            bumpMap: this.graphics.texture("height"),
+            bumpScale: 0.006,
+          }),
+        );
+      floor.material = this.materials.get(key);
+    }
+    this.visualStyle = applyMapLighting(
+      this.scene,
+      this.atmosphere,
+      this.mapId,
+    );
+    this.group.add(createMapArchitecture(this, layout, covers));
     this.group.updateMatrixWorld(true);
   }
   concrete(x, z, w, h, d, angle = 0) {
@@ -574,7 +602,13 @@ export class ArenaWorld {
           )
           .replace(
             "#include <map_fragment>",
-            "vec3 panelNormal=abs(normalize(vPanelNormal));vec2 panelUv=panelNormal.y>max(panelNormal.x,panelNormal.z)?vPanelPosition.xz:panelNormal.x>panelNormal.z?vPanelPosition.zy:vPanelPosition.xy;diffuseColor*=texture2D(map,panelUv/2.4);vec2 slab=floor(panelUv/2.4);diffuseColor.rgb*=.94+.09*fract(sin(dot(slab,vec2(12.9898,78.233)))*43758.5453);diffuseColor.rgb*=1.-.055*(1.-panelNormal.y)*exp(-max(vPanelPosition.y,0.)*2.);",
+            `vec3 panelNormal=abs(normalize(vPanelNormal));vec2 panelUv=panelNormal.y>max(panelNormal.x,panelNormal.z)?vPanelPosition.xz:panelNormal.x>panelNormal.z?vPanelPosition.zy:vPanelPosition.xy;diffuseColor*=texture2D(map,panelUv/2.4);vec2 slab=floor(panelUv/2.4);diffuseColor.rgb*=.94+.09*fract(sin(dot(slab,vec2(12.9898,78.233)))*43758.5453);diffuseColor.rgb*=1.-.055*(1.-panelNormal.y)*exp(-max(vPanelPosition.y,0.)*2.);
+            vec2 panelAA=max(fwidth(panelUv),vec2(.0015));
+            vec2 jointDistance=abs(fract(panelUv/2.4-.5)-.5)*2.4;
+            vec2 joints=1.-smoothstep(vec2(.006),vec2(.006)+panelAA*1.4,jointDistance);
+            vec2 tieDistance=abs(abs(fract(panelUv/2.4)-.5)*2.4-vec2(.9));
+            float ties=1.-smoothstep(.018,.018+length(panelAA),length(tieDistance));
+            diffuseColor.rgb*=1.-(1.-.75*panelNormal.y)*(.10*max(joints.x,joints.y)+.13*ties);`,
           );
       };
       const panelCompile = material.onBeforeCompile;
@@ -585,7 +619,7 @@ export class ArenaWorld {
           "float concreteHeight=texture2D(bumpMap,panelUv/.55).r;normal=perturbNormalArb(-vViewPosition,normal,vec2(dFdx(concreteHeight),dFdy(concreteHeight))*bumpScale,faceDirection);",
         );
       };
-      material.customProgramCacheKey = () => "concrete-reference-v2";
+      material.customProgramCacheKey = () => "concrete-reference-v3";
       this.blockMaterial = material;
       this.materials.set("reference-concrete", material);
     }

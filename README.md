@@ -294,3 +294,19 @@ All **17 primary/secondary models** now have individual first-person sizes and f
 The actual gun-only render audit measured Sniper at **about twice its previous pixel area**, with every gun showing increased screen presence. Hands are excluded from that measurement. ADS alignment, recoil/confirmed-hit presentation, reload mechanisms and gameplay aim remain intact; weapon stats and the calmer movement tuning are unchanged.
 
 Loadout cards now fit physical weapon geometry rather than invisible muzzle/glint meshes, and the angled preview camera keeps paired pistols inside the frame. See [the arsenal visual report](docs/arsenal-visuals.md) for measurements and validation. A published static copy requires the updated frontend/assets to be republished; pushing code alone does not verify that deployment.
+
+
+## Map and environment polish
+
+All six combat maps, plus the Range, now have coordinated daylight/sky/fog profiles,
+cleaner concrete surface detail and more distinctive surroundings. Arena gains a
+stepped campus skyline; Foundry/Hangar get industrial landmarks; Courtyard gains
+exterior trees and pergolas. Rooftops/Compound receive maintenance grilles, detailed
+fan guards and container finishing, with textured floors across the legacy maps.
+
+New substantial scenery stays outside the court; inside details are flush paint or
+surface cladding. Existing collision, spawn positions, navigation, two-level Arena
+routes, controlled movement and weapon rules are preserved. New art is batched into
+3–6 additional batches per map, with cached offline-generated textures and no new
+per-frame lights. See [the map-art report](docs/map-art.md) and run
+`npm run audit:maps -- /tmp/map-art` for reproducible overview/eye-level renders.

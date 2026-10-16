@@ -106,16 +106,14 @@ export class ArenaGraphics {
       }
     }
     if (kind === "block-concrete") {
-      g.strokeStyle = "rgba(70,80,88,.42)";
-      g.lineWidth = 1.2;
-      g.strokeRect(0.6, 0.6, 254.8, 254.8);
-      g.fillStyle = "rgba(60,70,77,.65)";
-      for (const x of [7, 249])
-        for (const y of [7, 249]) {
-          g.beginPath();
-          g.arc(x, y, 1.3, 0, Math.PI * 2);
-          g.fill();
-        }
+      // Slab joints/tie holes are derivative-antialiased in the world shader.
+      // Baking them here as well caused dark, shimmering double seams at range.
+      g.fillStyle = "rgba(95,103,106,.12)";
+      for (let i = 0; i < 240; i++) {
+        const x = this.random() * 256,
+          y = this.random() * 256;
+        g.fillRect(x, y, 0.5 + this.random(), 0.5 + this.random());
+      }
     }
     if (kind === "windows") {
       g.fillStyle = "#677d8c";

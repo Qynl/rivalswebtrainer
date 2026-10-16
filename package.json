@@ -13,6 +13,7 @@
     "audit:visual": "node scripts/visual-audit.mjs",
     "audit:bots": "node scripts/bot-audit.mjs",
     "audit:arena": "node scripts/arena-audit.mjs",
+    "audit:maps": "node scripts/audit-map-art.mjs",
     "server": "node server/index.js",
     "start": "SERVE_DIST=1 node server/index.js"
   },
