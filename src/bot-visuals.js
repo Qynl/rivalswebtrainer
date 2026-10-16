@@ -1,5 +1,6 @@
 import { THROW_DURATION, THROW_RELEASE } from "./throwables.js";
-import { selectShotSide } from "./animation.js";
+import { knifeStabPose, sniperBoltPose } from "./weapon-actions.js";
+import { selectShotSide, mechanismPose } from "./animation.js";
 import * as THREE from "three";
 import { createViewModel } from "./world.js";
 import { WEAPONS } from "./data.js";
@@ -55,10 +56,29 @@ export function updateBotWeapon(model, e, clock = 0) {
     const weapon = socket.userData.weapon,
       parts = weapon.userData,
       age = e.netId
-        ? (e.fireFlash || 0) > 0
-          ? 0
-          : 1
+        ? (e.netShotAge ?? ((e.fireFlash || 0) > 0 ? 0 : 10))
         : Math.max(0, clock - (e.lastShotAt ?? -10));
+    const reload = e.reload || 0,
+      reloadProgress = reload > 0 ? 1 - reload / (WEAPONS[id].reload || 1) : 0,
+      extract =
+        reload > 0
+          ? Math.sin(Math.max(0, Math.min(1, reloadProgress)) * Math.PI)
+          : 0;
+    if (parts.bolt) {
+      parts.bolt.position.copy(parts.bolt.userData.restPosition);
+      parts.bolt.position.z += mechanismPose(age).bolt;
+    }
+    if (parts.magazine) {
+      parts.magazine.position.copy(parts.magazine.userData.restPosition);
+      parts.magazine.position.y -= extract * 0.24;
+    }
+    if (parts.sniperBolt) {
+      const cycle = sniperBoltPose(age);
+      parts.sniperBolt.position.copy(parts.sniperBolt.userData.restPosition);
+      parts.sniperBolt.position.z += cycle.pull * 0.095;
+      parts.sniperBolt.rotation.z = -cycle.lift * 0.95;
+      p.botRightGrip.z += cycle.pull * 0.07;
+    }
     if (WEAPONS[id].slot === 3) {
       const remaining = e.throwTime || e.quickUtilityTime || 0,
         throwing = id !== "medkit" && remaining > 0,
@@ -116,7 +136,11 @@ export function updateBotWeapon(model, e, clock = 0) {
     if (parts.pilotFlame)
       parts.pilotFlame.scale.y = 1 + Math.sin((e.netShot || 0) * 31) * 0.13;
     if (parts.nozzleGlow)
-      parts.nozzleGlow.material.emissiveIntensity = age === 0 ? 1.8 : 0.15;
+      parts.nozzleGlow.material.emissiveIntensity = (
+        e.netId ? e.fireFlash > 0 : age < 0.12
+      )
+        ? 1.8
+        : 0.15;
     return;
   }
   if (p.onlineSocket) p.onlineSocket.visible = false;
@@ -124,8 +148,14 @@ export function updateBotWeapon(model, e, clock = 0) {
     if (p.meleeSocket) p.meleeSocket.visible = false;
     return;
   }
+  const stab = e.meleeId === "knife" && !!e.knifeStab;
+  const duration = e.netId ? 0.36 : 0.28;
   const cut =
-    e.swingTime > 0 ? Math.sin((1 - e.swingTime / 0.28) * Math.PI) : 0;
+    !stab && e.swingTime > 0
+      ? Math.sin(
+          THREE.MathUtils.clamp(1 - e.swingTime / duration, 0, 1) * Math.PI,
+        )
+      : 0;
   if (e.meleeId === "fists") {
     if (p.meleeSocket) p.meleeSocket.visible = false;
     p.botLeftGrip.set(-0.18, -0.09, -0.12);
@@ -187,6 +217,21 @@ export function updateBotWeapon(model, e, clock = 0) {
   if (trail) {
     trail.visible = cut > 0.4;
     trail.material.opacity = cut * 0.32;
+  }
+  const knifeRig = weapon.userData.knifeRig;
+  if (knifeRig) {
+    knifeRig.position.copy(knifeRig.userData.restPosition);
+    knifeRig.rotation.set(0, 0, 0);
+    if (stab && e.swingTime > 0) {
+      const pose = knifeStabPose(e.swingTime, duration);
+      knifeRig.rotation.x = pose.grip * (Math.PI + 0.45);
+      knifeRig.position.y += pose.lift * 0.29 - pose.drive * 0.12;
+      knifeRig.position.z -= pose.drive * 0.36;
+      p.botRightGrip.addScaledVector(
+        knifeRig.position.clone().sub(knifeRig.userData.restPosition),
+        weapon.scale.x,
+      );
+    }
   }
   const blade = weapon.userData.blade;
   if (blade?.material.emissive) {

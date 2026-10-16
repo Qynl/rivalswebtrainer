@@ -263,9 +263,13 @@ export class MultiplayerSession {
         healTime: state.heal,
         dashTime: state.dash,
         swingTime: state.swing,
+        aiming: !!state.aiming,
+        reload: state.reload,
+        knifeStab: !!state.knifeStab,
       });
       if (state.shot > 0 && state.shot !== (e.netShot || 0)) {
         e.netShot = state.shot;
+        e.netShotAge = Math.max(0, snapshot.time - state.shot);
         e.fireFlash = 0.065;
         const w = WEAPONS[state.weapon];
         g.audio.playAt(
@@ -530,6 +534,7 @@ export class MultiplayerSession {
         model.position.set(e.x, e.y, e.z);
         model.rotation.y = e.yaw;
         e.fireFlash = Math.max(0, (e.fireFlash || 0) - dt);
+        e.netShotAge = (e.netShotAge ?? 10) + dt;
         e.grounded = state.grounded;
         e.sliding = state.slide;
         e.meleeId = state.loadout[2];

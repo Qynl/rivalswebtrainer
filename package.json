@@ -7,7 +7,7 @@
     "dev": "node scripts/dev.mjs",
     "build": "vite build",
     "test": "node --test tests/*.test.js",
-    "preview": "vite preview --host 0.0.0.0",
+    "preview": "node scripts/dev.mjs --preview",
     "test:browser": "playwright test",
     "test:soak": "node scripts/soak.mjs",
     "audit:visual": "node scripts/visual-audit.mjs",

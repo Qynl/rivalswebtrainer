@@ -137,8 +137,12 @@ test("knife swing directions and backstab thrust have distinct finite poses", ()
   const z = m.rotation.z;
   a.update(m, { dt: 1, swing: 0.2, swingSequence: 2 });
   assert.ok(z * m.rotation.z < 0);
-  a.update(m, { dt: 1, swing: 0, backstab: 0.26 });
-  assert.ok(m.position.z < -0.3);
+  a.update(m, { dt: 1, swing: 0.255, knifeStab: true, backstab: 0.26 });
+  assert.ok(m.userData.knifeRig.rotation.x > Math.PI);
+  assert.ok(
+    m.userData.knifeRig.position.z <
+      m.userData.knifeRig.userData.restPosition.z - 0.3,
+  );
   assert.ok(m.rotation.toArray().slice(0, 3).every(Number.isFinite));
   Game.prototype.disposeVisual.call({}, m);
 });

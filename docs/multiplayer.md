@@ -100,3 +100,16 @@ No networked FPS can promise zero lag: RTT, jitter, packet loss, server load, th
 ### Secondary roster update
 
 Protocol negotiation is now version **2**. Client, server health and development-server reuse check share the same constant. New weapon IDs append to the old roster rather than renumbering old weapons. A spare player-flags bit carries the active dual-pistol barrel, so a standard 3v3 binary frame remains 587 bytes. Deploy client and server together; an older client receives the existing version-mismatch/reload message. All six secondary choices use the same server-side ammunition, timing, damage and loadout validation as primaries.
+
+## HTML returned instead of multiplayer JSON
+
+If `/api/health` returns `<!doctype html>` with HTTP 200, it is reaching an HTML page/SPA fallback instead of the match API. The client now explains that routing/hosting problem instead of exposing `Unexpected token '<'`. It sends `Accept: application/json`, avoids the cache, and RETRY reconnects normally once routing is restored.
+
+- **Development:** `npm run dev` starts Vite and the match server. Open port 5173.
+- **Built preview:** `npm run build && npm run preview` now starts **both** the built frontend (4173 by default) and match server (3001). Previously preview started only Vite and relied on a separately running backend.
+- **Deployment:** use the Node `npm start` service described above, or forward `/api/*` and WebSocket Upgrade requests to it. Do not rewrite API routes to `index.html`. A static-only host supports offline training, not a live multiplayer server. Keep `ORIGINS` configured for the actual production origin.
+- A working `/api/health` returns JSON containing `protocol`, `websocket`, and `geckos`. Unknown `/api` routes now return JSON 404s, including when the same Node process serves the production SPA.
+
+Validation: standalone preview was started without any separate dev/backend process; proxied health returned JSON and `/api/live` completed a real WebSocket `hello` handshake. A browser test simulates the exact HTTP-200 HTML response, verifies the useful error, restores the API, and reconnects via RETRY. This does not provision a backend for an unrelated static site: that site's URL/configuration is needed to diagnose its routing.
+
+Final combined validation: **334/334 unit tests** and **14/14 targeted browser regressions** passed, including HTML-error recovery, two actual online clients, production offline reload and animation regressions. The 5173 live-preview health endpoint was rechecked and returns valid JSON. The user's separate URL, if any, was not supplied or independently diagnosed.

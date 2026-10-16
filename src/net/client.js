@@ -1,3 +1,4 @@
+import { readMultiplayerHealth } from "./health.js";
 import { decodeSnapshot } from "./snapshot-codec.js";
 import { PROTOCOL } from "./protocol.js";
 const initial = {
@@ -52,11 +53,9 @@ export class MultiplayerClient {
     try {
       const health = await fetch("/api/health", {
         cache: "no-store",
+        headers: { Accept: "application/json" },
         signal: AbortSignal.timeout(3000),
-      }).then((r) => {
-        if (!r.ok) throw Error("Server unavailable");
-        return r.json();
-      });
+      }).then(readMultiplayerHealth);
       if (generation !== this.generation) return;
       if (health.protocol !== PROTOCOL)
         throw Error("Client/server versions differ. Reload the page.");

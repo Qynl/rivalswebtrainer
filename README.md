@@ -81,6 +81,12 @@ Smoke now grows and dissipates as depth-tested procedural billows, with an inter
 
 Implementation, validation and actual elapsed time: [work log](docs/night-pass.md).
 
+## Knife and Sniper animation update
+
+Knife F now uses a **reverse-grip overhand stab**, with a real grip pivot, an independent bracing hand and wrist/forearm counter-rotation. Normal attacks from behind select the same distinct drive. Contact remains at 105 ms; the animation does **not** change front/side 40 versus rear 150 damage. Reused models return to their idle grip cleanly.
+
+Scoped opponents with Sniper show a **directional white scope glint** at the objective lens. Opaque cover depth-occludes it; hip fire, reload, death and quick actions suppress it. Your own viewmodel does not emit a glint. Sniper also has a lift–pull–push–lock bolt cycle, and remote slides/magazines animate. ADS and stab styles are synchronized without increasing ordinary snapshot size. See [validation and animation details](docs/knife-scope-animation.md).
+
 ## Expanded secondaries and handling
 
 The secondary roster now has **six choices**. Revolver offers six precision shots (45 body / 78.75 head), a rotating cylinder and speedloader-style reload. Burst Pistol fires three 14-damage rounds per click, with a compact open reflex sight. Dual Pistols hold 24 shared rounds and alternate two separately cycling guns while LMB is held; each gun has its own flash, slide and magazine. New weapons have bespoke models, icons, audio/feel profiles, reloads, previews and online loadout support.
@@ -183,7 +189,7 @@ See [the combat-readability report](docs/combat-readability-pass.md) for validat
 ## Tests
 
 ```sh
-npm test                   # 317 input, abilities, physics, movement, rigging, audio, rendering and combat tests
+npm test                   # 334 input, abilities, physics, movement, rigging, audio, rendering and combat tests
 npm run build              # Production build + offline cache generation
 npx playwright install chromium
 npm run test:browser       # Browser integration test

@@ -528,6 +528,8 @@ export class Match {
           dash: g.dashTime,
           deflect: g.deflectTime,
           swing: g.swingTime,
+          aiming: !!g.aiming,
+          knifeStab: !!g.knifeStabAttack && g.swingTime > 0,
           throw: g.throwTime,
           heal: g.healTime,
           reload: g.reloadTime,

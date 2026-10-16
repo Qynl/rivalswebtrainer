@@ -1,3 +1,4 @@
+import { createScopeGlint } from "./scope-glint.js";
 import { buildSecondary } from "./secondary-models.js";
 import { detailWeapon, WEAPON_FINISHES } from "./weapon-detailing.js";
 import { rememberPart, muzzleFlash } from "./animation.js";
@@ -868,9 +869,13 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
         roughness: 0.1,
       });
       cyl(0.24, 0.028, -0.545, 0.048, 0.005, lens);
+      cyl(0.24, 0.028, -0.932, 0.057, 0.005, lens);
       box(0.24, -0.06, -0.7, 0.036, 0.095, 0.1, dark);
       cyl(0.3, 0.028, -0.74, 0.025, 0.06, steel, "x");
-      tube(
+      const bolt = new THREE.Group();
+      bolt.position.set(0.31, -0.15, -0.57);
+      g.add(bolt);
+      const handle = tube(
         [
           [0.31, -0.15, -0.57],
           [0.36, -0.15, -0.53],
@@ -879,6 +884,13 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
         0.011,
         silver,
       );
+      bolt.attach(handle);
+      g.userData.sniperBolt = rememberPart(bolt);
+      g.userData.scopeFront = new THREE.Vector3(0.24, 0.028, -0.936);
+      if (!hands) {
+        g.userData.scopeGlint = createScopeGlint();
+        g.add(g.userData.scopeGlint);
+      }
     } else {
       const magazine = new THREE.Group();
       magazine.position.set(0.24, -0.245, -0.76);
@@ -1015,6 +1027,18 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
       ),
     );
   }
+  if (id === "knife") {
+    const rig = new THREE.Group();
+    rig.name = "knife-grip-pivot";
+    rig.position.set(0.28, -0.29, -0.62);
+    g.add(rig);
+    const left = g.userData.hands?.[1];
+    for (const child of [...g.children])
+      if (child !== rig && child !== left && child !== g.userData.slashTrail)
+        rig.attach(child);
+    g.userData.knifeRig = rememberPart(rig);
+    if (g.userData.hands?.[0]) rememberPart(g.userData.hands[0]);
+  }
   for (const part of [
     g.userData.pump,
     g.userData.bolt,
@@ -1023,6 +1047,7 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
     g.userData.bowTopCam,
     g.userData.bowBottomCam,
     g.userData.revolverCylinder,
+    g.userData.sniperBolt,
   ])
     if (part) mergeStatic(part, new Set());
   for (const part of [
@@ -1045,6 +1070,7 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
     if (h.userData.sleeve) mergeStatic(h.userData.sleeve, new Set());
     mergeStatic(h, new Set());
   }
+  if (g.userData.knifeRig) mergeStatic(g.userData.knifeRig, moving);
   mergeStatic(g, moving);
   g.traverse((o) => {
     if (o.isMesh) o.frustumCulled = false;

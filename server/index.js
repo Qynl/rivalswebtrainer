@@ -54,11 +54,20 @@ export async function createMultiplayerServer({
     const route = req.url?.split("?")[0] || "/";
     if (
       !staticRoot ||
+      route === "/api" ||
       route.startsWith("/api/") ||
       route.startsWith("/.wrtc/")
     ) {
-      res.writeHead(404);
-      res.end("Not found");
+      if (route === "/api" || route.startsWith("/api/")) {
+        res.writeHead(404, {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store",
+        });
+        res.end(JSON.stringify({ error: "Unknown multiplayer API route" }));
+      } else {
+        res.writeHead(404);
+        res.end("Not found");
+      }
       return;
     }
     if (!["GET", "HEAD"].includes(req.method)) {

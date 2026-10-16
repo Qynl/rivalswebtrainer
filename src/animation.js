@@ -1,3 +1,4 @@
+import { knifeStabPose, sniperBoltPose } from "./weapon-actions.js";
 import * as THREE from "three";
 import { BOW_DRAW_TIME } from "./combat-rules.js";
 import { weaponFeel } from "./weapon-feel.js";
@@ -389,17 +390,65 @@ export class WeaponAnimator {
       model.rotation.x -= dash * 0.2;
       model.position.z += dash * 0.07;
     }
+    if (parts.knifeRig) {
+      const sleeve = parts.hands?.[0]?.userData.sleeve;
+      if (sleeve) {
+        sleeve.position.set(0, -0.04, 0.08);
+        sleeve.rotation.set(0, 0, 0);
+      }
+      parts.knifeRig.position.copy(parts.knifeRig.userData.restPosition);
+      parts.knifeRig.rotation.set(0, 0, 0);
+    }
+    if (parts.sniperBolt) {
+      const bolt = sniperBoltPose(state.shotAge);
+      parts.sniperBolt.position.copy(parts.sniperBolt.userData.restPosition);
+      parts.sniperBolt.position.z += bolt.pull * 0.095;
+      parts.sniperBolt.rotation.z = -bolt.lift * 0.95;
+      if (parts.hands?.[0]) {
+        const hand = parts.hands[0];
+        hand.position.copy(hand.userData.restPosition);
+        hand.position.z += bolt.pull * 0.075;
+        hand.position.x += bolt.lift * 0.035;
+        hand.position.y += bolt.lift * 0.025;
+      }
+    }
     if (state.swing > 0) {
       const t = saturate(1 - state.swing / 0.36),
         wind = smooth(t / 0.28),
         strike = smooth((t - 0.28) / 0.22),
         recover = 1 - smooth((t - 0.55) / 0.45),
         direction = (state.swingSequence || 0) % 2 ? 1 : -1;
-      if (parts.weaponId === "knife" && state.quickStab) {
-        model.position.z += (wind * 0.06 - strike * 0.4) * recover;
-        model.position.y += (wind * 0.025 + strike * 0.04) * recover;
-        model.rotation.x -= strike * recover * 0.75;
-        model.rotation.z += (wind * 0.25 - strike * 0.3) * recover;
+      if (
+        parts.weaponId === "knife" &&
+        (state.quickStab || state.knifeStab || state.backstab > 0)
+      ) {
+        const pose = knifeStabPose(state.swing),
+          rig = parts.knifeRig;
+        if (rig) {
+          rig.rotation.set(
+            pose.grip * (Math.PI + 0.45),
+            -0.12 * pose.drive,
+            0.12 * pose.lift,
+          );
+          rig.position.y += pose.lift * 0.29 - pose.drive * 0.12;
+          rig.position.z += pose.lift * 0.04 - pose.drive * 0.36;
+          rig.position.x -= pose.drive * 0.08;
+          // The wrist flips the dagger; the forearm must still lead back to
+          // the camera, not turn upside down with the blade.
+          const sleeve = parts.hands?.[0]?.userData.sleeve;
+          if (sleeve) {
+            sleeve.quaternion.copy(rig.quaternion).invert();
+            sleeve.position
+              .set(0, -0.04, 0.08)
+              .applyQuaternion(sleeve.quaternion);
+            sleeve.rotateX(pose.grip * 0.5);
+          }
+        }
+        model.position.z -= pose.drive * 0.045;
+        if (parts.hands?.[1]) {
+          parts.hands[1].position.y += pose.lift * 0.08;
+          parts.hands[1].position.z -= pose.drive * 0.1;
+        }
       } else if (parts.weaponId === "knife") {
         model.position.x +=
           (wind * 0.045 - strike * 0.15) * recover * direction;
@@ -423,18 +472,16 @@ export class WeaponAnimator {
         model.position.z -= strike * recover * 0.06;
       }
       if (parts.slashTrail) {
-        parts.slashTrail.visible = t > 0.28 && t < 0.6;
+        parts.slashTrail.visible =
+          !(
+            parts.weaponId === "knife" &&
+            (state.quickStab || state.knifeStab)
+          ) &&
+          t > 0.28 &&
+          t < 0.6;
         parts.slashTrail.material.opacity =
           Math.sin(saturate((t - 0.28) / 0.32) * Math.PI) * 0.24;
       }
-    }
-    if (state.backstab > 0 && parts.weaponId === "knife") {
-      const t = saturate(1 - state.backstab / 0.26),
-        drive = 1 - smooth(t);
-      model.position.z -= drive * 0.18;
-      model.position.y += drive * 0.04;
-      model.rotation.x -= drive * 0.65;
-      model.rotation.z += drive * 0.28;
     }
     if (state.inspect > 0 && !state.guard && !reloading) {
       const t = 1 - state.inspect / 1.8,

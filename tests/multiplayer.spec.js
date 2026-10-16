@@ -185,6 +185,29 @@ test("two real browser clients join a private lobby, ready up and share an autho
       }),
     )
     .toBe("sniper");
+  // ADS is authoritative and crosses the binary wire to the other operator.
+  await page.evaluate(() => {
+    window.__arena.aiming = true;
+  });
+  await expect
+    .poll(() =>
+      other.evaluate(() => {
+        const g = window.__arena;
+        return g.entities.find((e) => e.netId !== g.network.id)?.aiming;
+      }),
+    )
+    .toBe(true);
+  await page.evaluate(() => {
+    window.__arena.aiming = false;
+  });
+  await expect
+    .poll(() =>
+      other.evaluate(() => {
+        const g = window.__arena;
+        return g.entities.find((e) => e.netId !== g.network.id)?.aiming;
+      }),
+    )
+    .toBe(false);
   // A forged position/HP/kill packet is ignored: server accepts controls only.
   await page.evaluate(() => {
     const g = window.__arena;

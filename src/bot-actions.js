@@ -1,3 +1,4 @@
+import { isBackstab } from "./combat-rules.js";
 import { WEAPONS } from "./data.js";
 import { MOVEMENT, accelerate, steerSlide } from "./movement.js";
 import { canOccupy, moveBody, verticalStep, clamp } from "./physics.js";
@@ -239,6 +240,8 @@ export function botSwing(e) {
     return false;
   e.meleeCooldown = WEAPONS[e.meleeId].interval;
   e.swingTime = 0.28;
+  e.knifeStab =
+    e.meleeId === "knife" && !!e.targetEntity && isBackstab(e, e.targetEntity);
   e.meleePending = { id: e.meleeId, yaw: e.yaw, remaining: 0.12 };
   count(e, "meleeSwings");
   return true;

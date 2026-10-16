@@ -79,7 +79,9 @@ export function encodeSnapshot(snapshot) {
       (p.alive ? 1 : 0) |
         (p.grounded ? 2 : 0) |
         (p.shotSide ? 4 : 0) |
-        (p.quickUtility > 0 ? 8 : 0),
+        (p.quickUtility > 0 ? 8 : 0) |
+        (p.aiming ? 16 : 0) |
+        (p.knifeStab ? 32 : 0),
     );
     u8(p.height * 100);
     u16(p.health * 100);
@@ -181,6 +183,8 @@ export function decodeSnapshot(data, metadata) {
         team: meta.team,
         alive: !!(flags & 1),
         grounded: !!(flags & 2),
+        aiming: !!(flags & 16),
+        knifeStab: !!(flags & 32),
         shotSide: flags & 4 ? 1 : 0,
         height: u8() / 100,
         health: u16() / 100,

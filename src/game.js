@@ -1,3 +1,4 @@
+import { updateScopeGlint } from "./scope-glint.js";
 import { updateProjectileTrail } from "./projectile-feedback.js";
 import { FlameJet } from "./flame-fx.js";
 import {
@@ -855,6 +856,7 @@ export class Game {
       this.swingTime = 0.36;
       this.swingSequence = (this.swingSequence || 0) + 1;
       this.backstabTime = 0;
+      this.knifeStabAttack = true;
       this.playerMeleePending = {
         id,
         remaining: 0.105,
@@ -1166,6 +1168,17 @@ export class Game {
       this.swingTime = 0.36;
       this.swingSequence = (this.swingSequence || 0) + 1;
       this.backstabTime = 0;
+      this.knifeStabAttack =
+        id === "knife" &&
+        this.entities.some(
+          (e) =>
+            e.alive &&
+            e.team !== p.team &&
+            isBackstab(p, e) &&
+            this.eye(e).distanceTo(origin) < w.range &&
+            this.eye(e).sub(origin).normalize().dot(forward) > 0.45 &&
+            this.hasLOS(origin, this.eye(e)),
+        );
       this.playerMeleePending = { id, remaining: 0.105 };
     } else {
       this.matchStats.shots++;
@@ -1227,7 +1240,10 @@ export class Game {
       )
         continue;
       const backstab = attack.id === "knife" && isBackstab(p, e);
-      if (backstab) this.backstabTime = 0.26;
+      if (backstab) {
+        this.backstabTime = 0.26;
+        this.knifeStabAttack = true;
+      }
       this.damage(
         e,
         attack.id === "knife" ? knifeDamage(p, e) : w.damage,
@@ -2654,6 +2670,7 @@ export class Game {
       aimArm(m.parts.leftArm, m.parts.leftElbow, leftTarget, -1);
       aimArm(m.parts.rightArm, m.parts.rightElbow, rightTarget, 1);
     }
+    updateScopeGlint(m, e, this.camera?.position, this.clock);
   }
   updateEffects(dt) {
     for (let i = this.effects.length - 1; i >= 0; i--) {
@@ -2955,6 +2972,7 @@ export class Game {
         heal: this.healTime,
         healTotal: this.healTotal,
         quickStab: this.knifeQuickTime > 0,
+        knifeStab: this.knifeStabAttack,
         swing: this.swingTime,
         swingSequence: this.swingSequence,
         backstab: this.backstabTime,
