@@ -1,5 +1,11 @@
 import { WEAPONS } from "../src/data.js";
-import { randomBytes, randomUUID } from "node:crypto";
+// Web Crypto works in Node and secure browsers. The same validated match/lobby
+// simulation can therefore run in a player's browser without a game backend.
+const randomHex = (length) =>
+  Array.from(crypto.getRandomValues(new Uint8Array(length)), (n) =>
+    n.toString(16).padStart(2, "0"),
+  ).join("");
+const randomUUID = () => crypto.randomUUID();
 import {
   cleanInput,
   cleanLoadout,
@@ -10,14 +16,16 @@ import {
   PROTOCOL,
 } from "../src/net/protocol.js";
 import { Match } from "./match.js";
-const code = () => randomBytes(4).toString("hex").slice(0, 6).toUpperCase();
+const code = () => randomHex(4).slice(0, 6).toUpperCase();
 export class LobbyService {
   constructor({
     maxClients = 128,
     maxRooms = 32,
     now = () => performance.now(),
     MatchClass = Match,
+    roomCode = code,
   } = {}) {
+    this.roomCode = roomCode;
     this.clients = new Map();
     this.rooms = new Map();
     this.maxClients = maxClients;
@@ -140,7 +148,7 @@ export class LobbyService {
         time: now,
       });
       if (!c.probeToken || now - c.probeAt > 3000) {
-        c.probeToken = randomBytes(8).toString("hex");
+        c.probeToken = randomHex(8);
         c.probeAt = now;
         this.send(id, { type: "probe", token: c.probeToken });
       }
@@ -185,7 +193,7 @@ export class LobbyService {
       if (this.rooms.size >= this.maxRooms)
         return this.error(id, "Server is full. Try again later.");
       const loadout = cleanLoadout(message.loadout) || [...DEFAULT_LOADOUT];
-      let roomCode = code();
+      let roomCode = this.roomCode();
       while (this.rooms.has(roomCode)) roomCode = code();
       const r = {
         code: roomCode,
@@ -330,7 +338,7 @@ export class LobbyService {
         m.stats = { shots: 0, hits: 0, kills: 0, deaths: 0, headshots: 0 };
         m.lastAction = 0;
       }
-      room.matchId = randomBytes(4).readUInt32LE(0) || 1;
+      room.matchId = crypto.getRandomValues(new Uint32Array(1))[0] || 1;
       room.match = new this.MatchClass(room);
       for (const id of room.members.keys())
         this.send(id, {

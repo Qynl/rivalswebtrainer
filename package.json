@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@geckos.io/client": "^3.1.0",
+    "peerjs": "^1.5.5",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "three": "^0.180.0",
@@ -26,6 +27,7 @@
   "devDependencies": {
     "@playwright/test": "^1.56.0",
     "@vitejs/plugin-react": "^5.2.0",
+    "peer": "^1.0.2",
     "vite": "^7.1.0"
   },
   "optionalDependencies": {

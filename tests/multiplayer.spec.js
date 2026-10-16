@@ -10,7 +10,7 @@ test("two real browser clients join a private lobby, ready up and share an autho
     errors = [];
   for (const p of [page, other]) {
     p.on("pageerror", (e) => errors.push(e.message));
-    await p.goto("/");
+    await p.goto("/?network=server");
     await p.waitForFunction(() => window.__arena?.state === "lobby");
     await p.evaluate(() => {
       window.__arena.frame = () => {};
@@ -262,7 +262,7 @@ test("sustained Flamethrower renders a bounded volumetric-looking plume with ani
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
   });
-  await page.goto("/");
+  await page.goto("/?network=server");
   await page.waitForFunction(() => window.__arena?.state === "lobby");
   const report = await page.evaluate(() => {
     const g = window.__arena;
@@ -319,7 +319,7 @@ test("sustained Flamethrower renders a bounded volumetric-looking plume with ani
 test("all online collision layouts and line-of-fire meshes agree between browser and headless server", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/?network=server");
   await page.waitForFunction(() => window.__arena?.state === "lobby");
   const reports = await page.evaluate(async () => {
     const g = window.__arena;

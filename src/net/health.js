@@ -7,7 +7,7 @@ export async function readMultiplayerHealth(response) {
     response.headers.get("content-type")?.includes("text/html")
   )
     throw new Error(
-      "This address returned a web page instead of the multiplayer API. Open the full-stack game server or configure /api and WebSocket forwarding; a static-only host cannot run multiplayer.",
+      "This address returned a web page instead of the multiplayer API. This optional server mode needs a match backend. Remove network=server from the URL to use browser-hosted multiplayer on a static site.",
     );
   if (!response.ok)
     throw new Error(

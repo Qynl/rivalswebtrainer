@@ -77,6 +77,7 @@ export function Multiplayer({ ready, playing, loadout }) {
       previous?.focus?.();
     };
   }, [s.open]);
+  const peerMode = multiplayer.mode === "peer";
   const room = s.room,
     self = room?.players.find((p) => p.id === s.id),
     host = room?.host === s.id,
@@ -103,6 +104,7 @@ export function Multiplayer({ ready, playing, loadout }) {
       const url = new URL(location.href);
       url.search = "";
       url.searchParams.set("lobby", room.code);
+      if (!peerMode) url.searchParams.set("network", "server");
       await navigator.clipboard.writeText(url.toString());
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -115,10 +117,14 @@ export function Multiplayer({ ready, playing, loadout }) {
       {playing && connected && room && (
         <div
           className="network-status"
-          title="Server round trip; interpolation adds a short jitter buffer"
+          title="Round trip to match host; interpolation adds a short jitter buffer"
         >
           <span className="online-dot" />
-          {s.transport === "geckos" ? "GECKOS · UDP" : "ONLINE · WS"}
+          {peerMode
+            ? "PEER · WEBRTC"
+            : s.transport === "geckos"
+              ? "GECKOS · UDP"
+              : "ONLINE · WS"}
           <b className={s.ping > 180 ? "high-ping" : ""}>{s.ping} ms</b>
         </div>
       )}
@@ -159,9 +165,11 @@ export function Multiplayer({ ready, playing, loadout }) {
               {s.status === "connecting"
                 ? "CONNECTING…"
                 : connected
-                  ? `${s.transport === "geckos" ? "GECKOS.IO / WEBRTC" : "WEBSOCKET / COMPATIBILITY"} · ${s.ping} MS`
+                  ? `${s.transport === "peer" ? "DIRECT WEBRTC / BROWSER HOST" : s.transport === "geckos" ? "GECKOS.IO / WEBRTC" : "WEBSOCKET / COMPATIBILITY"} · ${s.ping} MS`
                   : s.status === "error"
-                    ? "SERVER UNAVAILABLE"
+                    ? peerMode
+                      ? "INVITE SERVICE UNAVAILABLE"
+                      : "SERVER UNAVAILABLE"
                     : "NOT CONNECTED"}
               {!connected && s.status !== "connecting" && (
                 <button onClick={() => multiplayer.connect()}>RETRY ↗</button>
@@ -217,52 +225,66 @@ export function Multiplayer({ ready, playing, loadout }) {
                         JOIN ↗
                       </button>
                     </form>
-                    <div className="mp-list-heading">
-                      PUBLIC LOBBIES
-                      <button
-                        disabled={!connected}
-                        onClick={() => send({ type: "list" })}
-                        aria-label="Refresh lobbies"
-                      >
-                        ↻
-                      </button>
-                    </div>
-                    <div className="mp-lobby-list">
-                      {!s.rooms.length ? (
-                        <p>
-                          {connected
-                            ? "No open lobbies yet. Create one and invite a friend."
-                            : "Connect to see available lobbies."}
-                        </p>
-                      ) : (
-                        s.rooms.map((r) => (
+                    {peerMode ? (
+                      <p className="mp-detail" data-testid="peer-help">
+                        No game backend needed. Create a match and share its
+                        invite link or six-character code. The host runs the
+                        match: keep their game tab open and active. Discovery
+                        uses the hosted PeerJS service; there is no global
+                        public-lobby list.
+                      </p>
+                    ) : (
+                      <>
+                        <div className="mp-list-heading">
+                          PUBLIC LOBBIES
                           <button
-                            className="mp-room-card"
-                            key={r.code}
-                            disabled={
-                              !connected || !ready || r.players >= r.capacity
-                            }
-                            onClick={() =>
-                              send({
-                                type: "join",
-                                code: r.code,
-                                ...identity(),
-                              })
-                            }
+                            disabled={!connected}
+                            onClick={() => send({ type: "list" })}
+                            aria-label="Refresh lobbies"
                           >
-                            <span>
-                              <strong>{r.name}</strong>
-                              <small>
-                                {mapName(r.map)} · {r.code}
-                              </small>
-                            </span>
-                            <b>
-                              {r.players}/{r.capacity} ↗
-                            </b>
+                            ↻
                           </button>
-                        ))
-                      )}
-                    </div>
+                        </div>
+                        <div className="mp-lobby-list">
+                          {!s.rooms.length ? (
+                            <p>
+                              {connected
+                                ? "No open lobbies yet. Create one and invite a friend."
+                                : "Connect to see available lobbies."}
+                            </p>
+                          ) : (
+                            s.rooms.map((r) => (
+                              <button
+                                className="mp-room-card"
+                                key={r.code}
+                                disabled={
+                                  !connected ||
+                                  !ready ||
+                                  r.players >= r.capacity
+                                }
+                                onClick={() =>
+                                  send({
+                                    type: "join",
+                                    code: r.code,
+                                    ...identity(),
+                                  })
+                                }
+                              >
+                                <span>
+                                  <strong>{r.name}</strong>
+                                  <small>
+                                    {mapName(r.map)} · {r.code}
+                                  </small>
+                                </span>
+                                <b>
+                                  {r.players}/{r.capacity} ↗
+                                </b>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </>
+                    )}
                   </section>
                   <section>
                     <h3>
@@ -280,14 +302,18 @@ export function Multiplayer({ ready, playing, loadout }) {
                         </option>
                       ))}
                     </select>
-                    <label className="mp-private">
-                      <input
-                        type="checkbox"
-                        checked={privateRoom}
-                        onChange={(e) => setPrivate(e.target.checked)}
-                      />
-                      PRIVATE · CODE ONLY
-                    </label>
+                    {!peerMode && (
+                      <>
+                        <label className="mp-private">
+                          <input
+                            type="checkbox"
+                            checked={privateRoom}
+                            onChange={(e) => setPrivate(e.target.checked)}
+                          />
+                          PRIVATE · CODE ONLY
+                        </label>
+                      </>
+                    )}
                     <p className="mp-detail">
                       1v1, 2v2 or 3v3. First to five rounds. Pick any loadout,
                       choose teams, then ready up.
@@ -315,7 +341,12 @@ export function Multiplayer({ ready, playing, loadout }) {
                 <div className="mp-room-top">
                   <div>
                     <label>
-                      INVITE CODE {room.private ? "· PRIVATE" : "· PUBLIC"}
+                      INVITE CODE{" "}
+                      {peerMode
+                        ? "· DIRECT PEER"
+                        : room.private
+                          ? "· PRIVATE"
+                          : "· PUBLIC"}
                     </label>
                     <strong className="mp-code" data-testid="room-code">
                       {room.code}

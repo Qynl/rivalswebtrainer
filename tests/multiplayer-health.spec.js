@@ -4,7 +4,7 @@ test("HTML instead of API JSON explains missing backend and RETRY reconnects to 
 }) => {
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto("/");
+  await page.goto("/?network=server");
   await page.waitForFunction(() => window.__arena?.state === "lobby");
   await page.evaluate(() => (window.__arena.frame = () => {}));
   await page.route("**/api/health", (r) =>

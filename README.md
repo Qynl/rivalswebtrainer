@@ -11,7 +11,7 @@ npm ci
 npm run dev
 ```
 
-Open the address printed by Vite. Select an arena, team size, difficulty, then **Enter Arena**. Choose **Primary → Secondary → Melee → Utility** in the compact pre-match picker and click **Deploy**. Rematches use the same picker; cancelling it leaves your saved loadout unchanged. Click **Warm Up in the Range** for moving targets and unlimited ammunition reserves. In offline modes, every teammate and opponent other than you is a local bot. Choose **Multiplayer** for human-only online lobbies: create/join by code, pick teams and weapons, ready up, then let the host start 1v1–3v3. `npm run dev` now starts the match server automatically as well as Vite. See [multiplayer setup and hosting](docs/multiplayer.md).
+Open the address printed by Vite. Select an arena, team size, difficulty, then **Enter Arena**. Choose **Primary → Secondary → Melee → Utility** in the compact pre-match picker and click **Deploy**. Rematches use the same picker; cancelling it leaves your saved loadout unchanged. Click **Warm Up in the Range** for moving targets and unlimited ammunition reserves. In offline modes, every teammate and opponent other than you is a local bot. Choose **Multiplayer** for human-only online lobbies: create/join by code, pick teams and weapons, ready up, then let the host start 1v1–3v3. The default multiplayer runs in the host browser with automatic PeerJS discovery: **no backend deployment, accounts, API configuration or manual WebRTC exchange**. Share the invite link/code and keep the host tab open and active. See [multiplayer and its network limits](docs/multiplayer.md).
 
 ### Production / disconnected use
 
@@ -20,7 +20,7 @@ npm run build
 npm run preview
 ```
 
-Production builds include a service worker that precaches the application. Open the production site once while connected and wait for the assets to cache; subsequent visits and reloads work offline on that same browser/origin. Service workers require HTTPS or localhost. Development mode does not install a service worker. You can also run the local server with your internet disconnected after dependencies are installed. Offline training needs no gameplay traffic, external fonts, analytics, account, or backend. Multiplayer is optional and requires a connection to the match server. API and WebRTC signalling responses are excluded from the offline cache.
+Production builds include a service worker that precaches the application. Open the production site once while connected and wait for the assets to cache; subsequent visits and reloads work offline on that same browser/origin. Service workers require HTTPS or localhost. Development mode does not install a service worker. You can also run the local server with your internet disconnected after dependencies are installed. Offline training needs no gameplay traffic, external fonts, analytics, account, or backend. Multiplayer is optional and requires an Internet connection to discover/connect to the host browser; public signaling/relay availability and network restrictions still apply. API and WebRTC signalling responses are excluded from the offline cache.
 
 Mobile layouts support browsing/configuration, but combat requires desktop pointer lock, mouse, and keyboard. A browser embedding the app must allow pointer lock (`allow="..."` / sandbox `allow-pointer-lock`); opening in a new browser tab is an alternative.
 
@@ -119,8 +119,9 @@ See [the React and combat report](docs/react-combat-startup.md) for the full che
 
 ## Multiplayer, upper Arena and Flamethrower
 
-- Public/private six-player lobbies, invite codes/links, team/readiness/loadout controls, host migration, first-to-five rounds, forfeits and rematches.
-- Actual geckos.io client/server adapters plus automatic WebSocket compatibility transport; 120 Hz authoritative simulation, compact binary frames, local prediction, interpolation and capped hitscan rewind. **The preview is tested over WebSocket; native UDP requires a suitable host and has not been tested end to end here.**
+- Browser-hosted six-player invite lobbies, short codes/links, team/readiness/loadout controls, first-to-five rounds, forfeits and rematches. No game-backend setup; host leaving ends the match.
+- **PeerJS + real WebRTC data channels by default**, using free hosted discovery and default ICE services. Host authority targets 120 Hz with 20 Hz JSON snapshots, local prediction, interpolation and bounded hitscan rewind. Third-party service availability, network conditions and the host device still matter.
+- Optional legacy `?network=server` mode retains Geckos/WebSocket adapters, public rooms and binary snapshots for people deliberately operating a dedicated backend. It is not required by the static site.
 - Arena floor area grows **75.4%**, with **200 m² of actual upper-floor lanes**, low upper cover and four accessible ramps.
 - Flamethrower gains a continuous turbulent shader jet, blue ignition, detached wisps, animated heated nozzle/valve/pilot, pressure vibration and smoothly looping audio in bounded GPU/audio pools.
 

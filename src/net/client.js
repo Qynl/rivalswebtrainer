@@ -12,7 +12,14 @@ const initial = {
   ping: 0,
 };
 export class MultiplayerClient {
-  constructor() {
+  constructor({ mode, peerOptions } = {}) {
+    this.mode =
+      mode ||
+      (typeof location !== "undefined" &&
+      new URLSearchParams(location.search).get("network") === "server"
+        ? "server"
+        : "peer");
+    this.peerOptions = peerOptions;
     this.state = { ...initial };
     this.listeners = new Set();
     this.connection = null;
@@ -49,8 +56,29 @@ export class MultiplayerClient {
   }
   async connect() {
     const generation = ++this.generation;
+    clearInterval(this.timer);
+    this.connection?.close();
+    this.connection = null;
+    this.pendingPeer?.close();
+    this.pendingPeer = null;
     this.patch({ status: "connecting", error: "" });
     try {
+      if (this.mode === "peer") {
+        const { BrowserPeerNetwork } = await import("./peer-network.js");
+        if (generation !== this.generation) return;
+        const network = new BrowserPeerNetwork(this, generation, {
+          peerOptions: this.peerOptions,
+        });
+        this.pendingPeer = network;
+        await network.start();
+        if (generation !== this.generation) {
+          network.close();
+          return;
+        }
+        this.pendingPeer = null;
+        this.installConnection(network);
+        return;
+      }
       const health = await fetch("/api/health", {
         cache: "no-store",
         headers: { Accept: "application/json" },
@@ -75,26 +103,35 @@ export class MultiplayerClient {
         connection.close();
         return;
       }
-      this.connection = connection;
-      this.patch({ status: "connected", transport: connection.transport });
-      this.lastPacket = performance.now();
-      this.send({ type: "list" });
-      clearInterval(this.timer);
-      this.timer = setInterval(() => {
-        this.send({ type: "ping", sent: performance.now() });
-        if (this.state.open && !this.state.room) this.send({ type: "list" });
-        if (performance.now() - this.lastPacket > 12000)
-          this.disconnected(
-            "Connection lost. Your offline game is still available.",
-          );
-      }, 2000);
+      this.installConnection(connection);
     } catch (error) {
+      if (generation !== this.generation) return;
+      this.pendingPeer?.close();
+      this.pendingPeer = null;
       if (generation === this.generation)
         this.patch({
           status: "error",
           error: `Multiplayer is unavailable. ${error.message}. Offline play still works.`,
         });
     }
+  }
+  installConnection(connection) {
+    this.connection = connection;
+    this.patch({ status: "connected", transport: connection.transport });
+    this.lastPacket = performance.now();
+    this.send({ type: "list" });
+    clearInterval(this.timer);
+    this.timer = setInterval(() => {
+      this.send({ type: "ping", sent: performance.now() });
+      if (this.state.open && !this.state.room) this.send({ type: "list" });
+      if (
+        this.state.status === "connected" &&
+        performance.now() - this.lastPacket > 12000
+      )
+        this.disconnected(
+          "Connection lost. Your offline game is still available.",
+        );
+    }, 2000);
   }
   connectWebSocket(generation) {
     return new Promise((resolve, reject) => {
@@ -353,3 +390,6 @@ export class MultiplayerClient {
   }
 }
 export const multiplayer = new MultiplayerClient();
+
+// Companion to window.__arena for connection diagnostics and browser tests.
+if (typeof window !== "undefined") window.__multiplayer = multiplayer;

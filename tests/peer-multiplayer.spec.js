@@ -1,0 +1,247 @@
+import { test, expect } from "@playwright/test";
+import { PeerServer } from "peer";
+import { createServer } from "node:http";
+import { readFile } from "node:fs/promises";
+import { extname, resolve } from "node:path";
+
+// A static frontend (no /api) and test-only signaling replace the externally
+// hosted discovery service. Data channels and browser match authority are real.
+let signaling, staticSite, origin, peerOptions;
+test.beforeAll(async () => {
+  signaling = await new Promise((done) =>
+    PeerServer({ port: 0, host: "127.0.0.1" }, done),
+  );
+  peerOptions = {
+    host: "localhost",
+    port: signaling.address().port,
+    path: "/",
+    secure: false,
+    config: { iceServers: [] },
+  };
+  staticSite = createServer(async (req, res) => {
+    try {
+      const path = new URL(req.url, "http://localhost").pathname;
+      if (path.startsWith("/api/")) {
+        res.writeHead(500);
+        return res.end("NO BACKEND");
+      }
+      const file = resolve("dist", path === "/" ? "index.html" : path.slice(1));
+      if (!file.startsWith(resolve("dist") + "/")) throw Error("Invalid path");
+      res.setHeader(
+        "Content-Type",
+        {
+          ".html": "text/html",
+          ".js": "text/javascript",
+          ".css": "text/css",
+          ".bin": "application/octet-stream",
+        }[extname(file)] || "application/octet-stream",
+      );
+      res.end(await readFile(file));
+    } catch {
+      res.writeHead(404);
+      res.end();
+    }
+  });
+  await new Promise((done) => staticSite.listen(0, "127.0.0.1", done));
+  origin = `http://localhost:${staticSite.address().port}`;
+});
+test.afterAll(async () => {
+  staticSite?.closeAllConnections();
+  signaling?.closeAllConnections();
+  await Promise.all(
+    [staticSite, signaling]
+      .filter(Boolean)
+      .map((server) => new Promise((done) => server.close(done))),
+  );
+});
+
+async function prepare(page, requests, errors, path = "") {
+  await page.addInitScript((options) => {
+    let client;
+    Object.defineProperty(window, "__multiplayer", {
+      configurable: true,
+      get: () => client,
+      set: (value) => {
+        client = value;
+        client.peerOptions = options;
+      },
+    });
+  }, peerOptions);
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.startsWith("/api/"))
+      requests.push(request.url());
+  });
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto(origin + path);
+  await page.waitForFunction(() => window.__arena?.state === "lobby");
+  // Only tests override hosted discovery. Normal users supply no configuration.
+  await page.evaluate((options) => {
+    window.__arena.frame = () => {};
+  }, peerOptions);
+  if (!(await page.locator(".mp-overlay").isVisible()))
+    await page.click("#multiplayer-button");
+  await expect(page.locator(".mp-connection")).toContainText("DIRECT WEBRTC", {
+    timeout: 20000,
+  });
+}
+
+test("static-only browser-hosted match: invite, loadout, ready, real data channel, snapshots, leave and host close", async ({
+  browser,
+  page,
+}) => {
+  const other = await browser.newPage({
+    viewport: { width: 800, height: 600 },
+  });
+  const requests = [],
+    errors = [];
+  try {
+    for (const p of [page, other]) await prepare(p, requests, errors);
+    await expect(page.getByTestId("peer-help")).toBeVisible();
+    await expect(page.getByLabel("PRIVATE · CODE ONLY")).toHaveCount(0);
+    await page.locator("#online-name").fill("BROWSER HOST");
+    await page.locator("#online-map").selectOption("foundry");
+    await page.click("#create-lobby");
+    const code = await page.getByTestId("room-code").textContent();
+    expect(code).toMatch(/^[A-F0-9]{6}$/);
+    await other.getByLabel("Lobby code").fill(code);
+    await other.getByRole("button", { name: "JOIN ↗", exact: true }).click();
+    await expect(page.locator(".mp-player")).toHaveCount(2);
+    await other.getByLabel("Online MELEE").selectOption("katana");
+    await other.click("#ready-online");
+    await expect(page.locator("#start-online")).toBeEnabled();
+    await page.click("#start-online");
+    for (const p of [page, other]) {
+      await p.waitForFunction(
+        () => window.__arena?.network?.latest.players.length === 2,
+      );
+      await p.evaluate(() => {
+        const g = window.__arena;
+        g.audio.volume = 0;
+        window.__netTick = setInterval(() => {
+          g.simulate(1 / 120);
+          g.events.tick(g);
+        }, 1000 / 120);
+      });
+    }
+    await other.waitForFunction(
+      () => window.__arena.network.latest.phase === "playing",
+    );
+    const result = await other.evaluate(() => {
+      const net = window.__arena.network;
+      return {
+        map: net.client.state.room.map,
+        melee: net.latest.players.find((p) => p.id === net.id)?.loadout?.[2],
+        channel: net.client.connection.remote.dataChannel.readyState,
+        transport: net.client.state.transport,
+      };
+    });
+    expect(result.channel).toBe("open");
+    expect(result.transport).toBe("peer");
+    expect(result.map).toBe("foundry");
+    expect(result.melee).toBe("katana");
+    await page.bringToFront();
+    await page.locator("#resume-button").click();
+    await page.waitForFunction(() => !!document.pointerLockElement);
+    const before = await page.evaluate(() => window.__arena.player.x);
+    await page.keyboard.down("KeyD");
+    await expect
+      .poll(() => page.evaluate(() => window.__arena.player.x))
+      .toBeGreaterThan(before + 0.8);
+    await page.keyboard.up("KeyD");
+    await page.mouse.down();
+    await page.waitForTimeout(250);
+    await page.mouse.up();
+    await expect
+      .poll(() =>
+        other.evaluate(() =>
+          window.__arena.network.latest.players.some(
+            (p) => p.id !== window.__arena.network.id && p.shot > 0,
+          ),
+        ),
+      )
+      .toBe(true);
+    const ammo = await page.evaluate(
+      () =>
+        window.__arena.network.latest.players.find(
+          (p) => p.id === window.__arena.network.id,
+        ).ammo[3].mag,
+    );
+    await page.keyboard.press("g");
+    await expect
+      .poll(() =>
+        other.evaluate(
+          () =>
+            window.__arena.network.latest.players.find(
+              (p) => p.id !== window.__arena.network.id,
+            ).ammo[3].mag,
+        ),
+      )
+      .toBe(ammo - 1);
+    await other.evaluate(() => {
+      clearInterval(window.__netTick);
+      window.__multiplayer.send({ type: "leave" });
+    });
+    await expect
+      .poll(() => other.evaluate(() => window.__multiplayer.state.room))
+      .toBe(null);
+    await page.evaluate(() => {
+      clearInterval(window.__netTick);
+      window.__multiplayer.send({ type: "leave" });
+      window.__multiplayer.open();
+    });
+    await page.click("#create-lobby");
+    await other.evaluate(() => window.__multiplayer.open());
+    await other.getByLabel("Lobby code").fill(code);
+    await other.getByRole("button", { name: "JOIN ↗", exact: true }).click();
+    await expect(page.locator(".mp-player")).toHaveCount(2);
+    await page.evaluate(() => window.__multiplayer.connection.close());
+    await expect(other.locator(".mp-error")).toContainText("host closed", {
+      timeout: 10000,
+    });
+    expect(requests).toEqual([]);
+    expect(errors).toEqual([]);
+  } finally {
+    await other.close();
+  }
+});
+
+test("invite URL opens a prefilled join; failed code can retry; teams and loadout remain validated", async ({
+  browser,
+  page,
+}) => {
+  const other = await browser.newPage({
+    viewport: { width: 800, height: 600 },
+  });
+  const requests = [],
+    errors = [];
+  try {
+    await prepare(page, requests, errors);
+    await page.click("#create-lobby");
+    const code = await page.getByTestId("room-code").textContent();
+    await prepare(other, requests, errors, `?lobby=${code}`);
+    await expect(other.getByLabel("Lobby code")).toHaveValue(code);
+    await other.getByLabel("Lobby code").fill("000000");
+    await other.getByRole("button", { name: "JOIN ↗", exact: true }).click();
+    await expect(other.locator(".mp-error")).toContainText(
+      /not found|Could not connect|closed/,
+      { timeout: 22000 },
+    );
+    // Invalid/unavailable hosts recover without configuring a backend.
+    if (await other.getByRole("button", { name: "RETRY ↗" }).isVisible())
+      await other.getByRole("button", { name: "RETRY ↗" }).click();
+    await expect(other.locator(".mp-connection")).toContainText(
+      "DIRECT WEBRTC",
+      { timeout: 20000 },
+    );
+    await other.getByLabel("Lobby code").fill(code);
+    await other.getByRole("button", { name: "JOIN ↗", exact: true }).click();
+    await expect(page.locator(".mp-player")).toHaveCount(2);
+    await expect(page.locator("#start-online")).toBeDisabled();
+    await other.click("#ready-online");
+    await expect(page.locator("#start-online")).toBeEnabled();
+    expect(requests).toEqual([]);
+    expect(errors).toEqual([]);
+  } finally {
+    await other.close();
+  }
+});
