@@ -148,6 +148,21 @@ test("static-only browser-hosted match: invite, loadout, ready, real data channe
       .poll(() => page.evaluate(() => window.__arena.player.x))
       .toBeGreaterThan(before + 0.8);
     await page.keyboard.up("KeyD");
+    await page.evaluate(() => {
+      const g = window.__arena,
+        present = g.presentShot.bind(g),
+        trace = g.tracer.bind(g);
+      g.__feedbackShots = 0;
+      g.__ownTraces = 0;
+      g.presentShot = (...args) => {
+        g.__feedbackShots++;
+        return present(...args);
+      };
+      g.tracer = (...args) => {
+        g.__ownTraces++;
+        return trace(...args);
+      };
+    });
     await page.mouse.down();
     await page.waitForTimeout(250);
     await page.mouse.up();
@@ -160,6 +175,17 @@ test("static-only browser-hosted match: invite, loadout, ready, real data channe
         ),
       )
       .toBe(true);
+    await expect
+      .poll(() => page.evaluate(() => window.__arena.__feedbackShots))
+      .toBeGreaterThan(0);
+    await expect
+      .poll(() => page.evaluate(() => window.__arena.__ownTraces))
+      .toBeGreaterThan(0);
+    expect(
+      await page.evaluate(() =>
+        window.__arena.combatFX.casingState.some((c) => c.life > 0),
+      ),
+    ).toBe(true);
     const ammo = await page.evaluate(
       () =>
         window.__arena.network.latest.players.find(
@@ -244,4 +270,256 @@ test("invite URL opens a prefilled join; failed code can retry; teams and loadou
   } finally {
     await other.close();
   }
+});
+
+test("guest countdown clears while paused, HUD timer advances without render ticks, and realtime state tolerates loss/reordering", async ({
+  browser,
+  page,
+}) => {
+  const guest = await browser.newPage({
+    viewport: { width: 800, height: 600 },
+  });
+  const requests = [],
+    errors = [];
+  try {
+    await prepare(page, requests, errors);
+    await prepare(guest, requests, errors);
+    await page.click("#create-lobby");
+    const code = await page.getByTestId("room-code").textContent();
+    await guest.getByLabel("Lobby code").fill(code);
+    await guest.getByRole("button", { name: "JOIN ↗", exact: true }).click();
+    await expect(page.locator(".mp-player")).toHaveCount(2);
+    await guest.click("#ready-online");
+    await page.click("#start-online");
+    await guest.waitForFunction(
+      () => window.__arena?.network?.latest.phase === "countdown",
+    );
+    // Neither browser manually simulates or renders. Host authority must run
+    // independently, and the paused guest must not retain its old '1' banner.
+    await guest.waitForFunction(
+      () => window.__arena.network.latest.phase === "playing",
+      null,
+      { timeout: 15000 },
+    );
+    await expect(guest.locator("#round-banner h2")).not.toHaveText("1");
+    await expect
+      .poll(() => guest.locator("#timer").textContent())
+      .not.toBe("1:30");
+    const state = await guest.evaluate(() => {
+      const n = window.__multiplayer.connection,
+        c = n.remote.stateLane;
+      return {
+        paused: window.__arena.state === "paused",
+        received: n.metrics.snapshotsReceived,
+        ordered: c.ordered,
+        retransmits: c.maxRetransmits,
+        ready: c.readyState,
+      };
+    });
+    expect(state.paused).toBe(true);
+    expect(state.ready).toBe("open");
+    expect(state.received).toBeGreaterThan(5);
+    expect(state.ordered).toBe(false);
+    expect(state.retransmits).toBe(0);
+    expect(
+      await page.evaluate(
+        () => window.__multiplayer.connection.service.isWorker,
+      ),
+    ).toBe(true);
+    const before = await guest.evaluate(() => {
+      const g = window.__arena,
+        lane = window.__multiplayer.connection.remote.stateLane;
+      const receive = lane.onmessage;
+      let sequence = 0;
+      lane.onmessage = (event) => {
+        sequence++;
+        if (sequence % 5 === 0) return;
+        if (sequence % 4 === 0) setTimeout(() => receive(event), 120);
+        else receive(event);
+      };
+      g.network.sendInput();
+      window.__acceptedTimes = [];
+      const original = g.network.receive.bind(g.network);
+      g.network.receive = (s) => {
+        original(s);
+        window.__acceptedTimes.push(g.network.latest.time);
+      };
+      return g.network.latest.time;
+    });
+    await guest.waitForFunction(
+      (time) => window.__arena.network.latest.time > time + 2,
+      before,
+      { timeout: 10000 },
+    );
+    const after = await guest.evaluate(() => ({
+      times: window.__acceptedTimes,
+      timer: document.getElementById("timer").textContent,
+      fastInputs: window.__multiplayer.connection.metrics.inputsSent,
+    }));
+    expect(after.times.every((t, i, a) => i === 0 || t >= a[i - 1])).toBe(true);
+    expect(after.timer).not.toBe("1:30");
+    expect(after.fastInputs).toBeGreaterThan(0);
+    const stalledAt = await guest.evaluate(() => {
+      window.__multiplayer.connection.remote.stateLane.onmessage = () => {};
+      return window.__arena.network.latest.time;
+    });
+    await guest.waitForFunction(
+      (time) => window.__arena.network.latest.time > time + 1.5,
+      stalledAt,
+      { timeout: 10000 },
+    );
+    expect(
+      await page.evaluate(
+        () => [...window.__multiplayer.connection.peers.values()][0].stateReady,
+      ),
+    ).toBe(false);
+    expect(await guest.evaluate(() => window.__multiplayer.state.status)).toBe(
+      "connected",
+    );
+    expect(requests).toEqual([]);
+    expect(errors).toEqual([]);
+  } finally {
+    await guest.close();
+  }
+});
+
+test("six real RTC clients share worker-authoritative 3v3 binary state without six GPU renderers", async ({
+  page,
+}) => {
+  const errors = [],
+    requests = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.startsWith("/api/"))
+      requests.push(request.url());
+  });
+  await page.goto(origin);
+  await page.waitForFunction(() => window.__arena?.state === "lobby");
+  await page.evaluate(async (options) => {
+    window.__arena.frame = () => {};
+    const Client = window.__multiplayer.constructor;
+    const clients = (window.__sixPeers = []);
+    const wait = (client, predicate) =>
+      new Promise((resolve, reject) => {
+        if (predicate(client.state)) return resolve();
+        const timeout = setTimeout(() => {
+          unsubscribe();
+          reject(Error("RTC lobby timed out"));
+        }, 12000);
+        const unsubscribe = client.subscribe(() => {
+          if (predicate(client.state)) {
+            clearTimeout(timeout);
+            unsubscribe();
+            resolve();
+          }
+        });
+      });
+    const make = async () => {
+      const client = new Client({ mode: "peer", peerOptions: options });
+      const receive = client.packet.bind(client);
+      client.packet = async (packet, generation) => {
+        if (packet.type === "start") {
+          client.activeMatchId = packet.matchId;
+          client.metadata = new Map(
+            packet.snapshot.players.map((p) => [
+              p.index,
+              { id: p.id, name: p.name, team: p.team },
+            ]),
+          );
+          client.latestState = packet.snapshot;
+        } else if (packet.type === "snapshot") {
+          if (
+            packet.snapshot.matchId === client.activeMatchId &&
+            packet.snapshot.time > (client.latestState?.time ?? -1)
+          )
+            client.latestState = packet.snapshot;
+          client.lastPacket = performance.now();
+        } else await receive(packet, generation);
+      };
+      clients.push(client);
+      await client.connect();
+      return client;
+    };
+    const host = await make();
+    host.send({ type: "create", name: "HOST", map: "blockout" });
+    await wait(host, (state) => !!state.room);
+    const code = host.state.room.code;
+    for (let i = 1; i < 6; i++) {
+      const client = await make();
+      client.send({ type: "join", code, name: "PLAYER " + i });
+      await wait(client, (state) => !!state.room);
+      client.send({ type: "ready", ready: true });
+    }
+    await wait(
+      host,
+      (state) =>
+        state.room.players.length === 6 &&
+        state.room.players.every((p) => p.ready),
+    );
+    host.send({ type: "start" });
+    let sequence = 0;
+    window.__sixInput = setInterval(() => {
+      sequence++;
+      for (const client of clients)
+        if (client.latestState)
+          client.send({
+            type: "input",
+            input: {
+              seq: sequence,
+              yaw: 0,
+              pitch: 0,
+              keys: 0,
+              fire: false,
+              aim: false,
+              paused: false,
+              actions: [],
+            },
+          });
+    }, 1000 / 30);
+  }, peerOptions);
+  await page.waitForFunction(
+    () =>
+      window.__sixPeers.every(
+        (c) =>
+          c.latestState?.phase === "playing" &&
+          c.latestState.players.length === 6,
+      ),
+    null,
+    { timeout: 20000 },
+  );
+  const result = await page.evaluate(() => {
+    const clients = window.__sixPeers;
+    return {
+      teams: [0, 1].map(
+        (team) =>
+          clients[0].latestState.players.filter((p) => p.team === team).length,
+      ),
+      worker: clients[0].connection.service.isWorker,
+      guests: clients
+        .slice(1)
+        .map((c) => ({
+          snapshots: c.connection.metrics.snapshotsReceived,
+          unordered: !c.connection.remote.stateLane.ordered,
+          retransmits: c.connection.remote.stateLane.maxRetransmits,
+        })),
+      hostSnapshots: clients[0].connection.metrics.snapshotsSent,
+    };
+  });
+  expect(result.teams).toEqual([3, 3]);
+  expect(result.worker).toBe(true);
+  for (const guest of result.guests) {
+    expect(guest.snapshots).toBeGreaterThan(10);
+    expect(guest.unordered).toBe(true);
+    expect(guest.retransmits).toBe(0);
+  }
+  expect(result.hostSnapshots).toBeGreaterThan(50);
+  await page.evaluate(() => {
+    clearInterval(window.__sixInput);
+    for (const client of window.__sixPeers) {
+      clearInterval(client.timer);
+      client.connection?.close();
+    }
+  });
+  expect(requests).toEqual([]);
+  expect(errors).toEqual([]);
 });

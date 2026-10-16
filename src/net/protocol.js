@@ -73,23 +73,49 @@ export function lerpAngle(a, b, t) {
 }
 // A short bounded timeline hides arrival jitter; extrapolation is capped at 50ms.
 export class SnapshotBuffer {
-  constructor(delay = 0.075) {
+  constructor(delay = 0.075, { adaptive = false } = {}) {
     this.delay = delay;
+    this.adaptive = adaptive;
+    this.jitter = 0;
+    this.clockOffset = null;
     this.frames = [];
   }
   push(snapshot, received) {
     if (!snapshot || !Number.isFinite(snapshot.time)) return;
     if (this.frames.at(-1)?.time >= snapshot.time) return;
+    const previous = this.frames.at(-1);
+    if (this.adaptive) {
+      const offset = received - snapshot.time;
+      this.clockOffset =
+        this.clockOffset === null || Math.abs(offset - this.clockOffset) > 0.5
+          ? offset
+          : this.clockOffset + (offset - this.clockOffset) * 0.08;
+      if (previous) {
+        const variation = Math.min(
+          0.1,
+          Math.abs(
+            received - previous.received - (snapshot.time - previous.time),
+          ),
+        );
+        this.jitter += (variation - this.jitter) * 0.1;
+        const targetDelay = Math.max(
+          0.055,
+          Math.min(0.12, 0.055 + this.jitter * 3),
+        );
+        this.delay += (targetDelay - this.delay) * 0.15;
+      }
+    }
     this.frames.push({ ...snapshot, received });
     if (this.frames.length > 32) this.frames.shift();
   }
   sample(now) {
     if (!this.frames.length) return null;
     const last = this.frames.at(-1),
-      target =
-        last.time +
-        Math.min(0.125, Math.max(0, now - last.received)) -
-        this.delay;
+      target = this.adaptive
+        ? now - this.clockOffset - this.delay
+        : last.time +
+          Math.min(0.125, Math.max(0, now - last.received)) -
+          this.delay;
     let a = this.frames[0],
       b = last;
     for (let i = 1; i < this.frames.length; i++) {
@@ -126,5 +152,7 @@ export class SnapshotBuffer {
   }
   clear() {
     this.frames.length = 0;
+    this.clockOffset = null;
+    this.jitter = 0;
   }
 }

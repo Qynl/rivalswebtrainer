@@ -1,7 +1,7 @@
 import { knifeStabPose, sniperBoltPose } from "./weapon-actions.js";
 import * as THREE from "three";
 import { BOW_DRAW_TIME } from "./combat-rules.js";
-import { weaponFeel } from "./weapon-feel.js";
+import { weaponFeel, shotEnvelope } from "./weapon-feel.js";
 
 export const saturate = (x) => Math.max(0, Math.min(1, x));
 export const smooth = (x) => {
@@ -151,7 +151,7 @@ export class WeaponAnimator {
           ) +
           (state.landing || 0) * 0.6
         : 0);
-    const impulse = age < 0.16 ? Math.exp(-age * 38) : 0;
+    const impulse = shotEnvelope(age, model.userData.weaponId);
     const poseZ =
       -0.16 + (profile.z || 0) + ads * 0.14 + kick * 0.35 + impulse * 0.024;
     model.position.set(
@@ -186,7 +186,7 @@ export class WeaponAnimator {
       !state.throwing &&
       !state.heal
     ) {
-      const scale = 1 - ads * 0.55;
+      const scale = 1 - ads * 0.35;
       model.position.z += impulse * feel.kick * scale;
       model.rotation.x += impulse * feel.pitch * scale;
       model.rotation.z +=
@@ -347,7 +347,8 @@ export class WeaponAnimator {
       parts.muzzleFlash.visible = !!state.flash;
       parts.muzzleFlash.rotation.z = (state.time || 0) * 97;
       parts.muzzleFlash.scale.setScalar(
-        1 + Math.sin((state.time || 0) * 177) * 0.2,
+        (1.2 + Math.min(0.7, feel.kick * 4)) *
+          (1 + Math.sin((state.time || 0) * 177) * 0.14),
       );
     }
     if (state.heal > 0) {
@@ -517,7 +518,29 @@ export function muzzleFlash(material) {
     else shape.lineTo(x, y);
   }
   shape.closePath();
-  const mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), material);
+  const face = new THREE.ShapeGeometry(shape);
+  const flat = face.toNonIndexed();
+  const front = flat.attributes.position.array;
+  // A single draw: hot frontal crown plus crossed gas jets, visible side-on
+  // on other players as well as through the local weapon camera.
+  const positions = new Float32Array(front.length + 18);
+  positions.set(front);
+  positions.set(
+    [
+      -0.032, 0, 0, 0.032, 0, 0, 0, 0, -0.16, 0, -0.032, 0, 0, 0.032, 0, 0, 0,
+      -0.16,
+    ],
+    front.length,
+  );
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.computeVertexNormals();
+  face.dispose();
+  flat.dispose();
+  material.toneMapped = false;
+  material.depthWrite = false;
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = "volumetric-muzzle-crown";
   mesh.visible = false;
   return mesh;
 }

@@ -1,3 +1,5 @@
+import { operatorPose } from "./operator-pose.js";
+import { weaponFeel, shotEnvelope } from "./weapon-feel.js";
 import { updateScopeGlint } from "./scope-glint.js";
 import { updateProjectileTrail } from "./projectile-feedback.js";
 import { FlameJet } from "./flame-fx.js";
@@ -665,10 +667,12 @@ export class Game {
         2.7,
       );
     } else {
-      for (let i = 1; i < this.config.mode; i++)
-        this.createEntity(0, this.world.spawns[0][i], i + 2);
-      for (let i = 0; i < this.config.mode; i++)
-        this.createEntity(1, this.world.spawns[1][i], i);
+      if (!this.config.online) {
+        for (let i = 1; i < this.config.mode; i++)
+          this.createEntity(0, this.world.spawns[0][i], i + 2);
+        for (let i = 0; i < this.config.mode; i++)
+          this.createEntity(1, this.world.spawns[1][i], i);
+      }
       this.state = "countdown";
       this.countdown = ROUND_COUNTDOWN;
       this.countSound = ROUND_COUNTDOWN + 1;
@@ -1088,29 +1092,7 @@ export class Game {
     (this.weaponReadyAt ||= [0, 0, 0, 0])[this.slot] =
       (this.clock || 0) + w.interval;
     this.inspectTime = 0;
-    this.flash = 0.055;
-    this.lastShotAt = this.clock;
-    this.shotSequence = (this.shotSequence || 0) + 1;
-    selectShotSide(this.viewModel, this.shotSequence);
-    this.kick = Math.min(0.13, this.kick + 0.045);
-    if (w.type !== "flame" || !this.audio.updateFlame) this.audio.play(w.sound);
-    if (
-      this.combatFX &&
-      w.slot < 2 &&
-      !["bow", "flame", "rocket", "launcher", "paint"].includes(w.type) &&
-      !w.paint
-    ) {
-      const socket = this.viewModel?.userData.bolt;
-      const local = socket
-        ? socket.getWorldPosition(v3())
-        : v3(0.24, -0.16, -0.65).applyMatrix4(this.viewModel.matrixWorld);
-      const eject = this.weaponPointToWorld(local);
-      this.combatFX.eject(
-        eject,
-        v3(Math.cos(this.yaw), 0, -Math.sin(this.yaw)),
-        v3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)),
-      );
-    }
+    this.presentShot(id);
     // Visual stance easing must not put the bullet below the visible crosshair.
     const origin = this.camera ? this.camera.position.clone() : this.eye(p),
       forward = v3(0, 0, -1).applyEuler(
@@ -1259,6 +1241,42 @@ export class Game {
       break;
     }
   }
+  // Presentation only: safe for immediate network prediction; never spends
+  // ammunition, spawns a gameplay projectile, or confirms damage.
+  presentShot(id = this.loadout[this.slot], age = 0) {
+    const w = WEAPONS[id];
+    if (!w || w.slot > 1) return;
+    this.flash = Math.max(0, 0.065 - age);
+    this.lastShotAt = this.clock - Math.max(0, age);
+    this.shotSequence = (this.shotSequence || 0) + 1;
+    selectShotSide(this.viewModel, this.shotSequence);
+    this.kick = Math.min(
+      0.13,
+      this.kick + Math.min(0.09, weaponFeel(id).kick * 0.7),
+    );
+    if (w.type !== "flame" || !this.audio.updateFlame) this.audio.play(w.sound);
+    if (
+      this.combatFX?.eject &&
+      w.slot < 2 &&
+      !["bow", "flame", "rocket", "launcher", "paint"].includes(w.type) &&
+      !w.paint
+    ) {
+      this.viewModel?.updateWorldMatrix(true, true);
+      this.camera?.updateMatrixWorld();
+      const socket = this.viewModel?.userData.bolt;
+      const local = socket
+        ? socket.getWorldPosition(v3())
+        : v3(0.24, -0.16, -0.65).applyMatrix4(
+            this.viewModel?.matrixWorld || new THREE.Matrix4(),
+          );
+      const eject = this.weaponPointToWorld(local);
+      this.combatFX.eject(
+        eject,
+        v3(Math.cos(this.yaw), 0, -Math.sin(this.yaw)),
+        v3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)),
+      );
+    }
+  }
   bullet(shooter, origin, dir, w, reflected = false) {
     this.ray.set(origin, dir);
     this.ray.far = w.range;
@@ -1270,8 +1288,8 @@ export class Game {
       if (!e.alive || e === shooter) continue;
       const h = e.height;
       const box = new THREE.Box3(
-        v3(e.x - 0.4, e.y, e.z - 0.34),
-        v3(e.x + 0.4, e.y + h, e.z + 0.34),
+        v3(e.x - 0.46, e.y, e.z - 0.36),
+        v3(e.x + 0.46, e.y + h, e.z + 0.36),
       );
       const hit = this.ray.ray.intersectBox(box, v3());
       if (!hit) continue;
@@ -1288,13 +1306,13 @@ export class Game {
       shooter.team,
       w.paint ? 0xff73a4 : undefined,
     );
-    if (!victim && walls[0] && !w.paint)
-      this.combatFX?.impact(
-        walls[0].point,
-        walls[0].face.normal
-          .clone()
-          .transformDirection(walls[0].object.matrixWorld),
-      );
+    if (!victim && walls[0] && !w.paint) {
+      const normal = walls[0].face.normal
+        .clone()
+        .transformDirection(walls[0].object.matrixWorld);
+      this.combatFX?.impact(walls[0].point, normal);
+      this.surfaceImpact?.(walls[0].point, normal);
+    }
     if (w.paint) {
       if (victim) {
         this.particles(
@@ -1539,7 +1557,11 @@ export class Game {
       this.audio.play("hurt");
     } else {
       if (source && source.team !== e.team) e.pressureUntil = this.clock + 0.85;
-      this.particles(this.eye(e), head ? 0xffe2a1 : 0xeeac97, 3);
+      this.particles(
+        v3(e.x, e.y + (head ? e.height - 0.2 : e.height * 0.6), e.z),
+        head ? 0xffdf9a : 0xffc79c,
+        6,
+      );
     }
     if (e.health <= 0) {
       e.alive = false;
@@ -1858,8 +1880,8 @@ export class Game {
           if (!e.alive || e === p.owner || e.team === p.owner.team) continue;
           const impact = this.ray.ray.intersectBox(
             new THREE.Box3(
-              v3(e.x - 0.4, e.y, e.z - 0.34),
-              v3(e.x + 0.4, e.y + e.height, e.z + 0.34),
+              v3(e.x - 0.46, e.y, e.z - 0.36),
+              v3(e.x + 0.46, e.y + e.height, e.z + 0.36),
             ),
             v3(),
           );
@@ -2572,6 +2594,22 @@ export class Game {
       Math.cos(e.yaw - m.group.rotation.y),
     );
     m.group.rotation.y += turn * (1 - Math.exp(-18 * dt));
+    const expression = operatorPose(e, this.clock, turn);
+    if (m.parts.torso) m.parts.torso.rotation.y = expression.torsoYaw;
+    m.parts.head.rotation.z = expression.headRoll;
+    if (m.parts.leftLid)
+      m.parts.leftLid.scale.y = m.parts.rightLid.scale.y = Math.max(
+        0.001,
+        expression.blink,
+      );
+    if (m.parts.leftFoot) {
+      m.parts.leftFoot.rotation.x = expression.leftFoot;
+      m.parts.rightFoot.rotation.x = expression.rightFoot;
+    }
+    if (m.parts.armorMaterial) {
+      m.parts.armorMaterial.emissive.setHex(0xffbd88);
+      m.parts.armorMaterial.emissiveIntensity = expression.impact;
+    }
     const crouch = e.height < 1.4;
     m.parts.leftLeg.rotation.set(pose.leftX, 0, pose.leftZ);
     m.parts.rightLeg.rotation.set(pose.rightX, 0, pose.rightZ);
@@ -2619,21 +2657,25 @@ export class Game {
         16,
         dt,
       );
-      m.parts.upperBody.position.y = pose.bodyY;
-      const shotAge =
-          e.lastShotAt === undefined ? 10 : this.clock - e.lastShotAt,
-        recoil = Math.exp(-shotAge * 28);
+      m.parts.upperBody.position.y = pose.bodyY + expression.breath;
+      const shotAge = e.netId
+          ? (e.netShotAge ?? 10)
+          : e.lastShotAt === undefined
+            ? 10
+            : this.clock - e.lastShotAt,
+        feel = weaponFeel(e.activeWeapon),
+        recoil = shotEnvelope(shotAge, e.activeWeapon);
       m.parts.weaponRig.rotation.x =
         aimPitch -
         m.parts.upperBody.rotation.x +
-        recoil * 0.07 +
+        recoil * feel.pitch * 0.75 +
         (e.reload > 0 &&
         e.activeWeapon !== "fists" &&
         !(e.quickMeleeTime > 0) &&
         !(e.activeWeapon === e.meleeId)
           ? 0.3
           : 0);
-      m.parts.weaponRig.position.z = -0.25 + recoil * 0.035;
+      m.parts.weaponRig.position.z = -0.25 + recoil * feel.kick * 0.7;
       m.parts.muzzleFlash.visible = shotAge < 0.055;
       m.parts.muzzleFlash.rotation.z = this.clock * 71;
     }
@@ -2927,11 +2969,20 @@ export class Game {
                   0,
                   6,
                 ));
-    this.camera.fov = THREE.MathUtils.lerp(
-      this.camera.fov,
+    this.baseCameraFov = THREE.MathUtils.lerp(
+      this.baseCameraFov ?? this.camera.fov,
       fov,
       1 - Math.exp(-12 * dt),
     );
+    this.camera.fov = this.baseCameraFov;
+    if (
+      this.settings.shake !== false &&
+      this.lastShotAt !== undefined &&
+      w.slot < 2
+    )
+      this.camera.fov +=
+        shotEnvelope(this.clock - this.lastShotAt, this.loadout[this.slot]) *
+        weaponFeel(this.loadout[this.slot]).fov;
     this.camera.updateProjectionMatrix();
     const activeModel = this.quickModel || this.viewModel;
     if (activeModel) {

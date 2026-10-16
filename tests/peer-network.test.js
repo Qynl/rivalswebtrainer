@@ -231,3 +231,91 @@ test("a stale failed connection cannot cancel a newer join or a live room", asyn
     net.close();
   }
 });
+
+test("movement uses disposable state but action edges retain reliable delivery", async () => {
+  const { net } = await network();
+  try {
+    net.role = "guest";
+    const conn = new Connection();
+    conn.activate();
+    net.remote = conn;
+    let fast = 0;
+    net.sendState = () => {
+      fast++;
+      return true;
+    };
+    net.send({ type: "input", input: { seq: 1, actions: [] } });
+    assert.equal(fast, 1);
+    assert.equal(conn.sent.length, 0);
+    net.send({
+      type: "input",
+      input: { seq: 2, actions: [{ id: 1, type: "jump" }] },
+    });
+    assert.equal(fast, 1);
+    assert.equal(conn.sent[0].input.actions[0].type, "jump");
+  } finally {
+    net.close();
+  }
+});
+test("stalled realtime snapshots request reliable recovery without reconnecting the match", async () => {
+  const { net, client } = await network();
+  try {
+    net.role = "guest";
+    const conn = new Connection();
+    conn.activate();
+    net.remote = conn;
+    client.activeMatchId = 42;
+    net.lastFastStateAt = performance.now() - 1000;
+    net.lastFallbackAt = -2000;
+    net.checkState();
+    assert.deepEqual(conn.sent, [{ type: "stateFallback" }]);
+    net.checkState();
+    assert.equal(conn.sent.length, 1);
+  } finally {
+    net.close();
+  }
+});
+
+test("an opened state lane can recover even if its very first snapshot never arrives", async () => {
+  const { net, client } = await network();
+  try {
+    net.role = "guest";
+    const conn = new Connection();
+    conn.activate();
+    net.remote = conn;
+    const lane = { readyState: "open", close() {} };
+    conn.peerConnection = { createDataChannel: () => lane };
+    net.setupStateLane(conn);
+    lane.onopen();
+    assert.ok(net.lastFastStateAt > 0);
+    client.activeMatchId = 42;
+    net.lastFastStateAt -= 1000;
+    net.lastFallbackAt = -2000;
+    net.checkState();
+    assert.deepEqual(conn.sent, [
+      { type: "stateReady" },
+      { type: "stateFallback" },
+    ]);
+  } finally {
+    net.close();
+  }
+});
+test("a browser that blocks Worker construction keeps the synchronous compatibility host", async () => {
+  const original = globalThis.Worker;
+  globalThis.Worker = class {
+    constructor() {
+      throw new Error("Worker blocked by browser policy");
+    }
+  };
+  let net;
+  try {
+    ({ net } = await network());
+    assert.equal(net.options.worker, false);
+    assert.equal(net.service.isWorker, undefined);
+    assert.equal(net.service.clients.size, 1);
+  } finally {
+    net?.close();
+    if (original) globalThis.Worker = original;
+    else delete globalThis.Worker;
+  }
+});

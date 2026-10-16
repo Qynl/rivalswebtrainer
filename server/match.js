@@ -145,6 +145,12 @@ export class Match {
         this.emit({ type: "bounce", position: position.toArray() });
     };
     g.particles = noop;
+    g.surfaceImpact = (position, normal) =>
+      this.emit({
+        type: "impact",
+        position: position.toArray(),
+        normal: normal.toArray(),
+      });
     g.tracer = (a, b, team, color) =>
       this.emit({
         type: "trace",
@@ -396,6 +402,8 @@ export class Match {
       }
       this.emit({
         type: "kill",
+        source: source?.id,
+        victimId: e.id,
         victim: e.name,
         killer: source?.name || "ARENA",
         head,

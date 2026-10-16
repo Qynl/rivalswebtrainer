@@ -195,8 +195,13 @@ export class GameAudio {
         this.noiseHit(0.12, 0.24 * level, 3000);
         this.tone(210, 0.1, "triangle", 0.18 * level, 50);
         break;
-      case "shotgun":
       case "sniper":
+        this.noiseHit(0.075, 0.48 * level, 6800);
+        this.noiseHit(0.32, 0.22 * level, 1300);
+        this.tone(96, 0.23, "triangle", 0.28 * level, 28);
+        this.tone(1700, 0.025, "triangle", 0.055 * level, 600);
+        break;
+      case "shotgun":
         this.noiseHit(0.3, 0.4 * level, 1800);
         this.tone(110, 0.22, "sawtooth", 0.2 * level, 25);
         break;

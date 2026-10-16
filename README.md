@@ -120,7 +120,7 @@ See [the React and combat report](docs/react-combat-startup.md) for the full che
 ## Multiplayer, upper Arena and Flamethrower
 
 - Browser-hosted six-player invite lobbies, short codes/links, team/readiness/loadout controls, first-to-five rounds, forfeits and rematches. No game-backend setup; host leaving ends the match.
-- **PeerJS + real WebRTC data channels by default**, using free hosted discovery and default ICE services. Host authority targets 120 Hz with 20 Hz JSON snapshots, local prediction, interpolation and bounded hitscan rewind. Third-party service availability, network conditions and the host device still matter.
+- **PeerJS + real WebRTC data channels by default**, using free hosted discovery and default ICE services. Worker-hosted authority targets 120 Hz with 20 Hz compact binary snapshots on an unordered, zero-retransmission state channel, plus reliable lobby/combat control, local prediction, adaptive interpolation and bounded hitscan rewind. Third-party service availability, network conditions and the host device still matter.
 - Optional legacy `?network=server` mode retains Geckos/WebSocket adapters, public rooms and binary snapshots for people deliberately operating a dedicated backend. It is not required by the static site.
 - Arena floor area grows **75.4%**, with **200 m² of actual upper-floor lanes**, low upper cover and four accessible ramps.
 - Flamethrower gains a continuous turbulent shader jet, blue ignition, detached wisps, animated heated nozzle/valve/pilot, pressure vibration and smoothly looping audio in bounded GPU/audio pools.
@@ -268,3 +268,13 @@ node scripts/movement-audit.mjs <revision>  # requires that revision's local Git
 This samples both controllers and their own physics constants at 600 Hz without checking out another branch. It reports acceleration, stopping, reversal drift and flat slide travel in trainer units—not measured Roblox values or hardware FPS. The latest values and trade-offs are in [the implementation report](docs/hour-pass.md).
 
 Bow direction regression notes: [Bow body-plane correction](docs/bow-direction.md).
+
+
+## Player animation, gun feel and multiplayer responsiveness
+
+- More readable team markings, articulated boots, breathing, turn/stride poses, blinking and confirmed armor-hit reactions; the visible head sits closer to the actual damage region. Slightly more forgiving shared body-hit bounds do not alter movement collision, HP or weapon damage.
+- All **17 primary/secondary weapons** have stronger individual recoil profiles. Sniper has a heavier scoped impulse and a distinct layered report. Three-dimensional muzzle crowns, casings, mechanisms and expanding reticles make a shot readable without rewriting mouse aim. The motion setting disables the added lens/FOV impulse.
+- Multiplayer now predicts gun presentation immediately and deduplicates host echoes, rather than omitting local shot effects. Own confirmed tracers and wall impacts are visible; hit/kill feedback remains authoritative.
+- Joining-player countdown/HUD fixes, worker authority, smaller disposable binary state, bounded queues, adaptive interpolation and reliable recovery improve multiplayer responsiveness. No backend deployment/configuration is required, and no zero-lag/zero-bug guarantee is made.
+
+See [the player/gun feedback report](docs/player-gun-feedback.md) and [multiplayer architecture and limits](docs/multiplayer.md).

@@ -1,3 +1,4 @@
+import { shotEnvelope } from "./weapon-feel.js";
 import { smokeImmersion } from "./smoke-fx.js";
 import { BOW_DRAW_TIME } from "./combat-rules.js";
 import { createStore } from "./ui-store.js";
@@ -196,10 +197,17 @@ function snapshot(g, force = false) {
     bowDraw:
       w.type === "bow" ? Math.min(1, (g.bowCharge || 0) / BOW_DRAW_TIME) : null,
     scoped,
+    shotPulse:
+      w.slot < 2
+        ? shotEnvelope(g.clock - (g.lastShotAt ?? -10), g.loadout[g.slot])
+        : 0,
     crosshair: p.alive && !scoped,
     gap:
       reticleGap(w, p.grounded, g.aiming, innerHeight, g.camera.fov) +
-      Math.min(3, g.kick * 12),
+      Math.min(3, g.kick * 12) +
+      (w.slot < 2
+        ? shotEnvelope(g.clock - (g.lastShotAt ?? -10), g.loadout[g.slot]) * 6
+        : 0),
     arcs: compass.update(dt, p, g.yaw).map((s) => ({
       ...s,
       opacity: p.alive ? Math.min(1, s.life / 0.22) * s.strength : 0,

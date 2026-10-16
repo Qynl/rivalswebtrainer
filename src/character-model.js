@@ -39,15 +39,15 @@ export function createOperator(team, name = "BOT") {
     m.name = name;
     return m;
   };
-  const cloth = mat("woven-charcoal", 0x283239, 0.96);
+  const cloth = mat("woven-charcoal", 0x35444c, 0.96);
   cloth.map = weave;
   cloth.bumpMap = weave;
   cloth.bumpScale = 0.006;
   const trim = mat("rubber-and-webbing", 0x121c23, 0.88),
-    armor = mat("ceramic-ivory", 0xc2c9c7, 0.46, 0.16),
+    armor = mat("ceramic-ivory", 0xadbfc5, 0.46, 0.16),
     teamMat = mat(
       friendly ? "jade-team-panels" : "copper-team-panels",
-      friendly ? 0x287e79 : 0xb96345,
+      friendly ? 0x259b9b : 0xdc6843,
       0.52,
       0.15,
     ),
@@ -68,7 +68,9 @@ export function createOperator(team, name = "BOT") {
     clearcoatRoughness: 0.08,
   });
   lens.name = "smoked-optical-glass";
-  const parts = {};
+  teamMat.emissive.setHex(friendly ? 0x195c60 : 0x70301d);
+  teamMat.emissiveIntensity = 0.12;
+  const parts = { armorMaterial: armor };
   const joint = (name, parent, x, y, z) => {
     const g = new THREE.Group();
     g.name = name;
@@ -109,10 +111,27 @@ export function createOperator(team, name = "BOT") {
   for (const y of [-0.03, 0.025, 0.08])
     box(torso, 0.29, 0.012, 0.008, 0, y, -0.312, trim, 0.002);
   box(torso, 0.27, 0.066, 0.014, 0, 0.167, -0.313, teamMat);
+  // Broad team patches remain legible at combat distance, with real depth testing.
+  box(torso, 0.29, 0.13, 0.018, 0, 0.055, -0.317, teamMat, 0.009);
+  for (const x of [-0.075, 0.075]) {
+    const chevron = box(
+      torso,
+      0.11,
+      0.022,
+      0.009,
+      x,
+      0.055,
+      -0.331,
+      armor,
+      0.003,
+    );
+    chevron.rotation.z = x < 0 ? -0.45 : 0.45;
+  }
   for (const x of [-0.22, 0.22])
     for (const y of [-0.092, 0.192])
       cylinder(torso, 0.012, 0.012, x, y, -0.315, metal, "z");
   box(torso, 0.54, 0.36, 0.075, 0, 0.035, 0.215, armor, 0.028);
+  box(torso, 0.43, 0.11, 0.025, 0, 0.16, 0.263, teamMat);
   box(torso, 0.3, 0.28, 0.09, 0, 0.02, 0.276, trim, 0.022);
   box(torso, 0.255, 0.024, 0.012, 0, 0.09, 0.329, teamMat);
   for (const x of [-0.32, 0.32])
@@ -134,12 +153,21 @@ export function createOperator(team, name = "BOT") {
     box(pouch, 0.17, 0.055, 0.025, 0, 0.065, -0.061, armor);
     box(pouch, 0.023, 0.065, 0.012, 0, 0.025, -0.08, trim, 0.004);
   }
-  const head = joint("head", upper, 0, 0.69, 0);
+  const head = joint("head", upper, 0, 0.6, 0);
   box(head, 0.455, 0.445, 0.42, 0, 0, 0, skin, 0.055);
   // Human face is readable from several metres: brow, cheek/nose, eyes and jaw.
   for (const side of [-1, 1]) {
     box(head, 0.092, 0.044, 0.022, side * 0.102, 0.022, -0.219, eye, 0.008);
     box(head, 0.033, 0.039, 0.013, side * 0.097, 0.02, -0.237, iris, 0.005);
+    const lid = joint(
+      side < 0 ? "leftLid" : "rightLid",
+      head,
+      side * 0.102,
+      0.022,
+      -0.249,
+    );
+    box(lid, 0.1, 0.05, 0.008, 0, 0, 0, skin, 0.005);
+    lid.scale.y = 0.001;
     const brow = box(
       head,
       0.105,
@@ -204,7 +232,7 @@ export function createOperator(team, name = "BOT") {
     ["left", -1],
     ["right", 1],
   ]) {
-    const arm = joint(side + "Arm", upper, sign * 0.51, 0.37, -0.13);
+    const arm = joint(side + "Arm", upper, sign * 0.47, 0.37, -0.13);
     box(arm, 0.235, 0.34, 0.245, 0, -0.17, 0, cloth, 0.027);
     box(arm, 0.28, 0.19, 0.285, 0, -0.075, 0, armor, 0.027);
     box(arm, 0.017, 0.085, 0.2, sign * 0.15, -0.065, 0, teamMat, 0.006);
@@ -238,9 +266,10 @@ export function createOperator(team, name = "BOT") {
     box(knee, 0.245, 0.19, 0.07, 0, -0.035, -0.166, trim, 0.024);
     box(knee, 0.195, 0.12, 0.025, 0, -0.024, -0.211, armor, 0.015);
     box(knee, 0.19, 0.11, 0.035, 0, -0.203, -0.158, teamMat, 0.012);
-    box(knee, 0.295, 0.125, 0.4, 0, -0.325, -0.045, trim, 0.021);
-    box(knee, 0.295, 0.034, 0.4, 0, -0.374, -0.045, armor, 0.008);
-    box(knee, 0.255, 0.075, 0.16, 0, -0.31, -0.176, trim, 0.02);
+    const foot = joint(side + "Foot", knee, 0, -0.325, -0.045);
+    box(foot, 0.295, 0.125, 0.4, 0, 0, 0, trim, 0.021);
+    box(foot, 0.295, 0.034, 0.4, 0, -0.049, 0, armor, 0.008);
+    box(foot, 0.255, 0.075, 0.16, 0, 0.015, -0.131, trim, 0.02);
     for (let i = 0; i < 3; i++)
       box(knee, 0.13, 0.009, 0.018, 0, -0.27 - i * 0.022, -0.15, metal, 0.002);
   }
@@ -302,5 +331,6 @@ export function createOperator(team, name = "BOT") {
   }
   group.userData.characterStyle = "striker-v2";
   group.userData.team = team;
+  group.userData.rigRevision = 3;
   return { group, parts };
 }

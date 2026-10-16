@@ -10,7 +10,7 @@
 
 No account, API URL, port forwarding, Node server deployment, or manual WebRTC offer/answer copying is required. The normal client **never requests `/api/health` or `/api/live`**. This works with static hosting, including the user's `somerandomshooter.freebuff.app` deployment, once its frontend is republished with this update. A Git push alone does not prove that an independently published site has updated.
 
-**Keep the host's game tab open and active.** The host browser runs the match. Closing it or leaving the room ends guests' connections; there is no host migration. Background-tab throttling, sleeping a device, or a slow host can affect everyone. Escape pauses only your own input, not the shared match.
+**Keep the host's game tab open and active.** The host browser runs the match. Closing it, leaving the room or a running authority worker failing ends guests' connections; there is no host migration. Worker startup failures fall back to main-thread authority. Background-tab throttling, sleeping a device, or a slow host can affect everyone. Escape pauses only your own input, not the shared match.
 
 Online maps: **Concrete Arena, Foundry and Courtyard**. Online opponents are real people, not bots. All five maps, the full weapon roster, and bot/range training remain available offline. Multiplayer itself needs an Internet connection.
 
@@ -25,9 +25,13 @@ After joining a match, click **Back to the arena** to capture the mouse: a netwo
 
 ### Simulation, prediction and limits
 
-The host targets **120 fixed simulation steps/second**, **20 Hz snapshots**, and **30 Hz client input**, with immediate discrete action edges. Browser scheduling and device performance still apply. Prediction/interpolation, the 75 ms remote jitter buffer, bounded extrapolation, action acknowledgments, five-second countdown, hit feedback and bounded hitscan rewind are shared with the existing multiplayer implementation.
+The host targets **120 fixed simulation steps/second**, **20 Hz snapshots**, and **30 Hz client input**, with immediate discrete action edges. Match authority now runs in a **Web Worker**, away from WebGL/shader compilation and the React UI. Worker-restricted browsers retain a main-thread compatibility path; no backend setup is introduced. Browser scheduling and device performance still apply.
 
-Browser-hosted channels use **reliable ordered JSON** for compatibility and simplicity. They do **not** use the dedicated server's 587-byte binary snapshot encoding or Geckos' unreliable raw snapshots. Buffers are bounded: stale snapshot/input sends are dropped under congestion, and excessive buffering disconnects the peer. Reliable transport can still introduce head-of-line delays under packet loss; this is not an unreliable-UDP performance claim.
+New browser peers negotiate a second **unordered, zero-retransmission RTC data channel** for compact binary snapshots and replaceable movement input. Lobby messages, confirmed combat events and unacknowledged action edges stay on reliable ordered control. Old positions no longer wait for retransmission of earlier state. A typical six-player snapshot measured **4,195 JSON bytes versus 587 binary bytes (86% less)**, excluding transport headers and projectiles; this is a sample state-frame comparison, not an Internet throughput/FPS benchmark.
+
+The realtime queue is capped at 32 KiB; obsolete state is dropped rather than accumulated. Unsupported channels fall back to reliable JSON. If state delivery stalls while reliable control remains connected, the guest requests reliable state recovery without leaving the match. Both paths keep input validation and the same authoritative simulation. Snapshot match nonces and monotonic times reject old, duplicate or reordered frames.
+
+Browser peers adapt their interpolation buffer within **55–120 ms** using arrival jitter and a smoothed remote clock; extrapolation remains capped at 50 ms. Legacy server mode retains its 75 ms buffer. Local movement prediction and bounded hitscan rewind remain enabled. Firing presentation is predicted immediately without granting ammo, projectiles or damage; authoritative shot echoes are deduplicated. Slow devices and Internet latency still impose limits.
 
 Room revisions, membership epochs and match nonces prevent stale match messages from reviving a left room. Guests cannot create or replace the host's single room. LobbyService validates names, inputs, weapon choices, team sizes, readiness, host permissions and request rates. Guest payload sizes, simultaneous/pending connections, and queues are bounded. Stale controls neutralize after 200 ms; heartbeats detect lost connections. Failed joins restore a local lobby so a player can retry or create a match.
 
@@ -51,7 +55,7 @@ ORIGINS=https://game.example.com PORT=3001 npm start
 
 `npm start` serves `dist` and `/api` on `0.0.0.0:3001`. Use HTTPS, exact `ORIGINS`, WebSocket Upgrade forwarding, and public-service request/connection limits. Geckos additionally needs a working optional `@geckos.io/server`/`node-datachannel` native installation and exposed UDP 10000–10100; a TCP reverse proxy alone is insufficient. `GECKOS=0` selects WebSocket only, and `ICE_SERVERS` optionally supplies the native server's ICE configuration.
 
-The sandbox's native Geckos binary is unavailable, so its legacy browser regression uses the real WebSocket fallback; native Geckos Internet UDP remains unverified. Dedicated mode alone supports its server-local public-room list, host ownership migration, and compact binary snapshots. Rooms are in-memory and do not survive a server restart.
+The sandbox's native Geckos binary is unavailable, so its legacy browser regression uses the real WebSocket fallback; native Geckos Internet UDP remains unverified. Dedicated mode alone supports its server-local public-room list and lobby host ownership migration. Both modes now use compact binary snapshots when their realtime transport is available. Rooms are in-memory and do not survive a server restart.
 
 If `/api/health` returns HTML in this explicitly selected mode, the error explains that the backend is missing and tells the player to remove `network=server` for default browser-hosted multiplayer. That HTML/API problem does not apply to normal static-site play. Offline service workers never cache API/signaling responses.
 
@@ -85,4 +89,17 @@ The test exercises real invitations, loadout/readiness, match startup, replicate
 
 These are local browser/network regressions, **not a test of the public PeerJS provider, Internet-wide NAT traversal, or a claim that the published Freebuff site has already updated**. No networked FPS can guarantee zero latency.
 
-Validation for this update: **344/344 unit tests**, **16/16 targeted browser regressions**, and the production build passed. The browser set includes both real P2P cases, legacy server compatibility, disconnected production reload, Knife/Sniper animation checks, G utilities and explosive trickshots. Public PeerJS Cloud/Internet relay reachability was not validated from this restricted sandbox.
+Initial invite-flow validation (before the responsiveness/feedback pass below): **344/344 unit tests**, **16/16 targeted browser regressions**, and the production build passed. The browser set includes both real P2P cases, legacy server compatibility, disconnected production reload, Knife/Sniper animation checks, G utilities and explosive trickshots. Public PeerJS Cloud/Internet relay reachability was not validated from this restricted sandbox.
+
+
+## Countdown/HUD and presentation fixes
+
+- Countdown completion follows the **authoritative match phase**, not whether the local game is paused. A joining player awaiting mouse capture now clears “1” and sees the transition to FIGHT. The HUD timer, health and ammo continue to receive authoritative updates while the local render/input is paused.
+- Online round setup no longer constructs five throwaway offline bots before replacing them with the actual human players. Only actual opponents receive visible character rigs.
+- The local multiplayer gun now receives its missing shot presentation: recoil, flash, casing ejection and sound. Your own confirmed tracers are no longer discarded; wall impacts, hit flinches and elimination audio are replicated. Hit markers and damage numbers remain confirmation-only.
+- Current operator/gun changes are detailed in [player models and gun feedback](player-gun-feedback.md).
+
+`tests/peer-multiplayer.spec.js` now additionally checks a paused joining browser with **no manual render/simulation ticks**: the worker advances the match, countdown clears, and the HUD timer advances. It verifies actual unordered/zero-retransmission data-channel properties, injected 20% incoming state loss and delayed/reordered frames, monotonically accepted snapshots, and automatic reliable recovery after state delivery is deliberately stalled. These are controlled local regressions, not an Internet-wide lag/availability guarantee.
+
+
+Latest feedback/responsiveness validation: **385/385 unit tests**, production build and whitespace checks passed. **21 distinct browser scenarios** passed across broad and targeted clean-build runs, including a real six-client 3v3 RTC test (one browser with six independent network clients, not six GPU renderers). The initial broad run's sidearm picker was interrupted by a development reload while source changes were still being made; it passed on the clean rerun. Public cloud signaling/NAT reachability and a Freebuff republish remain unverified.

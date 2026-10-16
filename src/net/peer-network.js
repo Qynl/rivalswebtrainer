@@ -1,3 +1,5 @@
+import { encodeSnapshot, decodeSnapshot } from "./snapshot-codec.js";
+import { WorkerLobby } from "./worker-lobby.js";
 import { LobbyService } from "../../server/lobbies.js";
 import { PROTOCOL } from "./protocol.js";
 const PREFIX = `rivalsweb-v${PROTOCOL}-`;
@@ -18,6 +20,14 @@ export class BrowserPeerNetwork {
     this.options = options;
     this.transport = "peer";
     this.peers = new Map();
+    this.metrics = {
+      snapshotsSent: 0,
+      snapshotsReceived: 0,
+      stateBytes: 0,
+      inputsSent: 0,
+      dropped: 0,
+    };
+    this.snapshotCache = new WeakMap();
     this.pending = new Map();
     this.epoch = 0;
     this.closed = false;
@@ -30,6 +40,15 @@ export class BrowserPeerNetwork {
     await this.register();
     if (this.closed) return this;
     this.localLobby();
+    try {
+      await this.service?.ready;
+    } catch (error) {
+      if (this.closed) throw error;
+      // Worker restrictions must not turn a static site into a backend setup task.
+      this.stopLocal();
+      this.options.worker = false;
+      this.localLobby();
+    }
     return this;
   }
   async register(attempt = 0) {
@@ -110,17 +129,28 @@ export class BrowserPeerNetwork {
   localLobby() {
     this.role = "host";
     const epoch = ++this.epoch;
-    this.service = new LobbyService({
+    if (typeof Worker !== "undefined" && this.options.worker !== false) {
+      try {
+        this.service = new WorkerLobby(this.code, (error) => {
+          if (!this.closed && this.client.connection === this)
+            this.client.disconnected(error.message);
+        });
+      } catch {
+        this.options.worker = false;
+      }
+    }
+    this.service ||= new LobbyService({
       maxClients: 6,
       maxRooms: 1,
       roomCode: () => this.code,
     });
     this.localId = this.service.connect((packet) => {
-      const copy = structuredClone(packet);
+      const copy = this.service.isWorker ? packet : structuredClone(packet);
       queueMicrotask(() => {
         if (this.epoch === epoch) this.deliver(copy);
       });
     }, "peer");
+    if (this.service.isWorker) return;
     let previous = performance.now(),
       accumulator = 0,
       sweep = 0;
@@ -140,8 +170,103 @@ export class BrowserPeerNetwork {
       }
     }, 1000 / 120);
   }
+  setupStateLane(conn, receiveInput) {
+    if (conn.stateLane || !conn.peerConnection?.createDataChannel) return;
+    try {
+      // Explicit negotiation avoids PeerJS treating this as a replacement for
+      // its own control channel. Each peer connection owns its own ID space.
+      const lane = conn.peerConnection.createDataChannel("rivals-state-v2", {
+        negotiated: true,
+        id: 12,
+        ordered: false,
+        maxRetransmits: 0,
+      });
+      conn.stateLane = lane;
+      lane.binaryType = "arraybuffer";
+      lane.onopen = () => {
+        if (!receiveInput && this.remote === conn) {
+          // Start the watchdog even if this lane never delivers its first frame.
+          this.lastFastStateAt = performance.now();
+          this.safeSend(conn, { type: "stateReady" });
+        }
+      };
+      lane.onclose = () => {
+        conn.stateReady = false;
+      };
+      lane.onerror = () => {
+        conn.stateReady = false;
+      };
+      lane.onmessage = ({ data }) => {
+        if (this.closed || !conn.open) return;
+        try {
+          if (receiveInput) {
+            if (typeof data !== "string" || data.length > 8192) return;
+            const packet = JSON.parse(data);
+            if (packet?.type === "input") receiveInput(packet);
+          } else if (
+            this.remote === conn &&
+            data instanceof ArrayBuffer &&
+            data.byteLength <= 16384
+          ) {
+            const snapshot = decodeSnapshot(data, this.client.metadata);
+            if (snapshot.matchId !== this.client.activeMatchId) return;
+            this.metrics.snapshotsReceived++;
+            this.lastFastStateAt = performance.now();
+            this.deliver({ type: "snapshot", snapshot });
+          }
+        } catch {
+          this.metrics
+            .dropped++; /* Missing setup or stale state is disposable. */
+        }
+      };
+    } catch {
+      /* Older browsers retain the reliable compatibility path. */
+    }
+  }
+  checkState() {
+    const now = performance.now();
+    if (
+      this.role === "guest" &&
+      this.client.activeMatchId &&
+      this.lastFastStateAt &&
+      now - this.lastFastStateAt > 650 &&
+      now - (this.lastFallbackAt || 0) > 1000
+    ) {
+      this.lastFallbackAt = now;
+      this.safeSend(this.remote, { type: "stateFallback" });
+    }
+  }
+  sendState(conn, data) {
+    const lane = conn?.stateLane;
+    if (lane?.readyState !== "open") return false;
+    if (lane.bufferedAmount > 32768) {
+      this.metrics.dropped++;
+      return true;
+    }
+    try {
+      lane.send(data);
+      this.metrics.stateBytes +=
+        typeof data === "string" ? data.length : data.byteLength;
+      return true;
+    } catch {
+      return false;
+    }
+  }
   safeSend(conn, packet) {
     if (!conn?.open) return;
+    if (packet.type === "snapshot" && conn.stateReady) {
+      let bytes = this.snapshotCache.get(packet.snapshot);
+      if (!bytes) {
+        bytes = encodeSnapshot(packet.snapshot);
+        this.snapshotCache.set(packet.snapshot, bytes);
+      }
+      if (this.sendState(conn, bytes)) {
+        this.metrics.snapshotsSent++;
+        return;
+      }
+    }
+    if (packet.type === "hello" && conn.metadata?.stateLane === 1)
+      packet = { ...packet, stateLane: 1 };
     const buffered = conn.dataChannel?.bufferedAmount || 0;
     if (buffered > 262144 && ["snapshot", "input"].includes(packet.type))
       return;
@@ -187,6 +312,10 @@ export class BrowserPeerNetwork {
       this.pending.delete(conn);
       if (this.closed || this.epoch !== epoch || !this.service)
         return conn.close();
+      if (conn.metadata?.stateLane === 1)
+        this.setupStateLane(conn, (packet) => {
+          if (id) this.service?.receive(id, packet);
+        });
       id = this.service.connect(
         (packet) => this.safeSend(conn, packet),
         "peer",
@@ -197,6 +326,14 @@ export class BrowserPeerNetwork {
     });
     conn.on("data", (packet) => {
       if (!id || !packet || typeof packet !== "object") return;
+      if (packet.type === "stateReady" && conn.stateLane) {
+        conn.stateReady = true;
+        return;
+      }
+      if (packet.type === "stateFallback") {
+        conn.stateReady = false;
+        return;
+      }
       // Guests cannot create/replace the host's single room. LobbyService
       // validates permissions, input values, teams and request rate limits.
       if (packet.type === "create") return;
@@ -233,7 +370,7 @@ export class BrowserPeerNetwork {
     const conn = this.peer.connect(peerId(code), {
       reliable: true,
       serialization: "json",
-      metadata: { protocol: PROTOCOL },
+      metadata: { protocol: PROTOCOL, stateLane: 1 },
     });
     this.remote = conn;
     this.joinTimer = setTimeout(
@@ -248,6 +385,8 @@ export class BrowserPeerNetwork {
       if (packet?.type === "error" && !this.client.state.room)
         return this.joinFailed(packet.message);
       if (packet?.type === "room") clearTimeout(this.joinTimer);
+      if (packet?.type === "hello" && packet.stateLane === 1)
+        this.setupStateLane(conn);
       this.deliver(packet);
     });
     conn.on("open", () => {
@@ -280,6 +419,7 @@ export class BrowserPeerNetwork {
   send(packet) {
     if (this.closed) return;
     if (this.role === "guest") {
+      if (packet.type === "ping") this.checkState();
       if (packet.type === "leave") {
         clearTimeout(this.joinTimer);
         this.safeSend(this.remote, packet);
@@ -289,6 +429,12 @@ export class BrowserPeerNetwork {
         this.client.stopSession(true);
         this.client.patch({ room: null, error: "" });
         this.localLobby();
+      } else if (
+        packet.type === "input" &&
+        !packet.input.actions?.length &&
+        this.sendState(this.remote, JSON.stringify(packet))
+      ) {
+        this.metrics.inputsSent++;
       } else this.safeSend(this.remote, packet);
       return;
     }

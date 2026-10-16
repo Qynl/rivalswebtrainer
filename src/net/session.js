@@ -12,12 +12,18 @@ export class MultiplayerSession {
     this.game = game;
     this.client = client;
     this.id = client.state.id;
-    this.buffer = new SnapshotBuffer();
+    this.buffer = new SnapshotBuffer(client.mode === "peer" ? 0.06 : 0.075, {
+      adaptive: client.mode === "peer",
+    });
     this.seq = 0;
     this.actionId = 0;
     this.actions = [];
     this.sendTime = 0;
     this.lastEvent = 0;
+    this.predictedShots = [];
+    this.feedbackReadyAt = 0;
+    this.feedbackReadyByWeapon = {};
+    this.lastSelfShot = -1;
     this.round = 0;
     this.lastReceived = performance.now() / 1000;
     this.projectiles = new Map();
@@ -28,6 +34,7 @@ export class MultiplayerSession {
     const self = snapshot.players.find((p) => p.id === this.id);
     game.start({
       mode: 3,
+      online: true,
       capture: false,
       map,
       difficulty: "hard",
@@ -61,6 +68,10 @@ export class MultiplayerSession {
       if (state.id === this.id) {
         e = g.player;
         g.loadout = [...state.loadout];
+        this.predictedShots = [];
+        this.lastSelfShot = state.shot ?? -1;
+        this.feedbackReadyAt = 0;
+        this.feedbackReadyByWeapon = {};
         g.ammunition = state.ammo.map((a, i) => ({
           mag: a.mag ?? Infinity,
           reserve: a.reserve ?? Infinity,
@@ -103,6 +114,12 @@ export class MultiplayerSession {
   }
   receive(snapshot) {
     if (!snapshot || !Array.isArray(snapshot.players)) return;
+    if (this.round && snapshot.time <= (this.latest?.time ?? -Infinity)) return;
+    const phaseChanged =
+      this.authoritativePhase !== snapshot.phase ||
+      this.authoritativeRound !== snapshot.round;
+    this.authoritativePhase = snapshot.phase;
+    this.authoritativeRound = snapshot.round;
     this.lastReceived = performance.now() / 1000;
     const paused = this.game.state === "paused";
     this.applying = true;
@@ -132,7 +149,7 @@ export class MultiplayerSession {
       g.slot = -1;
       g.equip(self.slot);
     }
-    const oldPhase = g.state;
+    this.confirmShot(self, snapshot);
     g.score = [...snapshot.score];
     g.roundTime = snapshot.roundTime;
     g.countdown = snapshot.countdown;
@@ -169,7 +186,7 @@ export class MultiplayerSession {
         }
       }
     }
-    if (oldPhase === "countdown" && g.state === "playing") {
+    if (phaseChanged && snapshot.phase === "playing") {
       g.events.banner("ROUND " + snapshot.round, "FIGHT.", "", 0.65);
       g.audio.play("start");
     }
@@ -309,6 +326,7 @@ export class MultiplayerSession {
     this.processEvents(snapshot.events || []);
     this.syncProjectiles(snapshot.projectiles);
     this.syncZones(snapshot.zones);
+    if (g.state === "paused") g.events.update(g);
     this.applying = false;
   }
   processEvents(events) {
@@ -316,10 +334,34 @@ export class MultiplayerSession {
     for (const event of events) {
       if (event.id <= this.lastEvent) continue;
       this.lastEvent = event.id;
-      if (event.type === "trace" && event.owner !== this.id)
-        g.tracer(v(event.a), v(event.b), event.team, event.color);
+      if (event.type === "trace") {
+        const origin =
+          event.owner === this.id
+            ? g.visualMuzzle(g.player, v(event.a))
+            : v(event.a);
+        g.tracer(origin, v(event.b), event.team, event.color);
+      }
+      if (event.type === "impact")
+        g.combatFX?.impact(v(event.position), v(event.normal));
       if (event.type === "damage") {
         const victim = this.entities.get(event.victim);
+        if (victim?.model) {
+          const source = this.entities.get(event.source);
+          victim.hitReact = 0.22;
+          victim.hitDirection = source
+            ? Math.atan2(victim.x - source.x, victim.z - source.z)
+            : 0;
+          g.particles(
+            new THREE.Vector3(
+              victim.x,
+              victim.y +
+                (event.head ? victim.height - 0.2 : victim.height * 0.6),
+              victim.z,
+            ),
+            event.head ? 0xffdf9a : 0xffc79c,
+            6,
+          );
+        }
         if (event.source === this.id && victim) {
           g.events.hit(event.head);
           g.audio.play(event.head ? "head" : "hit");
@@ -368,7 +410,13 @@ export class MultiplayerSession {
         g.events.toast("Opponent disconnected. Match won by forfeit.");
       if (event.type === "kill") {
         g.events.kill(event.killer, event.victim, event.head);
-        if (event.killer === g.player.name) g.events.confirmKill(event.head);
+        if (
+          event.source === this.id ||
+          (!event.source && event.killer === g.player.name)
+        ) {
+          g.events.confirmKill(event.head);
+          g.audio.play("kill");
+        }
       }
       if (event.type === "roundend") {
         const win = event.winner === g.player.team;
@@ -407,8 +455,73 @@ export class MultiplayerSession {
       }
     }
   }
+  predictShot() {
+    const g = this.game,
+      id = g.loadout[g.slot],
+      w = WEAPONS[id];
+    const self = this.latest?.players.find((p) => p.id === this.id);
+    this.feedbackReadyByWeapon ||= {};
+    this.predictedShots = this.predictedShots.filter(
+      (p) => g.clock - p.time < 1,
+    );
+    if (
+      !self ||
+      !w ||
+      w.slot > 1 ||
+      w.type === "bow" ||
+      g.state !== "playing" ||
+      !g.player.alive ||
+      g.selectingLoadout ||
+      g.slot !== self.slot ||
+      g.reloadTime > 0 ||
+      g.switchTime > 0 ||
+      g.quickMeleeTime > 0 ||
+      g.quickUtilityTime > 0 ||
+      g.healTime > 0 ||
+      g.pendingThrow ||
+      g.deflectTime > 0 ||
+      (w.spin && g.spinTime < 0.55) ||
+      g.clock < (this.feedbackReadyByWeapon[id] || 0) ||
+      performance.now() / 1000 - this.lastReceived > 0.4 ||
+      this.predictedShots.length >= 8 ||
+      this.predictedShots.filter((p) => p.weapon === id).length >=
+        (self.ammo[g.slot].mag ?? Infinity)
+    )
+      return false;
+    this.predictedShots.push({ weapon: id, time: g.clock });
+    this.feedbackReadyAt = this.feedbackReadyByWeapon[id] =
+      g.clock + w.interval;
+    g.presentShot(id);
+    return true;
+  }
+  confirmShot(self, snapshot) {
+    if (!(self.shot >= 0) || self.shot === this.lastSelfShot) return;
+    this.lastSelfShot = self.shot;
+    const g = this.game,
+      id = self.weapon;
+    const index = this.predictedShots.findIndex(
+      (p) => p.weapon === id && g.clock - p.time < 1,
+    );
+    if (index >= 0) this.predictedShots.splice(index, 1);
+    else if (
+      WEAPONS[id]?.slot < 2 &&
+      g.loadout[g.slot] === id &&
+      snapshot.time - self.shot < 0.3
+    ) {
+      g.presentShot(
+        id,
+        Math.min(0.035, Math.max(0, snapshot.time - self.shot)),
+      );
+      this.feedbackReadyByWeapon ||= {};
+      this.feedbackReadyAt = this.feedbackReadyByWeapon[id] = Math.max(
+        this.feedbackReadyByWeapon[id] || 0,
+        g.clock + WEAPONS[id].interval - Math.max(0, snapshot.time - self.shot),
+      );
+    }
+  }
   action(type) {
     if (this.game.state === "results") return;
+    if (type === "fire") this.predictShot();
     this.actions.push({ id: ++this.actionId, type });
     if (this.actions.length > 12) this.actions.shift();
     this.sendInput();
@@ -465,6 +578,7 @@ export class MultiplayerSession {
   step(dt) {
     const g = this.game;
     g.updateSupport(dt);
+    this.client.connection?.checkState?.();
     for (const key of [
       "deflectTime",
       "deflectCooldown",
@@ -483,6 +597,9 @@ export class MultiplayerSession {
     }
     g.kick = Math.max(0, g.kick - dt * 0.3);
     g.flash = Math.max(0, g.flash - dt);
+    const heldWeapon = WEAPONS[g.loadout[g.slot]];
+    if (g.mouseDown && ["auto", "flame"].includes(heldWeapon.type))
+      this.predictShot();
     this.sendTime += dt;
     if (this.sendTime >= 1 / 30) {
       this.sendTime %= 1 / 30;

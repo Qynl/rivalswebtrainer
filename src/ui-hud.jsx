@@ -272,7 +272,15 @@ export function Hud() {
             </div>
           ))}
         </div>
-        <div id="scope" className={h.scoped ? "" : "hidden"} />
+        <div
+          id="scope"
+          className={h.scoped ? "" : "hidden"}
+          data-shot-pulse={h.shotPulse || 0}
+          style={{
+            transform: `scale(${1 + (s.settings.shake ? (h.shotPulse || 0) * 0.025 : 0)})`,
+            boxShadow: `inset 0 0 ${35 + (h.shotPulse || 0) * 65}px #080d15`,
+          }}
+        />
         <div className="quick-actions">
           <div
             id="ability-status"
