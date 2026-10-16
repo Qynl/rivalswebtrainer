@@ -320,7 +320,7 @@ test("holding jump does not start automatic hops or spend the extra jump", () =>
   assert.equal(g.player.jumps, 1);
 });
 
-test("ground slide is a short burst with less than six metres of travel", () => {
+test("ground slide keeps flowing past 400ms and finishes without an extra launch", () => {
   const g = game("rifle");
   g.player.vz = -MOVEMENT.runSpeed;
   g.keys.add("KeyW");
@@ -328,9 +328,12 @@ test("ground slide is a short burst with less than six metres of travel", () => 
   assert.equal(g.slideTime, MOVEMENT.slideDuration);
   const start = g.player.z;
   for (let i = 0; i < 24; i++) g.updatePlayer(1 / 60);
+  assert.ok(g.slideTime > 0.39);
+  assert.ok(start - g.player.z > 3.3 && start - g.player.z < 3.5);
+  for (let i = 0; i < 25; i++) g.updatePlayer(1 / 60);
   assert.ok(g.slideTime < 1e-6);
-  assert.ok(start - g.player.z < 3);
-  assert.ok(start - g.player.z > 2);
+  assert.ok(start - g.player.z > 6.2 && start - g.player.z < 6.6);
+  assert.equal(g.player.vx, 0);
 });
 
 test("a projectile cannot spawn on the far side of a wall pressed against its muzzle", () => {

@@ -19,15 +19,16 @@ export const MOVEMENT = Object.freeze({
   landingGrace: 0.05,
   slideBuffer: 0.12,
   slideStartSpeed: 4.5,
-  slideBrakeDrag: 7.5,
+  slideBrakeDrag: 8.5,
   rampJumpFactor: 0.1,
   rampJumpMax: 0.8,
-  slideDuration: 0.19,
+  slideDuration: 0.8,
   slideCooldown: 1.0,
   slideBoost: 1.4,
   slideMinSpeed: 6.6,
   slideMaxSpeed: 11.8,
-  slideDrag: 3.2,
+  slideDrag: 2,
+  slideCruiseSpeed: 6.4,
   slideTurnRate: 2.8,
 });
 
@@ -122,13 +123,27 @@ export function steerSlide(body, wish, dt) {
     body.vx -= slope.x * scale * dt;
     body.vz -= slope.z * scale * dt;
   }
-  const input = Math.hypot(wish.x, wish.z);
-  const drag = input > 0 ? MOVEMENT.slideDrag : MOVEMENT.slideBrakeDrag;
-  let speed = Math.hypot(body.vx, body.vz) * Math.exp(-drag * dt);
+  const input = Math.hypot(wish.x, wish.z),
+    length = Math.hypot(body.vx, body.vz),
+    opposed =
+      input > 0 &&
+      length > 1e-8 &&
+      (body.vx * wish.x + body.vz * wish.z) / (length * input) < -0.25;
+  // Letting go means coast, not slam on the brakes. Counter-input is the
+  // deliberate brake; do not rotate it into a sideways orbit while stopping.
+  const drag = opposed ? MOVEMENT.slideBrakeDrag : MOVEMENT.slideDrag,
+    cruise =
+      input > 0 && !opposed && length >= MOVEMENT.slideCruiseSpeed
+        ? MOVEMENT.slideCruiseSpeed
+        : 0;
+  // Forward/side steering preserves a modest cruise without adding energy to
+  // a slide already slowed below cruise by an uphill ramp or collision.
+  let speed = cruise + (length - cruise) * Math.exp(-drag * dt);
   speed = Math.min(MOVEMENT.airSpeedCap, speed);
   if (speed < 1e-8) return;
   const current = Math.atan2(body.vz, body.vx),
-    delta = input ? angleDelta(current, Math.atan2(wish.z, wish.x)) : 0,
+    delta =
+      input && !opposed ? angleDelta(current, Math.atan2(wish.z, wish.x)) : 0,
     heading =
       current +
       clamp(delta, -MOVEMENT.slideTurnRate * dt, MOVEMENT.slideTurnRate * dt);

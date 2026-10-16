@@ -42,15 +42,18 @@ test("controlled run reaches speed in 110ms and releasing input stops in under 9
     assert.equal(g.player.vx, 0);
     assert.ok(g.player.x - start < 0.45);
   }));
-test("running slide is a sub-three-metre burst, not the old five-metre launch", () =>
+test("running slide flows for 0.8 seconds without changing its entry boost or cooldown", () =>
   flat((g) => {
     g.keys.add("KeyD");
     g.player.vx = MOVEMENT.runSpeed;
     g.slide();
     assert.equal(g.player.vx, 9.4);
     for (let i = 0; i < 24; i++) g.updatePlayer(dt);
+    assert.ok(g.slideTime > 0.59);
+    assert.ok(g.player.vx > 8.3);
+    for (let i = 0; i < 73; i++) g.updatePlayer(dt);
     assert.equal(g.slideTime, 0);
-    assert.ok(g.player.x > 1.2 && g.player.x < 1.65);
+    assert.ok(g.player.x > 6.1 && g.player.x < 6.5);
     assert.ok(g.slideCooldown > 0);
     g.slide();
     assert.equal(g.slideTime, 0);
@@ -117,14 +120,18 @@ test("reversing in air first brakes and eventually reverses, without sideways dr
   assert.ok(p.vx < -20);
   assert.ok(Math.abs(p.vz) < 1e-8);
 });
-test("releasing movement during a slide gives a deliberate braking exit", () => {
+test("releasing movement coasts while opposite input brakes without a sideways orbit", () => {
   const coast = { vx: 13, vz: 0 },
-    move = { ...coast };
+    move = { ...coast },
+    brake = { ...coast };
   for (let i = 0; i < 20; i++) {
     steerSlide(coast, { x: 0, z: 0 }, dt);
     steerSlide(move, { x: 1, z: 0 }, dt);
+    steerSlide(brake, { x: -1, z: 0 }, dt);
   }
-  assert.ok(coast.vx < move.vx * 0.5);
+  assert.ok(coast.vx > 9 && coast.vx < move.vx);
+  assert.ok(brake.vx < coast.vx * 0.5);
+  assert.equal(brake.vz, 0);
 });
 test("explosive/dash air momentum is not truncated by the lower ordinary movement cap", () => {
   const p = { grounded: false, vx: 45, vz: 0 };
@@ -193,6 +200,72 @@ test("authoritative network input uses the new speed and does not auto-jump from
     assert.ok(apex > 1.0 && apex < 1.03);
     assert.equal(g.player.grounded, true);
     assert.equal(g.player.jumps, 0);
+    assert.equal(g.lastAction, 2);
+  } finally {
+    m.dispose();
+  }
+});
+
+test("a slide with no held movement coasts almost four metres and settles naturally", () =>
+  flat((g) => {
+    g.player.vx = MOVEMENT.runSpeed;
+    g.slide();
+    for (let i = 0; i < 24; i++) g.updatePlayer(dt);
+    assert.ok(g.slideTime > 0.59);
+    assert.ok(g.player.vx > 6 && g.player.vx < 6.5);
+    for (let i = 0; i < 96; i++) g.updatePlayer(dt);
+    assert.equal(g.slideTime, 0);
+    assert.equal(g.player.vx, 0);
+    assert.ok(g.player.x > 3.6 && g.player.x < 3.9);
+  }));
+test("jump cancels a coasting slide halfway through without stopping its horizontal momentum", () =>
+  flat((g) => {
+    g.player.vx = MOVEMENT.runSpeed;
+    g.slide();
+    for (let i = 0; i < 36; i++) g.updatePlayer(dt);
+    assert.ok(g.slideTime > 0);
+    const speed = g.player.vx;
+    g.jump();
+    assert.equal(g.slideTime, 0);
+    assert.equal(g.slideBuffer, 0);
+    assert.equal(g.player.vy, MOVEMENT.jumpSpeed);
+    for (let i = 0; i < 12; i++) g.updatePlayer(dt);
+    assert.equal(g.player.vx, speed);
+    assert.ok(g.player.y > 0);
+  }));
+test("counter-steering exits a slide quickly and returns control to ordinary movement", () =>
+  flat((g) => {
+    g.player.vx = MOVEMENT.runSpeed;
+    g.slide();
+    g.keys.add("KeyA");
+    for (let i = 0; i < 24; i++) g.updatePlayer(dt);
+    assert.equal(g.slideTime, 0);
+    assert.ok(g.player.vx < 0);
+    assert.ok(Math.abs(g.player.vz) < 1e-8);
+  }));
+test("slide steering cannot create free uphill momentum below cruise speed", () => {
+  const p = { vx: 3, vz: 0, groundSlope: { x: 0.5, z: 0 } };
+  steerSlide(p, { x: 1, z: 0 }, dt);
+  assert.ok(p.vx < 3 && p.vx > 0);
+});
+
+test("authority lets a no-input slide coast and a later jump cancels it exactly once", () => {
+  const { m, g } = setup();
+  m.world.boxes = [];
+  try {
+    g.player.vx = MOVEMENT.runSpeed;
+    m.input("p0", packet(1, [{ id: 1, type: "slide" }], { keys: 0 }));
+    const start = g.player.x;
+    for (let i = 0; i < 30; i++) m.step(dt);
+    assert.ok(g.slideTime > 0.54);
+    assert.ok(g.player.x - start > 1.7);
+    assert.ok(g.player.vx > 5.6);
+    const speed = g.player.vx;
+    m.input("p0", packet(2, [{ id: 2, type: "jump" }], { keys: 0 }));
+    assert.equal(g.slideTime, 0);
+    assert.equal(g.player.vy, MOVEMENT.jumpSpeed);
+    m.step(dt);
+    assert.equal(g.player.vx, speed);
     assert.equal(g.lastAction, 2);
   } finally {
     m.dispose();

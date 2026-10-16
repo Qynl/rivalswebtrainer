@@ -49,21 +49,21 @@ Mobile layouts support browsing/configuration, but combat requires desktop point
 
 ## Controls
 
-| Input             | Action                                                                                                  |
-| ----------------- | ------------------------------------------------------------------------------------------------------- |
-| WASD              | Move; steer in all directions in the air, including reversing                                           |
-| Mouse             | Look (capture/recenter spikes are filtered; recoil does not rewrite look pitch)                         |
-| Left mouse        | Shoot / melee strike / throw / heal; hold and release to fire Bow                                       |
-| Right mouse       | ADS; Scythe dash or Katana guard when equipped; quick Medkit heal                                       |
-| F                 | Quick melee-slot ability: **Knife stab**, Scythe dash or Katana guard; keeps current slot/ammo          |
-| G                 | Quick utility throw / 25-HP quick Medkit; keeps your selected weapon and its ammunition                 |
-| Space             | Jump and cancel slide; press again for Fists/Bow double jump (no automatic held-key hops)               |
-| C / Shift / Ctrl  | Controlled 0.19-second slide; short landing buffer; steer, release movement to brake, or jump to cancel |
-| 1–4 / mouse wheel | Equip a loadout slot                                                                                    |
-| M                 | Change weapons during five-second round preparation; an open picker can finish afterward                |
-| T                 | Inspect weapon (firing, aiming, switching or reloading cancels the inspection)                          |
-| R                 | Reload                                                                                                  |
-| Escape            | Pause / release mouse                                                                                   |
+| Input             | Action                                                                                         |
+| ----------------- | ---------------------------------------------------------------------------------------------- |
+| WASD              | Move; steer in all directions in the air, including reversing                                  |
+| Mouse             | Look (capture/recenter spikes are filtered; recoil does not rewrite look pitch)                |
+| Left mouse        | Shoot / melee strike / throw / heal; hold and release to fire Bow                              |
+| Right mouse       | ADS; Scythe dash or Katana guard when equipped; quick Medkit heal                              |
+| F                 | Quick melee-slot ability: **Knife stab**, Scythe dash or Katana guard; keeps current slot/ammo |
+| G                 | Quick utility throw / 25-HP quick Medkit; keeps your selected weapon and its ammunition        |
+| Space             | Jump and cancel slide; press again for Fists/Bow double jump (no automatic held-key hops)      |
+| C / Shift / Ctrl  | Flowing 0.8-second slide; release movement to coast, counter-steer to brake, jump to cancel    |
+| 1–4 / mouse wheel | Equip a loadout slot                                                                           |
+| M                 | Change weapons during five-second round preparation; an open picker can finish afterward       |
+| T                 | Inspect weapon (firing, aiming, switching or reloading cancels the inspection)                 |
+| R                 | Reload                                                                                         |
+| Escape            | Pause / release mouse                                                                          |
 
 Scythe dash recharges in **3 seconds**. Katana's frontal guard lasts **1.1 seconds** and has a **3.5-second cooldown**. It reflects bullets back along a real collision-tested ray; rear attacks, melee, and explosives are not blocked. Shooting is disabled during the guard. With Knife in your melee slot, **F** performs a quick stab after a **105 ms windup**, without switching away from your gun. It deals **40 front/side / 150 rear** damage, checks range/cone/cover at impact, and has a separate **0.55-second recovery**, so an RPG firing cooldown does not block an aerial follow-up. Fists still do not automatically punch with F.
 
@@ -284,7 +284,7 @@ See [the player/gun feedback report](docs/player-gun-feedback.md) and [multiplay
 
 ## Controlled movement pass
 
-Movement is now less exaggerated: run/melee speed **8/9.2**, a **0.19 s** slide with a smaller boost, **1 s** slide cooldown, and a **1.01-unit** flat jump. Slides require actual movement, releasing movement brakes them, and slide-jumps no longer multiply velocity or add an extra upward kick. Air steering remains directional but takes a readable turn rather than snapping around. Held Space no longer chains automatic jumps; tap again for another jump or the equipped Fists/Bow extra jump.
+Movement is now less exaggerated: run/melee speed **8/9.2**, a **0.8 s** flowing slide with the same modest entry boost, **1 s** slide cooldown, and a **1.01-unit** flat jump. Slides require actual momentum to start. Releasing movement now coasts instead of abruptly braking; holding forward sustains the glide, opposite input brakes, and jumping cancels the slide immediately while carrying horizontal momentum. Slide-jumps do not multiply velocity or add an extra upward kick. Air steering remains directional but takes a readable turn rather than snapping around. Held Space no longer chains automatic jumps; tap again for another jump or the equipped Fists/Bow extra jump.
 
 Camera bob and landing dip are reduced again, and slide FOV expansion is only 0.8°. Mouse yaw/pitch, weapon recoil presentation, collision, rocket/launcher trickshot launches, and 120 Hz offline/online shared physics are retained. Bots retain the shared jump/slide/air mechanics and their difficulty-specific run speeds. See [movement tuning and validation](docs/controlled-movement.md) for exact changes; these values supersede older movement reports.
 
