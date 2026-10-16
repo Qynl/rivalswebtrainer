@@ -58,7 +58,7 @@ Mobile layouts support browsing/configuration, but combat requires desktop point
 | F                 | Quick melee-slot ability: **Knife stab**, Scythe dash or Katana guard; keeps current slot/ammo |
 | G                 | Quick utility throw / 25-HP quick Medkit; keeps your selected weapon and its ammunition        |
 | Space             | Jump and cancel slide; press again for Fists/Bow double jump (no automatic held-key hops)      |
-| C / Shift / Ctrl  | Flowing 0.8-second slide; release movement to coast, counter-steer to brake, jump to cancel    |
+| C / Shift / Ctrl  | Instant 1.5-second slide, even from rest; coast, counter-steer to brake, jump to cancel        |
 | 1–4 / mouse wheel | Equip a loadout slot                                                                           |
 | M                 | Change weapons during five-second round preparation; an open picker can finish afterward       |
 | T                 | Inspect weapon (firing, aiming, switching or reloading cancels the inspection)                 |
@@ -269,7 +269,7 @@ node scripts/movement-audit.mjs             # defaults to d40fdb1
 node scripts/movement-audit.mjs <revision>  # requires that revision's local Git history
 ```
 
-This samples both controllers and their own physics constants at 600 Hz without checking out another branch. It reports acceleration, stopping, reversal drift and flat slide travel in trainer units—not measured Roblox values or hardware FPS. The latest values and trade-offs are in [the implementation report](docs/hour-pass.md).
+This samples both controllers and their own physics constants at 600 Hz without checking out another branch. It reports acceleration, stopping, reversal drift and flat slide travel in trainer units—not measured Roblox values or hardware FPS. Historical measurements are in [the implementation report](docs/hour-pass.md); current settings are in [responsive movement](docs/responsive-movement.md).
 
 Bow direction regression notes: [Bow body-plane correction](docs/bow-direction.md).
 
@@ -282,11 +282,13 @@ Bow direction regression notes: [Bow body-plane correction](docs/bow-direction.m
 
 See [the player/gun feedback report](docs/player-gun-feedback.md) and [multiplayer architecture and limits](docs/multiplayer.md).
 
-## Controlled movement pass
+## Responsive movement and long slides
 
-Movement is now less exaggerated: run/melee speed **8/9.2**, a **0.8 s** flowing slide with the same modest entry boost, **1 s** slide cooldown, and a **1.01-unit** flat jump. Slides require actual momentum to start. Releasing movement now coasts instead of abruptly braking; holding forward sustains the glide, opposite input brakes, and jumping cancels the slide immediately while carrying horizontal momentum. Slide-jumps do not multiply velocity or add an extra upward kick. Air steering remains directional but takes a readable turn rather than snapping around. Held Space no longer chains automatic jumps; tap again for another jump or the equipped Fists/Bow extra jump.
+Movement is faster and more fluid again, slightly below the earlier high-speed version: run/melee speed **9.6/10.8**, quicker ground acceleration and snappier directional air control. Jumps stay at the controlled **1.01-unit** height rather than returning to oversized launches.
 
-Camera bob and landing dip are reduced again, and slide FOV expansion is only 0.8°. Mouse yaw/pitch, weapon recoil presentation, collision, rocket/launcher trickshot launches, and 120 Hz offline/online shared physics are retained. Bots retain the shared jump/slide/air mechanics and their difficulty-specific run speeds. See [movement tuning and validation](docs/controlled-movement.md) for exact changes; these values supersede older movement reports.
+**C / Shift / Ctrl slides immediately—even standing still—with no run-up or post-slide cooldown.** Slides last up to **1.5 seconds**. Release movement to coast; hold forward to sustain the glide; counter-steer to brake; jump to cancel instantly while retaining horizontal momentum. A new slide is available as soon as the previous one ends or you land after cancelling. Pressing the other slide binding during an active slide cannot refresh its timer or stack boosts. At rest without WASD, slide direction follows your look; moving slides preserve their momentum.
+
+Camera bob, landing dip, restrained 0.8-degree slide FOV and stable yaw/pitch remain intact. Slide-jumps do not multiply speed or add another upward kick; held Space does not auto-hop. Entry speed is capped at 13 (below the earlier 16.5), and collisions, rocket/launcher trickshot launches, shared 120 Hz physics, and backend-free multiplayer remain. See [current tuning and validation](docs/responsive-movement.md); it supersedes the [earlier controlled-movement reports](docs/controlled-movement.md).
 
 ## Larger, clearer weapon models
 

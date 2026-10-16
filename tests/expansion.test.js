@@ -329,10 +329,10 @@ test("ground slide keeps flowing past 400ms and finishes without an extra launch
   const start = g.player.z;
   for (let i = 0; i < 24; i++) g.updatePlayer(1 / 60);
   assert.ok(g.slideTime > 0.39);
-  assert.ok(start - g.player.z > 3.3 && start - g.player.z < 3.5);
-  for (let i = 0; i < 25; i++) g.updatePlayer(1 / 60);
+  assert.ok(start - g.player.z > 4.2 && start - g.player.z < 4.3);
+  for (let i = 0; i < 67; i++) g.updatePlayer(1 / 60);
   assert.ok(g.slideTime < 1e-6);
-  assert.ok(start - g.player.z > 6.2 && start - g.player.z < 6.6);
+  assert.ok(start - g.player.z > 14.4 && start - g.player.z < 14.9);
   assert.equal(g.player.vx, 0);
 });
 

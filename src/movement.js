@@ -3,34 +3,50 @@ import { clamp, GRAVITY } from "./physics.js";
 export const SIMULATION_STEP = 1 / 120;
 
 export const MOVEMENT = Object.freeze({
-  runSpeed: 8,
-  meleeSpeed: 9.2,
-  groundAcceleration: 80,
+  runSpeed: 9.6,
+  meleeSpeed: 10.8,
+  groundAcceleration: 100,
   groundBraking: 125,
   counterAcceleration: 130,
-  airAcceleration: 22,
+  airAcceleration: 28,
   airSpeedCap: 28,
-  airTurnRate: 4.5,
-  airReverseAcceleration: 48,
+  airTurnRate: 6,
+  airReverseAcceleration: 60,
   jumpSpeed: 7.8,
   doubleJumpSpeed: 7.6,
   coyoteTime: 0.1,
   jumpBuffer: 0.14,
   landingGrace: 0.05,
   slideBuffer: 0.12,
-  slideStartSpeed: 4.5,
-  slideBrakeDrag: 8.5,
+  slideBrakeDrag: 10,
   rampJumpFactor: 0.1,
   rampJumpMax: 0.8,
-  slideDuration: 0.8,
-  slideCooldown: 1.0,
-  slideBoost: 1.4,
-  slideMinSpeed: 6.6,
-  slideMaxSpeed: 11.8,
-  slideDrag: 2,
-  slideCruiseSpeed: 6.4,
-  slideTurnRate: 2.8,
+  slideDuration: 1.5,
+  slideCooldown: 0,
+  slideBoost: 1.6,
+  slideMinSpeed: 10.4,
+  slideMaxSpeed: 13,
+  slideDrag: 1.2,
+  slideCruiseSpeed: 8.2,
+  slideTurnRate: 3.6,
 });
+
+// Shared by local prediction, authority and bots. A tap has an immediate entry
+// velocity even at rest; velocity wins once moving, so slides keep momentum.
+export function startSlide(body, wish, yaw = 0) {
+  const speed = Math.hypot(body.vx, body.vz),
+    input = Math.hypot(wish.x, wish.z),
+    moving = speed > 1,
+    dx = moving ? body.vx / speed : input > 0 ? wish.x / input : -Math.sin(yaw),
+    dz = moving ? body.vz / speed : input > 0 ? wish.z / input : -Math.cos(yaw),
+    entry = clamp(
+      speed + MOVEMENT.slideBoost,
+      MOVEMENT.slideMinSpeed,
+      MOVEMENT.slideMaxSpeed,
+    );
+  body.vx = dx * entry;
+  body.vz = dz * entry;
+}
 
 // A little ramp assistance, not a second launch on top of a slide jump.
 export function rampJumpBoost(body) {

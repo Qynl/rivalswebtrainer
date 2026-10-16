@@ -86,7 +86,7 @@ test("slide jump keeps boosted speed after leaving the ground", () => {
   const g = harness();
   g.player.vx = 7.8;
   g.slide();
-  assert.equal(g.player.vx, 7.8 + MOVEMENT.slideBoost);
+  assert.equal(g.player.vx, MOVEMENT.slideMinSpeed);
   g.jump();
   const speed = g.player.vx;
   g.updatePlayer(1 / 60);

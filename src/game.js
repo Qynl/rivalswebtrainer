@@ -53,6 +53,7 @@ import {
   accelerate,
   rampJumpBoost,
   steerSlide,
+  startSlide,
 } from "./movement.js";
 import { clamp, moveBody, verticalStep, canOccupy } from "./physics.js";
 import { MouseLook } from "./input.js";
@@ -800,26 +801,18 @@ export class Game {
   }
   slide() {
     const p = this.player;
-    if (!p?.alive || this.slideCooldown > 0) return;
+    // No speed gate or post-slide lockout. Ignore extra presses during an
+    // active slide instead of resetting its timer or stacking another boost.
+    if (!p?.alive || this.slideTime > 0) return;
     if (!p.grounded) {
-      this.slideBuffer = MOVEMENT.slideBuffer;
-      return;
-    }
-    const speed = Math.hypot(p.vx, p.vz);
-    if (speed < MOVEMENT.slideStartSpeed) {
       this.slideBuffer = MOVEMENT.slideBuffer;
       return;
     }
     this.slideBuffer = 0;
     this.slideTime = MOVEMENT.slideDuration;
     this.slideCooldown = MOVEMENT.slideCooldown;
-    const boost = clamp(
-      speed + MOVEMENT.slideBoost,
-      MOVEMENT.slideMinSpeed,
-      MOVEMENT.slideMaxSpeed,
-    );
-    p.vx = (p.vx / speed) * boost;
-    p.vz = (p.vz / speed) * boost;
+    startSlide(p, this.moveDirection(), this.yaw);
+    p.height = 1.15;
     this.crouched = true;
     this.audio.noiseHit(MOVEMENT.slideDuration, 0.08, 800);
   }
@@ -2032,12 +2025,7 @@ export class Game {
 
     if (this.crouched && this.slideTime <= 0) speed *= 0.55;
     this.slideBuffer = Math.max(0, (this.slideBuffer || 0) - dt);
-    if (
-      this.slideBuffer > 0 &&
-      p.grounded &&
-      Math.hypot(p.vx, p.vz) >= MOVEMENT.slideStartSpeed
-    )
-      this.slide();
+    if (this.slideBuffer > 0 && p.grounded) this.slide();
     if (this.slideTime > 0) steerSlide(p, dir, dt);
     else accelerate(p, dir, speed, dt);
     const oldX = p.x,
@@ -2067,12 +2055,7 @@ export class Game {
       }
     }
     if (p.grounded && this.jumpBuffer > 0) this.tryJump();
-    else if (
-      p.grounded &&
-      this.slideBuffer > 0 &&
-      Math.hypot(p.vx, p.vz) >= MOVEMENT.slideStartSpeed
-    )
-      this.slide();
+    else if (p.grounded && this.slideBuffer > 0) this.slide();
     if (this.slideTime > 0 && Math.hypot(p.vx, p.vz) < 2) this.slideTime = 0;
     const bounds = this.world.bounds || {
       minX: -23.1,

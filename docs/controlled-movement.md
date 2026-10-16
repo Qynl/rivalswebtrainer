@@ -1,4 +1,6 @@
-# Controlled movement pass
+# Earlier controlled movement passes
+
+> **Historical report:** the user subsequently requested faster movement, immediate slides and much longer glides. [Current tuning and validation](responsive-movement.md) supersede the settings below.
 
 The goal is fast, readable movement rather than constant launches and camera surges. These values supersede the earlier agility/hour-pass tuning and the overly short 0.19-second slide. Physics remains shared by offline players, remote-client prediction, browser-worker authority and the optional dedicated authority.
 

@@ -122,13 +122,13 @@ test("live slide buffering, slide-jump aim, descending stairs and optional speed
       fixedFov: g.camera.fov,
     };
   });
-  expect(report.runDistance).toBeGreaterThan(6.06);
-  expect(report.runDistance).toBeLessThan(6.08);
+  expect(report.runDistance).toBeGreaterThan(7.29);
+  expect(report.runDistance).toBeLessThan(7.31);
   expect(report.sliding).toBe(true);
   expect(report.jump.slide).toBe(0);
   expect(report.jump.vy).toBeCloseTo(7.3);
-  expect(report.jump.speed).toBeGreaterThan(8.9);
-  expect(report.jump.speed).toBeLessThan(9.4);
+  expect(report.jump.speed).toBeGreaterThan(11.1);
+  expect(report.jump.speed).toBeLessThan(11.2);
   expect(report.originError).toBeLessThan(1e-10);
   expect(report.buffered).toBe(true);
   expect(report.stairs.airborne).toBe(0);

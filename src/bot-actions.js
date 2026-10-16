@@ -1,7 +1,13 @@
 import { isBackstab } from "./combat-rules.js";
 import { WEAPONS } from "./data.js";
-import { MOVEMENT, accelerate, steerSlide, rampJumpBoost } from "./movement.js";
-import { canOccupy, moveBody, verticalStep, clamp } from "./physics.js";
+import {
+  MOVEMENT,
+  accelerate,
+  steerSlide,
+  startSlide,
+  rampJumpBoost,
+} from "./movement.js";
+import { canOccupy, moveBody, verticalStep } from "./physics.js";
 
 export const BOT_MELEES = Object.freeze(["scythe", "katana", "fists", "knife"]);
 const timers = [
@@ -172,17 +178,12 @@ export function botSlide(e, wish, world, combo = false) {
     e.slideCooldown > 0 ||
     e.slideTime > 0 ||
     e.dashTime > 0 ||
-    speed < MOVEMENT.slideStartSpeed ||
-    !botTravelClear(e, { x: e.vx, z: e.vz }, world, 4.8, { low: true })
+    !botTravelClear(e, speed > 1 ? { x: e.vx, z: e.vz } : wish, world, 4.8, {
+      low: true,
+    })
   )
     return false;
-  const boost = clamp(
-    speed + MOVEMENT.slideBoost,
-    MOVEMENT.slideMinSpeed,
-    MOVEMENT.slideMaxSpeed,
-  );
-  e.vx = (e.vx / speed) * boost;
-  e.vz = (e.vz / speed) * boost;
+  startSlide(e, wish, e.yaw || 0);
   e.slideTime = MOVEMENT.slideDuration;
   e.sliding = e.slideTime;
   e.slideCooldown = MOVEMENT.slideCooldown;
