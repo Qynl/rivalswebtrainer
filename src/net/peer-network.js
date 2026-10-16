@@ -2,6 +2,11 @@ import { encodeSnapshot, decodeSnapshot } from "./snapshot-codec.js";
 import { WorkerLobby } from "./worker-lobby.js";
 import { LobbyService } from "../../server/lobbies.js";
 import { PROTOCOL } from "./protocol.js";
+import {
+  EFFECT_PACKET_BYTES,
+  SnapshotInbox,
+  splitCombatEvents,
+} from "./realtime-delivery.js";
 const PREFIX = `rivalsweb-v${PROTOCOL}-`;
 export const peerId = (code) => PREFIX + code.toLowerCase();
 const newCode = () =>
@@ -26,8 +31,13 @@ export class BrowserPeerNetwork {
       stateBytes: 0,
       inputsSent: 0,
       dropped: 0,
+      effectsSent: 0,
+      effectsReceived: 0,
+      effectsDropped: 0,
     };
     this.snapshotCache = new WeakMap();
+    this.eventCache = new WeakMap();
+    this.inbox = new SnapshotInbox((packet) => this.deliverNow(packet));
     this.pending = new Map();
     this.epoch = 0;
     this.closed = false;
@@ -121,6 +131,18 @@ export class BrowserPeerNetwork {
     });
   }
   deliver(packet) {
+    if (this.closed || this.generation !== this.client.generation) return;
+    if (packet.type === "snapshot") {
+      if (packet.snapshot.matchId === this.client.activeMatchId)
+        this.inbox.push(packet);
+      return;
+    }
+    // State preceding a hit/kill must be visible before applying its feedback.
+    if (["events", "start", "left", "room"].includes(packet.type))
+      this.inbox.flush();
+    this.deliverNow(packet);
+  }
+  deliverNow(packet) {
     if (!this.closed && this.generation === this.client.generation)
       this.client
         .packet(packet, this.generation)
@@ -213,6 +235,21 @@ export class BrowserPeerNetwork {
             this.metrics.snapshotsReceived++;
             this.lastFastStateAt = performance.now();
             this.deliver({ type: "snapshot", snapshot });
+          } else if (
+            this.remote === conn &&
+            typeof data === "string" &&
+            data.length <= EFFECT_PACKET_BYTES
+          ) {
+            const packet = JSON.parse(data);
+            if (
+              packet?.type === "effects" &&
+              packet.matchId === this.client.activeMatchId &&
+              Array.isArray(packet.events) &&
+              packet.events.length <= 12
+            ) {
+              this.metrics.effectsReceived++;
+              this.deliver(packet);
+            }
           }
         } catch {
           this.metrics
@@ -239,7 +276,7 @@ export class BrowserPeerNetwork {
   sendState(conn, data) {
     const lane = conn?.stateLane;
     if (lane?.readyState !== "open") return false;
-    if (lane.bufferedAmount > 8192) {
+    if (lane.bufferedAmount > 2048) {
       this.metrics.dropped++;
       return true;
     }
@@ -264,6 +301,38 @@ export class BrowserPeerNetwork {
         this.metrics.snapshotsSent++;
         return;
       }
+    }
+    if (
+      packet.type === "events" &&
+      conn.metadata?.effectsLane === 1 &&
+      conn.stateReady &&
+      conn.stateLane?.readyState === "open"
+    ) {
+      let split = this.eventCache.get(packet);
+      if (!split) {
+        split = splitCombatEvents(packet);
+        this.eventCache.set(packet, split);
+      }
+      this.metrics.effectsDropped += split.dropped;
+      // Cosmetic traffic has a stricter budget than movement. Never spill it
+      // back onto reliable control when congested: retransmission is the lag.
+      if (split.data) {
+        const now = performance.now();
+        const budget = Math.min(
+          1500,
+          (conn.effectBudget ?? 1500) +
+            Math.max(0, now - (conn.effectBudgetAt ?? now)) * 12,
+        );
+        conn.effectBudgetAt = now;
+        conn.effectBudget = budget;
+        if (conn.stateLane.bufferedAmount <= 1024 && budget >= split.bytes) {
+          conn.effectBudget -= split.bytes;
+          if (this.sendState(conn, split.data)) this.metrics.effectsSent++;
+          else this.metrics.effectsDropped++;
+        } else this.metrics.effectsDropped++;
+      }
+      if (!split.critical.length) return;
+      packet = { ...packet, events: split.critical };
     }
     if (packet.type === "hello" && conn.metadata?.stateLane === 1)
       packet = { ...packet, stateLane: 1 };
@@ -370,7 +439,7 @@ export class BrowserPeerNetwork {
     const conn = this.peer.connect(peerId(code), {
       reliable: true,
       serialization: "json",
-      metadata: { protocol: PROTOCOL, stateLane: 1 },
+      metadata: { protocol: PROTOCOL, stateLane: 1, effectsLane: 1 },
     });
     this.remote = conn;
     this.joinTimer = setTimeout(
@@ -479,6 +548,7 @@ export class BrowserPeerNetwork {
   close() {
     if (this.closed) return;
     this.closed = true;
+    this.inbox.clear();
     this.cancelRegistration?.();
     clearTimeout(this.joinTimer);
     this.stopLocal();

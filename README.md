@@ -13,6 +13,10 @@ npm run dev
 
 Open the address printed by Vite. Select an arena, team size, difficulty, then **Enter Arena**. Choose **Primary → Secondary → Melee → Utility** in the compact pre-match picker and click **Deploy**. Rematches use the same picker; cancelling it leaves your saved loadout unchanged. Click **Warm Up in the Range** for moving targets and unlimited ammunition reserves. In offline modes, every teammate and opponent other than you is a local bot. Choose **Multiplayer** for human-only online lobbies: create/join by code, pick teams and weapons, ready up, then let the host start 1v1–3v3. The default multiplayer runs in the host browser with automatic PeerJS discovery: **no backend deployment, accounts, API configuration or manual WebRTC exchange**. Share the invite link/code and keep the host tab open and active. See [multiplayer and its network limits](docs/multiplayer.md).
 
+### Multiplayer lag handling
+
+Disposable bullet trails/wall impacts no longer queue behind reliable combat controls on updated peers. Opponent playback uses a monotonic clock; stalled frames coalesce obsolete snapshots and held-input packets; delayed multi-shot confirmations no longer leave phantom pending firing feedback. Damage, ammo, launches and calmer movement remain authoritative/unchanged. Both players should refresh the updated frontend and create a new lobby. [Implementation and controlled before/after tests](docs/multiplayer-lag.md).
+
 ### Production / disconnected use
 
 ```sh

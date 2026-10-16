@@ -78,6 +78,8 @@ export class SnapshotBuffer {
     this.adaptive = adaptive;
     this.jitter = 0;
     this.clockOffset = null;
+    this.playhead = null;
+    this.sampledAt = null;
     this.frames = [];
   }
   push(snapshot, received) {
@@ -110,12 +112,28 @@ export class SnapshotBuffer {
   }
   sample(now) {
     if (!this.frames.length) return null;
-    const last = this.frames.at(-1),
-      target = this.adaptive
-        ? now - this.clockOffset - this.delay
-        : last.time +
-          Math.min(0.125, Math.max(0, now - last.received)) -
-          this.delay;
+    const last = this.frames.at(-1);
+    let target = this.adaptive
+      ? now - this.clockOffset - this.delay
+      : last.time +
+        Math.min(0.125, Math.max(0, now - last.received)) -
+        this.delay;
+    if (this.adaptive) {
+      const elapsed = Math.max(0, now - (this.sampledAt ?? now));
+      // Arrival-time offset and jitter estimates change independently. Never
+      // assign them directly to the playback clock: that rewinds moving foes.
+      if (this.playhead === null || elapsed > 0.25)
+        this.playhead = Math.max(this.playhead ?? -Infinity, target);
+      else {
+        const expected = this.playhead + elapsed;
+        const rate =
+          1 + Math.max(-0.15, Math.min(0.15, (target - expected) * 4));
+        this.playhead += elapsed * rate;
+      }
+      this.playhead = Math.min(this.playhead, last.time + 0.05);
+      this.sampledAt = Math.max(this.sampledAt ?? now, now);
+      target = this.playhead;
+    }
     let a = this.frames[0],
       b = last;
     for (let i = 1; i < this.frames.length; i++) {
@@ -153,6 +171,8 @@ export class SnapshotBuffer {
   clear() {
     this.frames.length = 0;
     this.clockOffset = null;
+    this.playhead = null;
+    this.sampledAt = null;
     this.jitter = 0;
   }
 }

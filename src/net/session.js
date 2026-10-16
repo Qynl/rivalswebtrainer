@@ -1,3 +1,4 @@
+import { isDisposableEffect } from "./realtime-delivery.js";
 import { PredictionHistory } from "./prediction-history.js";
 import { updateProjectileTrail } from "../projectile-feedback.js";
 import { moveBody, canOccupy, GRAVITY } from "../physics.js";
@@ -22,6 +23,7 @@ export class MultiplayerSession {
     this.actions = [];
     this.sendTime = 0;
     this.lastEvent = 0;
+    this.effectIds = new Set();
     this.predictedShots = [];
     this.feedbackReadyAt = 0;
     this.feedbackReadyByWeapon = {};
@@ -72,6 +74,7 @@ export class MultiplayerSession {
         g.loadout = [...state.loadout];
         this.predictedShots = [];
         this.lastSelfShot = state.shot ?? -1;
+        this.lastSelfShotCount = state.stats?.shots;
         this.feedbackReadyAt = 0;
         this.feedbackReadyByWeapon = {};
         g.ammunition = state.ammo.map((a, i) => ({
@@ -342,8 +345,19 @@ export class MultiplayerSession {
   processEvents(events) {
     const g = this.game;
     for (const event of events) {
-      if (event.id <= this.lastEvent) continue;
-      this.lastEvent = event.id;
+      if (!Number.isSafeInteger(event?.id) || event.id < 1) continue;
+      if (isDisposableEffect(event)) {
+        // Cosmetic and critical IDs share an authority counter, NOT an arrival
+        // order. A fast trace must never suppress a delayed hit or launch.
+        this.effectIds ||= new Set();
+        if (this.effectIds.has(event.id)) continue;
+        this.effectIds.add(event.id);
+        if (this.effectIds.size > 256)
+          this.effectIds.delete(this.effectIds.values().next().value);
+      } else {
+        if (event.id <= this.lastEvent) continue;
+        this.lastEvent = event.id;
+      }
       if (event.type === "trace") {
         const origin =
           event.owner === this.id
@@ -505,15 +519,32 @@ export class MultiplayerSession {
     return true;
   }
   confirmShot(self, snapshot) {
+    const count = self.stats?.shots;
+    const confirmed =
+      Number.isFinite(count) && Number.isFinite(this.lastSelfShotCount)
+        ? Math.max(0, count - this.lastSelfShotCount)
+        : 1;
+    this.lastSelfShotCount = count;
     if (!(self.shot >= 0) || self.shot === this.lastSelfShot) return;
     this.lastSelfShot = self.shot;
     const g = this.game,
       id = self.weapon;
-    const index = this.predictedShots.findIndex(
-      (p) => p.weapon === id && g.clock - p.time < 1,
-    );
-    if (index >= 0) this.predictedShots.splice(index, 1);
-    else if (
+    // A snapshot can confirm several shots after loss/coalescing. Retiring just
+    // one left phantom pending shots, eventually silencing automatic feedback.
+    // With counters, consume across weapon switches in firing order as well.
+    let matched = 0;
+    for (let n = 0; n < confirmed; n++) {
+      const index = this.predictedShots.findIndex(
+        (p) =>
+          (Number.isFinite(count) || p.weapon === id) && g.clock - p.time < 1,
+      );
+      if (index < 0) break;
+      this.predictedShots.splice(index, 1);
+      matched++;
+    }
+    if (
+      !matched &&
+      confirmed > 0 &&
       WEAPONS[id]?.slot < 2 &&
       g.loadout[g.slot] === id &&
       snapshot.time - self.shot < 0.3
@@ -563,6 +594,7 @@ export class MultiplayerSession {
   sendInput() {
     const g = this.game;
     if (!g.player) return;
+    this.inputDue = false;
     const keys = KEYS.reduce(
       (bits, key, i) => bits | (g.keys.has(key) ? 1 << i : 0),
       0,
@@ -644,12 +676,18 @@ export class MultiplayerSession {
     this.sendTime += dt;
     if (this.sendTime >= 1 / 60) {
       this.sendTime %= 1 / 60;
-      this.sendInput();
+      this.inputDue = true;
     }
 
     if (g.state === "roundend" && g.player.alive) g.player.vx = g.player.vz = 0;
   }
   present(dt) {
+    // Catch-up physics cannot produce new user input between render frames.
+    // Transmit the freshest held state once, not a burst of stale intermediates.
+    if (this.inputDue) {
+      this.inputDue = false;
+      this.sendInput();
+    }
     const g = this.game;
     const remote = this.buffer.sample(performance.now() / 1000);
     for (const state of remote || []) {

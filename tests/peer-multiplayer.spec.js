@@ -419,6 +419,8 @@ test("six real RTC clients share worker-authoritative 3v3 binary state without s
       const client = new Client({ mode: "peer", peerOptions: options });
       const receive = client.packet.bind(client);
       client.packet = async (packet, generation) => {
+        if (packet.type === "pong" && packet.sent === client.combatPingAt)
+          client.combatPingMs = performance.now() - packet.sent;
         if (packet.type === "start") {
           client.activeMatchId = packet.matchId;
           client.metadata = new Map(
@@ -470,7 +472,7 @@ test("six real RTC clients share worker-authoritative 3v3 binary state without s
               yaw: 0,
               pitch: 0,
               keys: 0,
-              fire: false,
+              fire: !!window.__sixCombat,
               aim: false,
               paused: false,
               actions: [],
@@ -488,6 +490,47 @@ test("six real RTC clients share worker-authoritative 3v3 binary state without s
     null,
     { timeout: 20000 },
   );
+  // All six authority-controlled players really fire into the map. Delay/drop only disposable
+  // visual packets; movement snapshots and the reliable ping/control path must
+  // remain current. This exercises real channels, not a mocked transport.
+  await page.evaluate(() => {
+    const [host, ...guests] = window.__sixPeers,
+      net = host.connection;
+    window.__reliableCombatEffects = 0;
+    for (const conn of net.peers.values()) {
+      const send = conn.send.bind(conn);
+      conn.send = (packet) => {
+        if (packet.type === "events")
+          window.__reliableCombatEffects += packet.events.filter(
+            (e) => e.type === "trace" || e.type === "impact",
+          ).length;
+        send(packet);
+      };
+    }
+    const sendState = net.sendState.bind(net);
+    let effectPackets = 0;
+    net.sendState = (conn, data) => {
+      if (typeof data !== "string" || JSON.parse(data).type !== "effects")
+        return sendState(conn, data);
+      const n = ++effectPackets;
+      if (n % 4) setTimeout(() => sendState(conn, data), 80 + Math.sin(n) * 20);
+      return true;
+    };
+    for (const c of guests)
+      c.combatStartSnapshots = c.connection.metrics.snapshotsReceived;
+    window.__sixCombat = true;
+  });
+  await page.waitForTimeout(1200);
+  await page.evaluate(() => {
+    for (const client of window.__sixPeers.slice(1)) {
+      client.combatPingAt = performance.now();
+      client.send({ type: "ping", sent: client.combatPingAt });
+    }
+  });
+  await page.waitForFunction(() =>
+    window.__sixPeers.slice(1).every((c) => Number.isFinite(c.combatPingMs)),
+  );
+  await page.waitForTimeout(800);
   const result = await page.evaluate(() => {
     const clients = window.__sixPeers;
     return {
@@ -498,16 +541,31 @@ test("six real RTC clients share worker-authoritative 3v3 binary state without s
       worker: clients[0].connection.service.isWorker,
       guests: clients.slice(1).map((c) => ({
         snapshots: c.connection.metrics.snapshotsReceived,
+        combatSnapshots:
+          c.connection.metrics.snapshotsReceived - c.combatStartSnapshots,
+        effects: c.connection.metrics.effectsReceived,
+        controlMs: c.combatPingMs,
         unordered: !c.connection.remote.stateLane.ordered,
         retransmits: c.connection.remote.stateLane.maxRetransmits,
       })),
       hostSnapshots: clients[0].connection.metrics.snapshotsSent,
+      reliableEffects: window.__reliableCombatEffects,
+      effectsSent: clients[0].connection.metrics.effectsSent,
+      effectsDropped: clients[0].connection.metrics.effectsDropped,
+      shots: clients[0].latestState.players.map((p) => p.stats.shots),
     };
   });
+  console.log(JSON.stringify({ sixPlayerCombatLanes: result }));
+  expect(result.reliableEffects).toBe(0);
+  expect(result.effectsSent).toBeGreaterThan(10);
+  expect(result.shots.every((count) => count > 3)).toBe(true);
   expect(result.teams).toEqual([3, 3]);
   expect(result.worker).toBe(true);
   for (const guest of result.guests) {
     expect(guest.snapshots).toBeGreaterThan(10);
+    expect(guest.combatSnapshots).toBeGreaterThan(20);
+    expect(guest.effects).toBeGreaterThan(3);
+    expect(guest.controlMs).toBeLessThan(250);
     expect(guest.unordered).toBe(true);
     expect(guest.retransmits).toBe(0);
   }

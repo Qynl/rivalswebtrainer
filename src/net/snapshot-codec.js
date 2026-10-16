@@ -23,7 +23,7 @@ const finite = (value, fallback = 0) =>
   Number.isFinite(value) ? value : fallback;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, finite(value)));
 // 611 bytes for an ordinary 3v3 frame, without JSON's repeated names/keys or
-// double-precision decimal strings. Control and combat events remain reliable.
+// double-precision decimal strings. Control and critical combat events remain reliable.
 export function encodeSnapshot(snapshot) {
   const players = snapshot.players.slice(0, 6),
     projectiles = (snapshot.projectiles || []).slice(0, 192),

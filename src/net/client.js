@@ -1,6 +1,7 @@
 import { readMultiplayerHealth } from "./health.js";
 import { decodeSnapshot } from "./snapshot-codec.js";
 import { PROTOCOL } from "./protocol.js";
+import { validDisposableEffect } from "./realtime-delivery.js";
 const initial = {
   open: false,
   status: "offline",
@@ -302,6 +303,18 @@ export class MultiplayerClient {
       this.patch({ room: null });
       await this.stopSession(true);
       this.send({ type: "list" });
+    }
+    if (packet.type === "effects") {
+      if (
+        packet.matchId !== this.activeMatchId ||
+        !Array.isArray(packet.events)
+      )
+        return;
+      // Dropped effects are harmless; never buffer them during arena setup or
+      // let an unordered cosmetic packet carry authoritative gameplay events.
+      this.session?.processEvents(
+        packet.events.slice(0, 12).filter(validDisposableEffect),
+      );
     }
     if (packet.type === "events") {
       if (packet.matchId !== this.activeMatchId) return;
