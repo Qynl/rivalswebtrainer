@@ -10,7 +10,7 @@ export class MouseLook {
     this.samples = [];
     this.suspect = null;
   }
-  accept(x, y, now, eventTime = now) {
+  accept(x, y, now, eventTime = now, invertY = false) {
     if (![x, y, now].every(Number.isFinite)) return null;
     const magnitude = Math.hypot(x, y),
       largest = Math.max(Math.abs(x), Math.abs(y)),
@@ -49,6 +49,6 @@ export class MouseLook {
     this.suspect = null;
     this.samples.push({ time: now, magnitude });
     if (this.samples.length > 5) this.samples.shift();
-    return { x, y };
+    return { x, y: invertY ? -y : y };
   }
 }

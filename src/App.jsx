@@ -248,6 +248,7 @@ export function App() {
   click("settings-done", actions.closeSettings);
   for (const [id, key] of [
     ["sensitivity", "sensitivity"],
+    ["invert-mouse-y", "invertMouseY"],
     ["fov", "fov"],
     ["volume", "volume"],
     ["show-fps", "showFps"],

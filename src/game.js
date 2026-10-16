@@ -262,6 +262,7 @@ export class Game {
           e.movementY,
           performance.now(),
           e.timeStamp,
+          this.settings.invertMouseY,
         );
         if (!movement) return;
         const sens =

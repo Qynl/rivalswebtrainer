@@ -20,7 +20,13 @@ for (const [key, min, max] of [
 ])
   if (Number.isFinite(saved[key]))
     settings[key] = Math.max(min, Math.min(max, saved[key]));
-for (const key of ["showFps", "shake", "dynamicFov", "performance"])
+for (const key of [
+  "showFps",
+  "shake",
+  "dynamicFov",
+  "performance",
+  "invertMouseY",
+])
   if (typeof saved[key] === "boolean") settings[key] = saved[key];
 const stored = loadSaved("rivals-loadout", []);
 export const ui = createStore({

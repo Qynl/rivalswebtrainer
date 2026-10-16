@@ -581,6 +581,14 @@ export function Layout({ bind, content }) {
               {...bind["sensitivity"]}
             />
           </label>
+          <label className="toggle-label">
+            {"Invert mouse Y"}
+            <input
+              id="invert-mouse-y"
+              type="checkbox"
+              {...bind["invert-mouse-y"]}
+            />
+          </label>
           <label>
             {"Field of view "}
             <output id="fov-value" {...bind["fov-value"]}>

@@ -508,6 +508,7 @@ export const DIFFICULTIES = {
 };
 export const DEFAULT_SETTINGS = {
   sensitivity: 1,
+  invertMouseY: false,
   fov: 90,
   volume: 65,
   showFps: true,
