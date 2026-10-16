@@ -130,10 +130,10 @@ test("jumping uphill launches from the ramp tangent without consuming an extra j
     audio: { play() {} },
   });
   assert.equal(g.tryJump(), true);
-  assert.ok(p.vy > MOVEMENT.jumpSpeed + 4);
+  assert.equal(p.vy, MOVEMENT.jumpSpeed + MOVEMENT.rampJumpMax);
   assert.equal(p.jumps, 1);
   assert.equal(g.slideTime, 0);
-  assert.ok(p.vz > 17);
+  assert.equal(p.vz, 17);
 });
 test("navigation approaches a ramp from its low end rather than phasing through a high side", () => {
   const b = ramp(),

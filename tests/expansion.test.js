@@ -301,10 +301,10 @@ test("grenade launcher lobs an impact explosive instead of firing a hitscan", ()
   assert.equal(g.projectiles[0].vel.z, -28);
   assert.ok(g.projectiles[0].vel.y > 0);
 });
-test("holding jump chains grounded bunny hops without automatically using the extra jump", () => {
+test("holding jump does not start automatic hops or spend the extra jump", () => {
   const g = game("bow");
   g.keys.add("Space");
-  g.updatePlayer(1 / 60);
+  g.jump();
   assert.equal(g.player.jumps, 1);
   assert.equal(g.player.vy, MOVEMENT.jumpSpeed);
   let hops = 0;
@@ -312,9 +312,12 @@ test("holding jump chains grounded bunny hops without automatically using the ex
     const previous = g.player.vy;
     g.updatePlayer(1 / 60);
     if (previous < 0 && g.player.vy > 0) hops++;
-    assert.equal(g.player.jumps, 1);
+    assert.ok(g.player.jumps <= 1);
   }
-  assert.ok(hops >= 2);
+  assert.equal(hops, 0);
+  assert.equal(g.player.grounded, true);
+  g.jump();
+  assert.equal(g.player.jumps, 1);
 });
 
 test("ground slide is a short burst with less than six metres of travel", () => {

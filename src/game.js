@@ -48,6 +48,7 @@ import {
   MOVEMENT,
   SIMULATION_STEP,
   accelerate,
+  rampJumpBoost,
   steerSlide,
 } from "./movement.js";
 import { clamp, moveBody, verticalStep, canOccupy } from "./physics.js";
@@ -759,11 +760,7 @@ export class Game {
     const p = this.player;
     const w = WEAPONS[this.loadout[this.slot]];
     if (p.grounded || (this.coyoteTime > 0 && p.jumps === 0)) {
-      const slope = p.groundSlope;
-      const rampBoost = slope
-        ? clamp((p.vx * slope.x + p.vz * slope.z) * 0.35, 0, 4)
-        : 0;
-      p.vy = MOVEMENT.jumpSpeed + rampBoost;
+      p.vy = MOVEMENT.jumpSpeed + rampJumpBoost(p);
       p.grounded = false;
       p.jumps = 1;
       this.coyoteTime = 0;
@@ -773,9 +770,7 @@ export class Game {
       // Carry the slide's actual velocity instead of snapping back to running speed.
       if (this.slideTime > 0) {
         this.slideTime = 0;
-        p.vy += 0.6;
-        p.vx *= 1.06;
-        p.vz *= 1.06;
+        p.airCarrySpeed = Math.hypot(p.vx, p.vz);
       }
       return true;
     }
@@ -797,7 +792,7 @@ export class Game {
       return;
     }
     const speed = Math.hypot(p.vx, p.vz);
-    if (speed < 2) {
+    if (speed < MOVEMENT.slideStartSpeed) {
       this.slideBuffer = MOVEMENT.slideBuffer;
       return;
     }
@@ -2012,7 +2007,11 @@ export class Game {
 
     if (this.crouched && this.slideTime <= 0) speed *= 0.55;
     this.slideBuffer = Math.max(0, (this.slideBuffer || 0) - dt);
-    if (this.slideBuffer > 0 && p.grounded && Math.hypot(p.vx, p.vz) >= 2)
+    if (
+      this.slideBuffer > 0 &&
+      p.grounded &&
+      Math.hypot(p.vx, p.vz) >= MOVEMENT.slideStartSpeed
+    )
       this.slide();
     if (this.slideTime > 0) steerSlide(p, dir, dt);
     else accelerate(p, dir, speed, dt);
@@ -2036,15 +2035,19 @@ export class Game {
     if (!wasGrounded && p.grounded) {
       p.landingGrace = MOVEMENT.landingGrace;
       if (fallingVelocity < -3) {
-        this.landingDip = Math.min(0.065, -fallingVelocity * 0.003);
+        this.landingDip = Math.min(0.035, -fallingVelocity * 0.002);
         this.audio.play("land", Math.min(1, -fallingVelocity / 18));
         if (fallingVelocity < -10)
           this.combatFX?.burst(v3(p.x, p.y + 0.07, p.z), 0xb3afa5, 4);
       }
     }
-    if (p.grounded && (this.jumpBuffer > 0 || this.keys.has("Space")))
-      this.tryJump();
-    else if (p.grounded && this.slideBuffer > 0) this.slide();
+    if (p.grounded && this.jumpBuffer > 0) this.tryJump();
+    else if (
+      p.grounded &&
+      this.slideBuffer > 0 &&
+      Math.hypot(p.vx, p.vz) >= MOVEMENT.slideStartSpeed
+    )
+      this.slide();
     if (this.slideTime > 0 && Math.hypot(p.vx, p.vz) < 2) this.slideTime = 0;
     const bounds = this.world.bounds || {
       minX: -23.1,
@@ -2914,7 +2917,7 @@ export class Game {
       const bob =
         p.grounded && !this.crouched && this.settings.shake
           ? Math.sin(this.walkPhase) *
-            0.018 *
+            0.009 *
             Math.min(1, speed / MOVEMENT.runSpeed)
           : 0;
       const stance = this.crouched ? 1.03 : 1.66;
@@ -2963,11 +2966,11 @@ export class Game {
           (this.settings.dynamicFov === false
             ? 0
             : this.slideTime > 0
-              ? 6
+              ? 2
               : clamp(
-                  (Math.hypot(p.vx, p.vz) - MOVEMENT.runSpeed) * 0.35,
+                  (Math.hypot(p.vx, p.vz) - MOVEMENT.runSpeed) * 0.18,
                   0,
-                  6,
+                  3,
                 ));
     this.baseCameraFov = THREE.MathUtils.lerp(
       this.baseCameraFov ?? this.camera.fov,

@@ -1,6 +1,6 @@
 import { isBackstab } from "./combat-rules.js";
 import { WEAPONS } from "./data.js";
-import { MOVEMENT, accelerate, steerSlide } from "./movement.js";
+import { MOVEMENT, accelerate, steerSlide, rampJumpBoost } from "./movement.js";
 import { canOccupy, moveBody, verticalStep, clamp } from "./physics.js";
 
 export const BOT_MELEES = Object.freeze(["scythe", "katana", "fists", "knife"]);
@@ -172,7 +172,7 @@ export function botSlide(e, wish, world, combo = false) {
     e.slideCooldown > 0 ||
     e.slideTime > 0 ||
     e.dashTime > 0 ||
-    speed < 2 ||
+    speed < MOVEMENT.slideStartSpeed ||
     !botTravelClear(e, { x: e.vx, z: e.vz }, world, 4.8, { low: true })
   )
     return false;
@@ -209,9 +209,7 @@ export function botJump(e, world, extra = false) {
     count(e, "doubleJumps");
   } else {
     if (!e.grounded || (e.jumpCooldown || 0) > 0) return false;
-    const slope = e.groundSlope,
-      boost = slope ? clamp((e.vx * slope.x + e.vz * slope.z) * 0.35, 0, 4) : 0;
-    e.vy = MOVEMENT.jumpSpeed + boost;
+    e.vy = MOVEMENT.jumpSpeed + rampJumpBoost(e);
     e.jumps = 1;
     e.jumpAge = 0;
     e.jumpCooldown = 0.85;

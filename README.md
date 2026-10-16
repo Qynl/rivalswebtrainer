@@ -53,8 +53,8 @@ Mobile layouts support browsing/configuration, but combat requires desktop point
 | Right mouse       | ADS; Scythe dash or Katana guard when equipped; quick Medkit heal                           |
 | F                 | Quick melee-slot ability: **Knife stab**, Scythe dash or Katana guard; keeps current slot/ammo |
 | G                 | Quick utility throw / 25-HP quick Medkit; keeps your selected weapon and its ammunition       |
-| Space             | Jump and cancel slide; hold for bunny hops; Fists/Bow double jump                           |
-| C / Shift / Ctrl  | Short 0.36-second slide; airborne presses buffer on landing; steer or jump to cancel        |
+| Space             | Jump and cancel slide; press again for Fists/Bow double jump (no automatic held-key hops)                           |
+| C / Shift / Ctrl  | Controlled 0.27-second slide; short landing buffer; steer, release movement to brake, or jump to cancel        |
 | 1–4 / mouse wheel | Equip a loadout slot                                                                        |
 | M                 | Change weapons during five-second round preparation; an open picker can finish afterward    |
 | T                 | Inspect weapon (firing, aiming, switching or reloading cancels the inspection)              |
@@ -110,7 +110,7 @@ Implementation and validation notes: [trickshots and models](docs/trickshots-and
 - All menus, the four-step picker, settings, results and HUD are React-owned. Vite's React plugin provides Fast Refresh; Three.js remains responsible for real-time rendering/physics, not React state.
 - The interface paints before the game module initializes. The weapon preview loads only when needed; repeated HUD updates reuse memoized weapon icons instead of replacing SVG markup. A singleton engine prevents Fast Refresh from duplicating input listeners.
 - A **losslessly encoded** 384 × 512 half-float copy of our original environment lighting avoids rebuilding its cube capture/convolution on each visit. The same procedural generation path remains the fallback. Shadow resolution, textures, contact shading, bloom and render resolution are unchanged. A browser comparison verifies identical rendered pixels with both lighting paths.
-- Flat jump height is about **2.09** trainer units rather than 3.41. Slides, air steering, buffered/coyote jumps, ramp momentum and Fists/Bow double jumps remain.
+- Flat jump height is about **1.57** trainer units (previously 2.09). Slides, air steering, buffered/coyote jumps, ramp momentum and Fists/Bow double jumps remain.
 - Melee now has a 105 ms windup and a single range/cone/LOS-checked impact. Knife slashes alternate, rear hits add a distinct thrust/withdrawal, fists alternate, and blades have phased follow-through/trails. Bots briefly react visually to hits without changing their physical hitboxes.
 - Bullet feedback uses short travelling streaks rather than full-length stationary lines. Utility preparation has a pull-ring animation; the detailed thrown payloads and animated Molotov fire remain.
 - Paintball has an offset hopper and aligned raised sights. Sniper ADS uses a clear scope view instead of putting opaque scope geometry in front of the camera.
@@ -278,3 +278,10 @@ Bow direction regression notes: [Bow body-plane correction](docs/bow-direction.m
 - Joining-player countdown/HUD fixes, worker authority, smaller disposable binary state, bounded queues, adaptive interpolation and reliable recovery improve multiplayer responsiveness. No backend deployment/configuration is required, and no zero-lag/zero-bug guarantee is made.
 
 See [the player/gun feedback report](docs/player-gun-feedback.md) and [multiplayer architecture and limits](docs/multiplayer.md).
+
+
+## Controlled movement pass
+
+Movement is now less exaggerated: run/melee speed **10.6/12**, a **0.27 s** slide with a smaller boost, **0.72 s** slide cooldown, and a **1.57-unit** flat jump. Slides require actual movement, releasing movement brakes them, and slide-jumps no longer multiply velocity or add an extra upward kick. Air steering remains directional but takes a readable turn rather than snapping around. Held Space no longer chains automatic jumps; tap again for another jump or the equipped Fists/Bow extra jump.
+
+Camera bob is halved, landing dip is smaller, and slide FOV expansion is reduced from 6° to 2°. Mouse yaw/pitch, weapon recoil presentation, collision, rocket/launcher trickshot launches, and 120 Hz offline/online shared physics are retained. Bot locomotion is tuned to the same pace. See [movement tuning and validation](docs/controlled-movement.md) for exact changes; these values supersede older movement reports.

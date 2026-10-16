@@ -1,0 +1,200 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import * as THREE from "three";
+import { packet } from "./helpers/match.js";
+import { setup } from "./helpers/match.js";
+import {
+  MOVEMENT,
+  accelerate,
+  steerSlide,
+  rampJumpBoost,
+} from "../src/movement.js";
+import { botJump, initBotActions } from "../src/bot-actions.js";
+const dt = 1 / 120;
+function flat(run) {
+  const { m, g, other } = setup();
+  m.world.boxes = [];
+  m.world.bounds = { minX: -500, maxX: 500, minZ: -500, maxZ: 500 };
+  Object.assign(g.player, {
+    x: 0,
+    y: 0,
+    z: 0,
+    vx: 0,
+    vy: 0,
+    vz: 0,
+    grounded: true,
+    jumps: 0,
+  });
+  try {
+    run(g, other.player);
+  } finally {
+    m.dispose();
+  }
+}
+test("controlled run reaches speed in 110ms and releasing input stops in under 90ms", () =>
+  flat((g) => {
+    g.keys.add("KeyD");
+    for (let i = 0; i < 14; i++) g.updatePlayer(dt);
+    assert.equal(g.player.vx, 10.6);
+    const start = g.player.x;
+    g.keys.clear();
+    for (let i = 0; i < 11; i++) g.updatePlayer(dt);
+    assert.equal(g.player.vx, 0);
+    assert.ok(g.player.x - start < 0.45);
+  }));
+test("running slide is a sub-three-metre burst, not the old five-metre launch", () =>
+  flat((g) => {
+    g.keys.add("KeyD");
+    g.player.vx = MOVEMENT.runSpeed;
+    g.slide();
+    assert.equal(g.player.vx, 13);
+    for (let i = 0; i < 33; i++) g.updatePlayer(dt);
+    assert.equal(g.slideTime, 0);
+    assert.ok(g.player.x > 1.7 && g.player.x < 3);
+    assert.ok(g.slideCooldown > 0);
+    g.slide();
+    assert.equal(g.slideTime, 0);
+  }));
+test("low-speed slide press cannot create a standing speed launch", () =>
+  flat((g) => {
+    g.player.vx = 2.5;
+    g.slide();
+    assert.equal(g.slideTime, 0);
+    assert.equal(g.player.vx, 2.5);
+    for (let i = 0; i < 20; i++) g.updatePlayer(dt);
+    assert.equal(g.slideBuffer, 0);
+    assert.equal(g.player.vx, 0);
+  }));
+test("repeated slide jumps preserve their launch speed without stacking extra jump boosts", () =>
+  flat((g) => {
+    g.player.vx = MOVEMENT.runSpeed;
+    for (let i = 0; i < 20; i++) {
+      g.player.grounded = true;
+      g.player.jumps = 0;
+      g.slideCooldown = 0;
+      g.slide();
+      const speed = g.player.vx;
+      g.jump();
+      assert.equal(g.player.vx, speed);
+      assert.equal(g.player.vy, MOVEMENT.jumpSpeed);
+      assert.ok(speed <= MOVEMENT.slideMaxSpeed);
+      assert.equal(g.slideTime, 0);
+    }
+  }));
+test("flat jump peaks at 1.57m and holding Space cannot trigger unattended bunny hopping", () =>
+  flat((g) => {
+    g.keys.add("Space");
+    g.jump();
+    let apex = 0,
+      airtime = 0;
+    for (let i = 0; i < 240; i++) {
+      g.updatePlayer(dt);
+      apex = Math.max(apex, g.player.y);
+      if (!g.player.grounded) airtime += dt;
+    }
+    assert.ok(apex > 1.55 && apex < 1.58);
+    assert.ok(airtime > 0.6 && airtime < 0.67);
+    assert.equal(g.player.y, 0);
+    assert.equal(g.player.jumps, 0);
+    g.jump();
+    assert.equal(g.player.vy, MOVEMENT.jumpSpeed);
+  }));
+test("air strafing bends momentum progressively, not a near-instant right-angle turn", () => {
+  const p = { grounded: false, vx: MOVEMENT.runSpeed, vz: 0 };
+  for (let i = 0; i < 6; i++)
+    accelerate(p, { x: 0, z: 1 }, MOVEMENT.runSpeed, dt);
+  const angle = Math.atan2(p.vz, p.vx);
+  assert.ok(angle > 0.25 && angle < 0.4);
+  assert.ok(Math.abs(Math.hypot(p.vx, p.vz) - MOVEMENT.runSpeed) < 1e-8);
+});
+test("reversing in air first brakes and eventually reverses, without sideways drift", () => {
+  const p = { grounded: false, vx: 21, vz: 0 };
+  for (let i = 0; i < 12; i++)
+    accelerate(p, { x: -1, z: 0 }, MOVEMENT.runSpeed, dt);
+  assert.ok(p.vx > 12 && p.vx < 15);
+  for (let i = 0; i < 108; i++)
+    accelerate(p, { x: -1, z: 0 }, MOVEMENT.runSpeed, dt);
+  assert.ok(p.vx < -20);
+  assert.ok(Math.abs(p.vz) < 1e-8);
+});
+test("releasing movement during a slide gives a deliberate braking exit", () => {
+  const coast = { vx: 13, vz: 0 },
+    move = { ...coast };
+  for (let i = 0; i < 20; i++) {
+    steerSlide(coast, { x: 0, z: 0 }, dt);
+    steerSlide(move, { x: 1, z: 0 }, dt);
+  }
+  assert.ok(coast.vx < move.vx * 0.5);
+});
+test("explosive/dash air momentum is not truncated by the lower ordinary movement cap", () => {
+  const p = { grounded: false, vx: 45, vz: 0 };
+  accelerate(p, { x: 0, z: 0 }, MOVEMENT.runSpeed, dt);
+  assert.equal(p.vx, 45);
+  accelerate(p, { x: 1, z: 0 }, MOVEMENT.runSpeed, dt);
+  assert.ok(p.vx > 44 && p.vx < 45);
+});
+test("ramp assistance is capped and shared by human and bot jump code", () =>
+  flat((g, bot) => {
+    initBotActions(bot);
+    for (const p of [g.player, bot])
+      Object.assign(p, {
+        grounded: true,
+        vx: 25,
+        vz: 0,
+        groundSlope: { x: 1, z: 0 },
+        jumpCooldown: 0,
+      });
+    assert.equal(rampJumpBoost(g.player), 1.5);
+    g.jump();
+    assert.equal(botJump(bot, g.world), true);
+    assert.equal(g.player.vy, bot.vy);
+    assert.equal(bot.vy, 11.2);
+    assert.equal(
+      rampJumpBoost({ vx: -25, vz: 0, groundSlope: { x: 1, z: 0 } }),
+      0,
+    );
+  }));
+test("slide FOV stays within two degrees while yaw/pitch remain untouched", () =>
+  flat((g) => {
+    g.settings = { shake: true, dynamicFov: true, fov: 95 };
+    g.camera = new THREE.PerspectiveCamera(95, 1.6, 0.08, 180);
+    g.weaponCamera = new THREE.PerspectiveCamera();
+    g.yaw = 0.4;
+    g.pitch = 0.1;
+    g.slideTime = 0.2;
+    for (let i = 0; i < 120; i++) g.updateCamera(dt);
+    assert.ok(g.camera.fov > 96.9 && g.camera.fov <= 97);
+    assert.equal(g.yaw, 0.4);
+    assert.equal(g.pitch, 0.1);
+    assert.equal(g.camera.rotation.y, 0.4);
+    assert.equal(g.camera.rotation.x, 0.1);
+  }));
+
+test("authoritative network input uses the new speed and does not auto-jump from held Space bits", () => {
+  const { m, g } = setup();
+  m.world.boxes = [];
+  try {
+    let seq = 0;
+    for (let i = 0; i < 15; i++) {
+      m.input("p0", packet(++seq, [], { keys: 8 }));
+      m.step(dt);
+    }
+    assert.equal(g.player.vx, MOVEMENT.runSpeed);
+    m.input("p0", packet(++seq, [{ id: 1, type: "slide" }], { keys: 8 }));
+    assert.equal(g.player.vx, 13);
+    m.input("p0", packet(++seq, [{ id: 2, type: "jump" }], { keys: 16 }));
+    assert.equal(g.player.vy, 9.7);
+    let apex = 0;
+    for (let i = 0; i < 180; i++) {
+      m.input("p0", packet(++seq, [{ id: 2, type: "jump" }], { keys: 16 }));
+      m.step(dt);
+      apex = Math.max(apex, g.player.y);
+    }
+    assert.ok(apex > 1.55 && apex < 1.58);
+    assert.equal(g.player.grounded, true);
+    assert.equal(g.player.jumps, 0);
+    assert.equal(g.lastAction, 2);
+  } finally {
+    m.dispose();
+  }
+});

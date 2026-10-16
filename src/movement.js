@@ -3,29 +3,45 @@ import { clamp, GRAVITY } from "./physics.js";
 export const SIMULATION_STEP = 1 / 120;
 
 export const MOVEMENT = Object.freeze({
-  runSpeed: 12.2,
-  meleeSpeed: 14.1,
-  groundAcceleration: 125,
-  groundBraking: 150,
-  counterAcceleration: 180,
-  airAcceleration: 115,
-  airSpeedCap: 34,
-  airTurnRate: 16,
-  airReverseAcceleration: 165,
-  jumpSpeed: 11.2,
-  doubleJumpSpeed: 10.8,
+  runSpeed: 10.6,
+  meleeSpeed: 12,
+  groundAcceleration: 105,
+  groundBraking: 135,
+  counterAcceleration: 155,
+  airAcceleration: 34,
+  airSpeedCap: 28,
+  airTurnRate: 7.5,
+  airReverseAcceleration: 75,
+  jumpSpeed: 9.7,
+  doubleJumpSpeed: 9.4,
   coyoteTime: 0.1,
   jumpBuffer: 0.14,
-  landingGrace: 0.085,
-  slideBuffer: 0.16,
-  slideDuration: 0.36,
-  slideCooldown: 0.5,
-  slideBoost: 5,
-  slideMinSpeed: 18.5,
-  slideMaxSpeed: 25,
-  slideDrag: 1.05,
-  slideTurnRate: 5.5,
+  landingGrace: 0.05,
+  slideBuffer: 0.12,
+  slideStartSpeed: 5.5,
+  slideBrakeDrag: 7.5,
+  rampJumpFactor: 0.18,
+  rampJumpMax: 1.5,
+  slideDuration: 0.27,
+  slideCooldown: 0.72,
+  slideBoost: 2.4,
+  slideMinSpeed: 8,
+  slideMaxSpeed: 16.5,
+  slideDrag: 2.4,
+  slideTurnRate: 3.8,
 });
+
+// A little ramp assistance, not a second launch on top of a slide jump.
+export function rampJumpBoost(body) {
+  const slope = body.groundSlope;
+  return slope
+    ? clamp(
+        (body.vx * slope.x + body.vz * slope.z) * MOVEMENT.rampJumpFactor,
+        0,
+        MOVEMENT.rampJumpMax,
+      )
+    : 0;
+}
 
 const angleDelta = (a, b) => Math.atan2(Math.sin(b - a), Math.cos(b - a));
 
@@ -103,11 +119,12 @@ export function steerSlide(body, wish, dt) {
     body.vx -= slope.x * scale * dt;
     body.vz -= slope.z * scale * dt;
   }
-  let speed = Math.hypot(body.vx, body.vz) * Math.exp(-MOVEMENT.slideDrag * dt);
+  const input = Math.hypot(wish.x, wish.z);
+  const drag = input > 0 ? MOVEMENT.slideDrag : MOVEMENT.slideBrakeDrag;
+  let speed = Math.hypot(body.vx, body.vz) * Math.exp(-drag * dt);
   speed = Math.min(MOVEMENT.airSpeedCap, speed);
   if (speed < 1e-8) return;
   const current = Math.atan2(body.vz, body.vx),
-    input = Math.hypot(wish.x, wish.z),
     delta = input ? angleDelta(current, Math.atan2(wish.z, wish.x)) : 0,
     heading =
       current +

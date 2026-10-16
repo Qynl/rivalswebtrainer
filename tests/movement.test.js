@@ -86,7 +86,7 @@ test("slide jump keeps boosted speed after leaving the ground", () => {
   const g = harness();
   g.player.vx = 7.8;
   g.slide();
-  assert.ok(g.player.vx >= 12.8);
+  assert.equal(g.player.vx, 7.8 + MOVEMENT.slideBoost);
   g.jump();
   const speed = g.player.vx;
   g.updatePlayer(1 / 60);
@@ -229,7 +229,7 @@ test("reverse air control brakes along the input axis instead of orbiting sidewa
   accelerate(p, { x: -1, z: 0 }, MOVEMENT.runSpeed, 1 / 60);
   assert.ok(p.vx < 21 && p.vx > 18);
   assert.ok(Math.abs(p.vz) < 1e-10);
-  for (let i = 0; i < 25; i++)
+  for (let i = 0; i < 60; i++)
     accelerate(p, { x: -1, z: 0 }, MOVEMENT.runSpeed, 1 / 60);
   assert.ok(p.vx < -20);
 });

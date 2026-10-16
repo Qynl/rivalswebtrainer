@@ -18,6 +18,7 @@ import {
 import { Game } from "../src/game.js";
 import { createCharacter } from "../src/world.js";
 import { moveBody, verticalStep } from "../src/physics.js";
+import { MOVEMENT } from "../src/movement.js";
 import { WEAPONS } from "../src/data.js";
 const dt = 1 / 120,
   world = { boxes: [], bounds: { minX: -40, maxX: 40, minZ: -40, maxZ: 40 } };
@@ -154,8 +155,8 @@ test("slide lowers the actual hitbox; slide-jump cancels the slide and preserves
   const e = actor();
   assert.ok(botSlide(e, { x: 0, z: -1 }, world, true));
   assert.equal(e.height, 1.15);
-  assert.equal(e.slideTime, 0.36);
-  assert.equal(e.slideCooldown, 0.5);
+  assert.equal(e.slideTime, MOVEMENT.slideDuration);
+  assert.equal(e.slideCooldown, MOVEMENT.slideCooldown);
   for (let i = 0; i < 18; i++) {
     tickBotActions(e, dt);
     moveBotVelocity(e, { x: 0, z: -1 }, 12.2, dt, world);
@@ -166,8 +167,9 @@ test("slide lowers the actual hitbox; slide-jump cancels the slide and preserves
   assert.equal(e.slideTime, 0);
   assert.equal(e.sliding, 0);
   assert.equal(e.grounded, false);
-  assert.ok(e.vy > 10);
-  assert.ok(Math.hypot(e.vx, e.vz) > 16);
+  assert.ok(e.vy > 6 && e.vy <= MOVEMENT.jumpSpeed);
+  assert.ok(Math.hypot(e.vx, e.vz) > 10);
+  assert.ok(Math.hypot(e.vx, e.vz) <= MOVEMENT.slideMaxSpeed);
   assert.equal(e.height, 1.9);
 });
 test("low ceilings prevent a queued slide-jump and standing back up into geometry", () => {
@@ -191,7 +193,7 @@ test("Fists extra jump is only available while equipped, once per airtime", () =
   assert.equal(botJump(e, world, true), false);
   e.activeWeapon = "fists";
   assert.ok(botJump(e, world, true));
-  assert.equal(e.vy, 10.8);
+  assert.equal(e.vy, MOVEMENT.doubleJumpSpeed);
   assert.equal(e.jumps, 2);
   assert.equal(botJump(e, world, true), false);
 });
