@@ -63,8 +63,10 @@ export class WeaponAnimator {
     this.aim = new Spring();
     this.roll = new Spring();
     this.carry = new Spring();
+    this.clearance = new Spring();
   }
   equip() {
+    this.clearance.value = this.clearance.velocity = 0;
     this.carry.value = 0;
     this.carry.velocity = 0;
     this.y.value = -0.46;
@@ -122,9 +124,23 @@ export class WeaponAnimator {
       dt,
       22,
     );
+    const obstruction = this.clearance.step(
+      shake &&
+        !aim &&
+        !reloading &&
+        !swap &&
+        !state.throwing &&
+        !state.swing &&
+        !state.inspect
+        ? saturate(state.clearance || 0)
+        : 0,
+      dt,
+      22,
+    );
     const feel = weaponFeel(model.userData.weaponId);
     const ads = this.aim.step(aim ? 1 : 0, dt, feel.ads),
       motion = shake ? (1 - ads) * Math.min(speed / 11.5, 1.4) : 0;
+    const tuck = obstruction * (1 - ads);
     const reloadState = reloadPose(reloading ? reload : 0),
       stride = grounded ? motion : motion * 0.12;
     const profile = model.userData.poseOffset || {};
@@ -162,9 +178,9 @@ export class WeaponAnimator {
       kick * 0.35 +
       impulse * 0.024;
     model.position.set(
-      this.x.step(poseX, dt, 26),
-      this.y.step(poseY, dt, 24),
-      this.z.step(poseZ, dt, 26),
+      this.x.step(poseX, dt, 26) + tuck * 0.035,
+      this.y.step(poseY, dt, 24) - tuck * 0.085,
+      this.z.step(poseZ, dt, 26) + tuck * 0.13,
     );
     model.rotation.set(
       kick * 0.7 +
@@ -172,12 +188,15 @@ export class WeaponAnimator {
         reloadState.lower * 0.35 -
         swap * 0.6 +
         lookY * (1 - ads) -
-        carry * 0.12,
+        carry * 0.12 -
+        tuck * 0.24,
       reloadState.lower * 0.38 +
         (model.userData.hipYaw ?? 0.08) * (1 - ads) +
-        carry * 0.08,
+        carry * 0.08 +
+        tuck * 0.13,
       this.roll.step(
         carry * 0.1 -
+          tuck * 0.08 -
           reloadState.lower * 0.3 -
           (shake ? (state.strafe || 0) * 0.025 * (1 - ads) : 0) -
           (slide ? 0.05 : 0) -

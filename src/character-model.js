@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { operatorIdentity, callsignTexture } from "./operator-kit.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { batchFixedMeshes } from "./batching.js";
 import { muzzleFlash } from "./animation.js";
@@ -30,8 +31,7 @@ function textile() {
 export function createOperator(team, name = "BOT") {
   const group = new THREE.Group();
   group.name = "striker-operator";
-  let seed = 0;
-  for (const c of name) seed = (seed * 31 + c.charCodeAt(0)) >>> 0;
+  const { seed, kit, callsign } = operatorIdentity(name);
   const weave = textile(),
     friendly = team === 0;
   const mat = (name, color, roughness = 0.65, metalness = 0) => {
@@ -39,12 +39,12 @@ export function createOperator(team, name = "BOT") {
     m.name = name;
     return m;
   };
-  const cloth = mat("woven-charcoal", 0x35444c, 0.96);
+  const cloth = mat("woven-charcoal", kit.cloth, 0.96);
   cloth.map = weave;
   cloth.bumpMap = weave;
   cloth.bumpScale = 0.006;
   const trim = mat("rubber-and-webbing", 0x121c23, 0.88),
-    armor = mat("ceramic-ivory", 0xadbfc5, 0.46, 0.16),
+    armor = mat("ceramic-ivory", kit.armor, 0.46, 0.16),
     teamMat = mat(
       friendly ? "jade-team-panels" : "copper-team-panels",
       friendly ? 0x259b9b : 0xdc6843,
@@ -126,6 +126,57 @@ export function createOperator(team, name = "BOT") {
       0.003,
     );
     chevron.rotation.z = x < 0 ? -0.45 : 0.45;
+  }
+  // Embroidered-style identity patches on front/back, readable without a HUD tag.
+  const patch = new THREE.MeshStandardMaterial({
+    map: callsignTexture(callsign, team),
+    roughness: 0.94,
+  });
+  patch.name = "woven-callsign-patch";
+  parts.callsignMaterial = patch;
+  for (const [z, y, angle] of [
+    [-0.343, 0.055, Math.PI],
+    [0.341, 0.015, 0],
+  ]) {
+    const label = new THREE.Mesh(new THREE.PlaneGeometry(0.23, 0.11), patch);
+    label.position.set(0, y, z);
+    label.rotation.y = angle;
+    torso.add(label);
+  }
+  const cable = new THREE.Mesh(
+    new THREE.TubeGeometry(
+      new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0.24, 0.22, 0.26),
+        new THREE.Vector3(0.29, 0.34, 0.17),
+        new THREE.Vector3(0.27, 0.36, -0.08),
+        new THREE.Vector3(0.24, 0.21, -0.25),
+      ]),
+      12,
+      0.009,
+      5,
+      false,
+    ),
+    trim,
+  );
+  cable.castShadow = true;
+  torso.add(cable);
+  // Within the existing carrier silhouette: seam-binding, radio fascia, buckles.
+  box(torso, 0.115, 0.16, 0.022, 0.16, 0.01, 0.33, metal, 0.007);
+  for (let i = 0; i < 4; i++)
+    box(
+      torso,
+      0.065,
+      0.006,
+      0.009,
+      0.16,
+      0.045 - i * 0.022,
+      0.346,
+      trim,
+      0.002,
+    );
+  for (const side of [-1, 1]) {
+    box(torso, 0.066, 0.055, 0.015, side * 0.235, 0.235, -0.282, metal, 0.004);
+    box(torso, 0.035, 0.028, 0.018, side * 0.235, 0.235, -0.292, trim, 0.003);
   }
   for (const x of [-0.22, 0.22])
     for (const y of [-0.092, 0.192])
@@ -331,6 +382,9 @@ export function createOperator(team, name = "BOT") {
   }
   group.userData.characterStyle = "striker-v2";
   group.userData.team = team;
+  group.userData.kitStyle = kit.name;
+  group.userData.callsign = callsign;
+  group.userData.finishRevision = "striker-v3";
   group.userData.rigRevision = 3;
   return { group, parts };
 }

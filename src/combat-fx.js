@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { createTracerRibbons, writeTracerSegment } from "./tracer-ribbons.js";
 import { circleBox, surfaceHeight } from "./physics.js";
 
 // Fixed-size pools: sustained automatic fire never creates a mesh/material per hit.
@@ -84,29 +85,7 @@ export class CombatFX {
       this.points.material.uniforms.pointScale.value =
         this.size.y * 0.5 * camera.projectionMatrix.elements[5];
     };
-    const traceGeometry = new THREE.BufferGeometry();
-    for (const [name, width] of [
-      ["position", 3],
-      ["color", 3],
-      ["alpha", 1],
-    ])
-      traceGeometry.setAttribute(
-        name,
-        new THREE.BufferAttribute(
-          new Float32Array(FX_LIMITS.traces * 2 * width),
-          width,
-        ).setUsage(THREE.DynamicDrawUsage),
-      );
-    this.traces = new THREE.LineSegments(
-      traceGeometry,
-      new THREE.ShaderMaterial({
-        transparent: true,
-        depthWrite: false,
-        vertexShader: `attribute vec3 color;attribute float alpha;varying vec3 tint;varying float opacity;void main(){tint=color;opacity=alpha;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
-        fragmentShader: `varying vec3 tint;varying float opacity;void main(){gl_FragColor=vec4(tint,opacity);\n#include <tonemapping_fragment>\n#include <colorspace_fragment>}`,
-      }),
-    );
-    this.traces.frustumCulled = false;
+    this.traces = createTracerRibbons(FX_LIMITS.traces);
     const decalGeometry = new THREE.PlaneGeometry(0.16, 0.16);
     decalGeometry.setAttribute(
       "birth",
@@ -256,6 +235,12 @@ export class CombatFX {
     }
   }
   trace(a, b, team = 0, color) {
+    if (
+      ![a.x, a.y, a.z, b.x, b.y, b.z].every(Number.isFinite) ||
+      a.distanceToSquared(b) < 1e-10
+    )
+      return;
+
     const i = this.cursor.trace++ % FX_LIMITS.traces,
       attrs = this.traces.geometry.attributes;
     this.color
@@ -265,22 +250,20 @@ export class CombatFX {
     t.a.copy(a);
     t.b.copy(b);
     t.length = a.distanceTo(b);
-    const end = Math.min(1, 4 / Math.max(0.001, t.length));
-    attrs.position.setXYZ(i * 2, a.x, a.y, a.z);
-    attrs.position.setXYZ(
-      i * 2 + 1,
-      a.x + (b.x - a.x) * end,
-      a.y + (b.y - a.y) * end,
-      a.z + (b.z - a.z) * end,
+    writeTracerSegment(
+      attrs,
+      i,
+      t,
+      0,
+      Math.min(1, 4 / Math.max(0.001, t.length)),
+      0.75,
     );
-    for (const index of [i * 2, i * 2 + 1]) {
-      attrs.color.setXYZ(index, this.color.r, this.color.g, this.color.b);
-      attrs.alpha.setX(index, 0.75);
-    }
+    for (let k = 0; k < 4; k++)
+      attrs.color.setXYZ(i * 4 + k, this.color.r, this.color.g, this.color.b);
     this.traceLife[i] = 0.065;
     for (const key of ["position", "color", "alpha"])
       attrs[key].needsUpdate = true;
-    this.traces.geometry.setDrawRange(0, FX_LIMITS.traces * 2);
+    this.traces.geometry.setDrawRange(0, FX_LIMITS.traces * 6);
   }
   eject(position, right, forward) {
     const i = this.cursor.casing++ % FX_LIMITS.casings,
@@ -363,22 +346,14 @@ export class CombatFX {
             0,
             head - Math.min(0.6, 4 / Math.max(0.001, t.length)),
           );
-        const positions = this.traces.geometry.attributes.position;
-        positions.setXYZ(
-          i * 2,
-          t.a.x + (t.b.x - t.a.x) * tail,
-          t.a.y + (t.b.y - t.a.y) * tail,
-          t.a.z + (t.b.z - t.a.z) * tail,
+        writeTracerSegment(
+          this.traces.geometry.attributes,
+          i,
+          t,
+          tail,
+          head,
+          alpha,
         );
-        positions.setXYZ(
-          i * 2 + 1,
-          t.a.x + (t.b.x - t.a.x) * head,
-          t.a.y + (t.b.y - t.a.y) * head,
-          t.a.z + (t.b.z - t.a.z) * head,
-        );
-        positions.needsUpdate = true;
-        this.traces.geometry.attributes.alpha.setX(i * 2, alpha);
-        this.traces.geometry.attributes.alpha.setX(i * 2 + 1, alpha);
         if (alpha > 0) traces++;
         this.traces.geometry.attributes.alpha.needsUpdate = true;
       }

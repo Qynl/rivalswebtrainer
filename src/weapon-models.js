@@ -87,6 +87,14 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
     box(0, 0.051, -0.003, 0.098, 0.018, 0.085, pad, h);
     for (let i = 0; i < 3; i++)
       box(-0.032 + i * 0.032, 0.058, -0.032, 0.025, 0.015, 0.028, fabric, h);
+    // Fingerless tactical gloves: articulated back plates, stitched wrist webbing.
+    for (const x of [-0.032, 0, 0.032]) {
+      box(x, 0.063, 0.013, 0.022, 0.006, 0.034, pad, h);
+      box(x, 0.067, 0.013, 0.012, 0.002, 0.018, fabric, h);
+    }
+    for (const x of [-0.052, 0.052])
+      for (let z = 0.078; z < 0.13; z += 0.012)
+        box(x, 0.037, z, 0.004, 0.003, 0.005, pad, h);
     box(0, -0.015, 0.104, 0.129, 0.105, 0.035, fabric, h);
     box(0.048, -0.01, 0.125, 0.033, 0.025, 0.014, pad, h);
     box(0, -0.025, 0.07, 0.12, 0.09, 0.09, fabric, h);
@@ -107,6 +115,11 @@ export function detailedWeapon(id, data, { hands = true } = {}) {
         sleeve,
       );
       box(0, 0.002, 0.025, 0.12, 0.12, 0.045, fabric, sleeve);
+      const binding = material(0x5b7c81, 0.05, 0.85);
+      for (const z of [0.1, 0.225])
+        box(0, 0.062, z, 0.09, 0.003, 0.014, binding, sleeve);
+      for (const x of [-0.038, 0.038])
+        box(x, 0.062, 0.165, 0.003, 0.002, 0.1, fabric, sleeve);
     }
     // A thumb, knuckle strip and separate finger ridges make a readable grip.
     box(-0.052, -0.025, -0.02, 0.035, 0.06, 0.065, skin, h).rotation.z = -0.35;

@@ -307,6 +307,25 @@ fan guards and container finishing, with textured floors across the legacy maps.
 New substantial scenery stays outside the court; inside details are flush paint or
 surface cladding. Existing collision, spawn positions, navigation, two-level Arena
 routes, controlled movement and weapon rules are preserved. New art is batched into
-3–6 additional batches per map, with cached offline-generated textures and no new
+4–7 additional batches per map, with cached offline-generated textures and no new
 per-frame lights. See [the map-art report](docs/map-art.md) and run
 `npm run audit:maps -- /tmp/map-art` for reproducible overview/eye-level renders.
+
+
+## Broader presentation polish
+
+- Neutral steel/container palettes replace leftover purple props; concrete, metal
+  and crate boards now have distinct material finishes.
+- Mirrored staging-floor graphics, hazard thresholds and real ramp-approach arrows
+  improve map navigation without adding obstacles or more HUD panels.
+- Three cosmetic operator finishes, stable callsign patches and carrier/radio
+  detailing keep team identity readable. Gloves/sleeves gain plates and stitching.
+- Firearms smoothly tuck near real walls, but ADS, mouse aim, damage and projectiles
+  remain unchanged. Motion-off disables the extra pose.
+- Pooled depth-tested bullet ribbons replace browser-limited one-pixel lines,
+  with safe near-plane clipping and no per-shot mesh allocation.
+- The compact HUD adds an in-bar damage chip and a thin actual magazine-capacity
+  underline rather than extra overlays.
+
+See [implementation and validation](docs/broad-polish.md). The controlled movement,
+all-gun sizing and backend-free multiplayer architecture are retained.

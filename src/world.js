@@ -9,7 +9,7 @@ import { ArenaAtmosphere } from "./atmosphere.js";
 import { ARENA, HALF_COVER, HALF_WINDOWS } from "./arena-layout.js";
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
-import { ArenaGraphics, artColor } from "./graphics.js";
+import { ArenaGraphics, artColor, surfaceFinish } from "./graphics.js";
 import { detailedWeapon } from "./weapon-models.js";
 import { NavGrid } from "./physics.js";
 export function textTexture(
@@ -51,15 +51,17 @@ export class ArenaWorld {
     this.mapId = "compound";
   }
   material(color) {
+    const finish = surfaceFinish(color);
     if (!this.materials.has(color))
       this.materials.set(
         color,
         new THREE.MeshStandardMaterial({
           color: artColor(color),
-          roughness: 0.82,
-          map: this.graphics.texture("concrete"),
+          roughness: finish.roughness,
+          metalness: finish.metalness,
+          map: this.graphics.texture(finish.texture),
           normalMap: this.graphics.texture("normal"),
-          normalScale: new THREE.Vector2(0.12, 0.12),
+          normalScale: new THREE.Vector2(finish.bump, finish.bump),
         }),
       );
     return this.materials.get(color);

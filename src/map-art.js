@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { addCourtSurfaceGraphics } from "./court-surface-art.js";
 import { batchFixedMeshes } from "./batching.js";
 
 // Daylight, not a colour filter: neutral combat silhouettes remain readable.
@@ -634,6 +635,7 @@ export function createMapArchitecture(world, layout, covers = []) {
         box(x, 11.7, z, 1.6, 0.08, 0.08, art.trim, metal, true);
       }
     }
+  sourceMeshes += addCourtSurfaceGraphics(world, group, layout);
   group.userData = {
     style: id,
     sourceMeshes,

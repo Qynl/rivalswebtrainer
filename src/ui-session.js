@@ -1,3 +1,4 @@
+import { HealthTrail, magazineFraction } from "./vitals-presentation.js";
 import { shotEnvelope } from "./weapon-feel.js";
 import { smokeImmersion } from "./smoke-fx.js";
 import { BOW_DRAW_TIME } from "./combat-rules.js";
@@ -56,6 +57,8 @@ export const hud = createStore({
   fps: 0,
 });
 export let game;
+const healthTrail = new HealthTrail();
+let vitalsPlayer;
 const compass = new DamageCompass(),
   confirmation = new HitConfirmation();
 let markerTimer,
@@ -144,8 +147,17 @@ function snapshot(g, force = false) {
             : g.reloadTime > 0
               ? "RELOADING"
               : "";
+  const trailingHealth = healthTrail.sample(
+    p.health,
+    p.maxHealth || 150,
+    g.clock,
+    vitalsPlayer !== p,
+  );
+  vitalsPlayer = p;
   hud.set({
     health: Math.ceil(p.health),
+    healthTrail: trailingHealth,
+    magazineFraction: magazineFraction(a.mag, w.mag, w.slot),
     maxHealth: p.maxHealth || 150,
     slots: g.loadout,
     slot: g.slot,

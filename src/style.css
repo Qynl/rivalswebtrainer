@@ -2850,3 +2850,49 @@ kbd {
 #hud {
   z-index: 2;
 }
+
+/* Vitals stay inside the existing compact HUD footprint. No extra panels. */
+.health-track {
+  position: relative;
+  overflow: hidden;
+}
+.health-track i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  transition: none;
+}
+.health-track .health-trail {
+  background: #e9aa70;
+  opacity: 0.85;
+}
+.health-block.low-health {
+  border-color: #ff8b6259;
+  background: #321d1ba8;
+}
+.health-block.low-health .health-icon {
+  color: #ff9c75;
+}
+.ammo-block .magazine-track {
+  width: 86px;
+  height: 2px;
+  background: #ffffff1c;
+  margin: 3px 0 4px auto;
+  overflow: hidden;
+}
+.magazine-track i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #becdc8;
+  transform-origin: left;
+  transition: transform 90ms linear;
+}
+.magazine-track.low i,
+.magazine-track.empty i {
+  background: #ff9b71;
+}
+@media (prefers-reduced-motion: reduce) {
+  .magazine-track i {
+    transition: none;
+  }
+}

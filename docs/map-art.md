@@ -38,15 +38,16 @@ Substantial new silhouettes live outside the court. Dressing is not added to
 
 | Map | Added source meshes | Added merged batches |
 | --- | ---: | ---: |
-| Concrete Arena | 188 | 4 |
-| Foundry | 120 | 5 |
-| Courtyard | 160 | 3 |
-| Compound | 78 | 5 |
-| Rooftops | 66 | 5 |
-| Hangar | 114 | 6 |
-| Range | 44 | 4 |
+| Concrete Arena | 196 | 5 |
+| Foundry | 128 | 6 |
+| Courtyard | 168 | 4 |
+| Compound | 84 | 6 |
+| Rooftops | 72 | 6 |
+| Hangar | 120 | 7 |
+| Range | 50 | 5 |
 
-These are the new `map-architecture` group only, not total scene draw calls or
+Counts include the subsequent staging-floor stencil pass. These are the new
+`map-architecture` group only, not total scene draw calls or
 hardware FPS claims. Substantial exterior geometry casts shadows; flush paint
 never casts shadows. One shared generated maintenance atlas serves fans/grilles,
 while facility lettering uses one small cached texture per map. Materials live in
@@ -55,12 +56,13 @@ them. Merged/transient geometries are disposed on map changes.
 
 ## Validation
 
-- **452 unit tests passed**, including 16 new map-art tests for batching, finite
+- **466 unit tests passed**, including 16 new map-art tests for batching, finite
   geometry, exterior silhouette placement, collision isolation, cached resource
   reuse, coordinated lighting and safe fallback profiles.
-- **15 browser scenarios passed (5.4 minutes)**, covering map art, Arena routes,
+- **23 browser scenarios passed (7.0 minutes)**, covering map art, Arena routes,
   controlled movement, weapon/operator rendering, offline startup, React combat,
-  performance-mode rendering and four real PeerJS multiplayer scenarios including
+  performance-mode rendering, new ribbon/wall/HUD/kit tests, all-gun framing/ADS,
+  trickshots and four real PeerJS multiplayer scenarios including
   six-client 3v3.
 - Production build passed.
 - Real Chromium screenshot audit rendered all seven maps from overview and spawn
@@ -72,8 +74,8 @@ them. Merged/transient geometries are disposed on map changes.
   map: collision boxes, spawn data, collision mesh count, navigation path and
   spawn-ray hit distances must match. Repeated seven-map rebuilds verify cached
   material/texture ownership stays stable. An additional strengthened rerun
-  confirmed actual renderer memory stayed at **154 geometries / 34 textures**
-  before and after two full seven-map cycles (106 registered materials and 16
+  confirmed actual renderer memory stayed at **155 geometries / 37 textures**
+  before and after two full seven-map cycles (107 registered materials and 19
   cached world textures, also unchanged). These are resource counts, not bytes.
 - Arena movement/collision regression still verifies protected spawns, connected
   lanes and both real ramp/gallery routes.
@@ -91,3 +93,6 @@ the HUD and use frozen cameras; this is an art/collision audit, not an FPS bench
 The live development preview updates normally. A separately published static site
 requires republishing the updated frontend/assets; pushing code alone does not
 verify a public deployment. No backend configuration was added.
+
+Further materials, floor wayfinding and character/effects/HUD improvements are
+covered in [the broader presentation report](broad-polish.md).

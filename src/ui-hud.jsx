@@ -219,12 +219,36 @@ export function Hud() {
           </span>
         </div>
         <div className="hud-bottom">
-          <div className="health-block">
+          <div
+            className={"health-block" + (h.health < 45 ? " low-health" : "")}
+          >
             <span className="health-icon">+</span>
             <strong id="health-value">{h.health}</strong>
             <div>
               <small>HEALTH</small>
-              <div className="health-track">
+              <div
+                className="health-track"
+                role="meter"
+                aria-label="Health"
+                aria-valuemin={0}
+                aria-valuemax={h.maxHealth || 150}
+                aria-valuenow={h.health}
+              >
+                <i
+                  className="health-trail"
+                  aria-hidden="true"
+                  style={{
+                    width:
+                      Math.max(
+                        0,
+                        Math.min(
+                          100,
+                          ((h.healthTrail ?? h.health) / (h.maxHealth || 150)) *
+                            100,
+                        ),
+                      ) + "%",
+                  }}
+                />
                 <i
                   id="health-fill"
                   style={{
@@ -250,6 +274,14 @@ export function Hud() {
                 / <b id="reserve-value">{h.reserve}</b>
               </span>
             </div>
+            {h.magazineFraction != null && (
+              <div
+                className={"magazine-track " + (h.ammoState || "")}
+                aria-hidden="true"
+              >
+                <i style={{ transform: `scaleX(${h.magazineFraction})` }} />
+              </div>
+            )}
             <small id="ammo-hint">{h.hint}</small>
           </div>
         </div>

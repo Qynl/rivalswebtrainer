@@ -1,3 +1,4 @@
+import { WeaponClearance } from "./weapon-clearance.js";
 import { weaponPresentation } from "./weapon-presentation.js";
 import { operatorPose } from "./operator-pose.js";
 import { weaponFeel, shotEnvelope } from "./weapon-feel.js";
@@ -2999,11 +3000,25 @@ export class Game {
         this.aiming && this.loadout[this.slot] === "sniper"
       );
       this.weaponAnimator ||= new WeaponAnimator();
+      this.weaponClearance ||= new WeaponClearance();
+      const clearance = this.weaponClearance.sample(
+        this.camera,
+        this.world?.solidMeshes || [],
+        this.clock,
+        this.loadout[this.slot],
+        p.alive &&
+          !this.aiming &&
+          !this.quickModel &&
+          w.slot < 2 &&
+          w.type !== "bow" &&
+          this.settings.shake !== false,
+      );
       const look = this.lookSway || { x: 0, y: 0 };
       this.weaponAnimator.update(activeModel, {
         dt,
         phase: this.walkPhase,
         speed: Math.hypot(p.vx, p.vz),
+        clearance,
         carryAllowed: !this.quickModel && w.slot < 2 && w.type !== "bow",
         forwardSpeed: -p.vx * Math.sin(this.yaw) - p.vz * Math.cos(this.yaw),
         grounded: p.grounded,

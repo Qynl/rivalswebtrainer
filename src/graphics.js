@@ -1,6 +1,19 @@
 import * as THREE from "three";
 // Original, deterministic textures: no downloads, photo assets or runtime requests.
 const PALETTE = new Map([
+  // Legacy infrastructure used to escape the palette and stay lavender.
+  [0x625d78, 0x46565c],
+  [0x6b6583, 0x4e5e64],
+  [0x655e7b, 0x3f5057],
+  [0xa79cbc, 0x9aaaaa],
+  [0x90819c, 0x768c91],
+  [0xb98576, 0xad8065],
+  [0x7b8b99, 0x617e86],
+  [0x68697e, 0x43565d],
+  [0x68617d, 0x465b64],
+  [0x4d4d69, 0x36484f],
+  [0x867b9c, 0x73858d],
+  [0xbb8c84, 0xad846a],
   [0x6c6484, 0x344554],
   [0x49435f, 0x263442],
   [0xbeb4c9, 0x9ba9b2],
@@ -36,6 +49,19 @@ const PALETTE = new Map([
 ]);
 export function artColor(color) {
   return PALETTE.get(color) ?? color;
+}
+const METAL_COLORS = new Set([
+  0x625d78, 0x6b6583, 0x655e7b, 0xa79cbc, 0x90819c, 0xb98576, 0x7b8b99,
+  0x68697e, 0x68617d, 0x4d4d69, 0x867b9c, 0xc58d7e, 0x7f8993, 0x75596c,
+  0x33495c, 0x263442,
+]);
+const WOOD_COLORS = new Set([0xc68d75, 0xd4a08c, 0xbb8c84]);
+export function surfaceFinish(color) {
+  return METAL_COLORS.has(color)
+    ? { texture: "metal", roughness: 0.58, metalness: 0.38, bump: 0.045 }
+    : WOOD_COLORS.has(color)
+      ? { texture: "wood", roughness: 0.9, metalness: 0, bump: 0.1 }
+      : { texture: "concrete", roughness: 0.86, metalness: 0, bump: 0.12 };
 }
 export class ArenaGraphics {
   constructor() {
@@ -90,6 +116,26 @@ export class ArenaGraphics {
         g.beginPath();
         g.moveTo(x, y);
         g.lineTo(x + this.random() * 22, y + this.random() * 4);
+        g.stroke();
+      }
+    }
+    if (kind === "wood") {
+      // Muted sawn boards and grain, not conspicuous brown stripes baked into UVs.
+      for (let board = 0; board < 4; board++) {
+        g.fillStyle =
+          board % 2 ? "rgba(85,76,59,.045)" : "rgba(255,255,250,.035)";
+        g.fillRect(board * 64, 0, 64, 256);
+        g.fillStyle = "rgba(65,60,51,.18)";
+        g.fillRect(board * 64, 0, 1, 256);
+      }
+      g.lineWidth = 0.6;
+      g.strokeStyle = "rgba(86,79,64,.11)";
+      for (let i = 0; i < 90; i++) {
+        const x = this.random() * 256,
+          y = this.random() * 256;
+        g.beginPath();
+        g.moveTo(x, y);
+        g.bezierCurveTo(x + 1, y + 20, x - 2, y + 50, x + 1, y + 85);
         g.stroke();
       }
     }
