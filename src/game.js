@@ -1,3 +1,4 @@
+import { ReloadCues } from "./weapon-handling.js";
 import { WeaponClearance } from "./weapon-clearance.js";
 import { weaponPresentation } from "./weapon-presentation.js";
 import { operatorPose } from "./operator-pose.js";
@@ -1266,6 +1267,7 @@ export class Game {
     if (
       this.combatFX?.eject &&
       w.slot < 2 &&
+      id !== "revolver" &&
       !["bow", "flame", "rocket", "launcher", "paint"].includes(w.type) &&
       !w.paint
     ) {
@@ -1282,6 +1284,7 @@ export class Game {
         eject,
         v3(Math.cos(this.yaw), 0, -Math.sin(this.yaw)),
         v3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)),
+        id,
       );
     }
   }
@@ -1408,6 +1411,15 @@ export class Game {
     this.effects.push({ mesh, life: 7, max: 7 });
   }
   updateSupport(dt) {
+    this.reloadCues ||= new ReloadCues();
+    const cue = this.reloadCues.sample(
+      this.loadout?.[this.slot],
+      this.reloadTime,
+      this.reloadTotal || WEAPONS[this.loadout?.[this.slot]]?.reload,
+      this.clock,
+    );
+    if (cue && this.player?.alive) this.audio?.play(cue);
+
     if (this.quickUtilityTime > 0) {
       this.quickUtilityTime = Math.max(0, this.quickUtilityTime - dt);
       if (this.quickUtilityTime <= 1e-8) this.clearQuickMelee();
@@ -2705,23 +2717,18 @@ export class Game {
         dt,
       );
     if (m.parts.leftElbow && m.parts.weaponRig && m.parts.upperBody) {
-      const showingMelee =
-        e.activeWeapon === e.meleeId ||
-        e.quickMeleeTime > 0 ||
-        e.deflectTime > 0;
-      const reloadReach =
-        e.reload > 0 && !showingMelee ? Math.sin(e.reload * 5) * 0.12 : 0;
       // Weapon and shoulders share an upper-body parent. Solve directly in
       // that space instead of updating/inverting the entire skeleton twice.
       const rig = m.parts.weaponRig;
-      const leftTarget = m.parts.botLeftGrip
-        .clone()
-        .add(v3(0, -reloadReach, reloadReach))
+      m.parts.ikLeftTarget ||= new THREE.Vector3();
+      m.parts.ikRightTarget ||= new THREE.Vector3();
+      const leftTarget = m.parts.ikLeftTarget
+        .copy(m.parts.botLeftGrip)
         .multiply(rig.scale)
         .applyQuaternion(rig.quaternion)
         .add(rig.position);
-      const rightTarget = m.parts.botRightGrip
-        .clone()
+      const rightTarget = m.parts.ikRightTarget
+        .copy(m.parts.botRightGrip)
         .multiply(rig.scale)
         .applyQuaternion(rig.quaternion)
         .add(rig.position);

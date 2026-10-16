@@ -1,6 +1,7 @@
+import { reloadHandling, animateMuzzle } from "./weapon-handling.js";
 import { THROW_DURATION, THROW_RELEASE } from "./throwables.js";
 import { knifeStabPose, sniperBoltPose } from "./weapon-actions.js";
-import { selectShotSide, mechanismPose } from "./animation.js";
+import { selectShotSide, mechanismPose, reloadPose } from "./animation.js";
 import * as THREE from "three";
 import { createViewModel } from "./world.js";
 import { WEAPONS } from "./data.js";
@@ -60,17 +61,32 @@ export function updateBotWeapon(model, e, clock = 0) {
         : Math.max(0, clock - (e.lastShotAt ?? -10));
     const reload = e.reload || 0,
       reloadProgress = reload > 0 ? 1 - reload / (WEAPONS[id].reload || 1) : 0,
-      extract =
-        reload > 0
-          ? Math.sin(Math.max(0, Math.min(1, reloadProgress)) * Math.PI)
-          : 0;
+      handling = reloadHandling(id, reloadProgress),
+      cycle = reloadPose(reloadProgress);
+    weapon.rotation.z = handling.cant;
     if (parts.bolt) {
       parts.bolt.position.copy(parts.bolt.userData.restPosition);
-      parts.bolt.position.z += mechanismPose(age).bolt;
+      parts.bolt.position.z += mechanismPose(age).bolt + cycle.rack * 0.055;
     }
-    if (parts.magazine) {
-      parts.magazine.position.copy(parts.magazine.userData.restPosition);
-      parts.magazine.position.y -= extract * 0.24;
+    for (const magazine of parts.magazines ||
+      (parts.magazine ? [parts.magazine] : [])) {
+      magazine.position.copy(magazine.userData.restPosition);
+      magazine.position.y -= cycle.extract * 0.28 - handling.seat;
+      magazine.position.x -= handling.reach * 0.35;
+      magazine.position.z += cycle.extract * 0.09;
+    }
+    if (parts.revolverCylinder) {
+      parts.revolverCylinder.position.copy(
+        parts.revolverCylinder.userData.restPosition,
+      );
+      parts.revolverCylinder.position.x -= cycle.extract * 0.12;
+      parts.revolverCylinder.rotation.y = -cycle.lower * 0.32;
+    }
+    if (reload > 0 && WEAPONS[id].slot < 2) {
+      p.botLeftGrip.x -= handling.reach;
+      p.botLeftGrip.y -= cycle.extract * 0.17;
+      p.botLeftGrip.y += handling.shell + handling.seat;
+      p.botLeftGrip.z += cycle.lower * 0.14;
     }
     if (parts.sniperBolt) {
       const cycle = sniperBoltPose(age);
@@ -130,8 +146,14 @@ export function updateBotWeapon(model, e, clock = 0) {
     }
     if (parts.muzzleFlash) {
       p.muzzleFlash = parts.muzzleFlash;
-      parts.muzzleFlash.visible = age < 0.055;
-      parts.muzzleFlash.rotation.z = (e.netShot || 0) * 19;
+      animateMuzzle(parts.muzzleFlash, id, age, e.netShot || e.lastShotAt || 0);
+    }
+    if (WEAPONS[id].slot < 2 && id !== "bow") {
+      for (const grip of [p.botLeftGrip, p.botRightGrip])
+        grip
+          .sub(weapon.position)
+          .applyEuler(weapon.rotation)
+          .add(weapon.position);
     }
     if (parts.pilotFlame)
       parts.pilotFlame.scale.y = 1 + Math.sin((e.netShot || 0) * 31) * 0.13;

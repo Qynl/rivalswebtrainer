@@ -1,3 +1,4 @@
+import { presentationEqual } from "./presentation-equality.js";
 import { HealthTrail, magazineFraction } from "./vitals-presentation.js";
 import { shotEnvelope } from "./weapon-feel.js";
 import { smokeImmersion } from "./smoke-fx.js";
@@ -43,19 +44,22 @@ export const ui = createStore({
   toast: "",
   result: null,
 });
-export const hud = createStore({
-  slots: [],
-  team: [],
-  feed: [],
-  numbers: [],
-  health: 150,
-  score: [0, 0],
-  marker: "",
-  markerOpacity: 0,
-  arcs: [],
-  banner: null,
-  fps: 0,
-});
+export const hud = createStore(
+  {
+    slots: [],
+    team: [],
+    feed: [],
+    numbers: [],
+    health: 150,
+    score: [0, 0],
+    marker: "",
+    markerOpacity: 0,
+    arcs: [],
+    banner: null,
+    fps: 0,
+  },
+  presentationEqual,
+);
 export let game;
 const healthTrail = new HealthTrail();
 let vitalsPlayer;

@@ -35,6 +35,8 @@ export class CombatFX {
     }));
     this.casingState = Array.from({ length: FX_LIMITS.casings }, () => ({
       life: 0,
+      size: new THREE.Vector3(1, 1, 1),
+      clearance: 0.017,
       p: new THREE.Vector3(),
       v: new THREE.Vector3(),
       r: new THREE.Euler(),
@@ -114,12 +116,15 @@ export class CombatFX {
     this.casings = new THREE.InstancedMesh(
       new THREE.CylinderGeometry(0.009, 0.009, 0.033, 6),
       new THREE.MeshStandardMaterial({
-        color: 0xb19a55,
+        color: 0xffffff,
         metalness: 0.8,
         roughness: 0.3,
       }),
       FX_LIMITS.casings,
     );
+    for (let i = 0; i < FX_LIMITS.casings; i++)
+      this.casings.setColorAt(i, this.color.setHex(0xb19a55));
+    this.casings.instanceColor.setUsage(THREE.DynamicDrawUsage);
     this.casings.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.casings.frustumCulled = false;
     scene.add(this.points, this.traces, this.decals, this.casings);
@@ -265,9 +270,22 @@ export class CombatFX {
       attrs[key].needsUpdate = true;
     this.traces.geometry.setDrawRange(0, FX_LIMITS.traces * 6);
   }
-  eject(position, right, forward) {
+  eject(position, right, forward, id = "rifle") {
     const i = this.cursor.casing++ % FX_LIMITS.casings,
       c = this.casingState[i];
+    const shell = id === "shotgun" || id === "shorty";
+    const pistol = [
+      "pistol",
+      "uzi",
+      "burstpistol",
+      "dualpistols",
+      "revolver",
+    ].includes(id);
+    c.size.setScalar(shell ? 1.3 : pistol ? 0.85 : 1);
+    c.size.y = shell ? 1.4 : pistol ? 0.65 : id === "sniper" ? 1.5 : 1;
+    c.clearance = Math.max(0.017, 0.0165 * c.size.y);
+    this.casings.setColorAt(i, this.color.setHex(shell ? 0xb64a37 : 0xb19a55));
+    this.casings.instanceColor.needsUpdate = true;
     c.life = 2.5;
     c.p.copy(position);
     c.v
@@ -370,11 +388,11 @@ export class CombatFX {
         for (const b of boxes)
           if (circleBox(c.p.x, c.p.z, 0.009, b)) {
             const top = surfaceHeight(b, c.p.x, c.p.z);
-            if (oldY >= top - 0.02 && c.p.y <= top + 0.017)
+            if (oldY >= top - 0.02 && c.p.y <= top + c.clearance)
               floor = Math.max(floor, top);
           }
-        if (c.p.y < floor + 0.017) {
-          c.p.y = floor + 0.017;
+        if (c.p.y < floor + c.clearance) {
+          c.p.y = floor + c.clearance;
           c.v.y = Math.abs(c.v.y) * 0.28;
           c.v.x *= 0.6;
           c.v.z *= 0.6;
@@ -385,7 +403,9 @@ export class CombatFX {
         c.r.z += c.spin.z * dt;
         this.dummy.position.copy(c.p);
         this.dummy.rotation.copy(c.r);
-        this.dummy.scale.setScalar(Math.min(1, c.life / 0.18));
+        this.dummy.scale
+          .copy(c.size)
+          .multiplyScalar(Math.min(1, c.life / 0.18));
         casings++;
       }
       this.dummy.updateMatrix();

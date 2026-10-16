@@ -1,3 +1,4 @@
+import { reloadHandling, animateMuzzle } from "./weapon-handling.js";
 import { weaponPresentation } from "./weapon-presentation.js";
 import { knifeStabPose, sniperBoltPose } from "./weapon-actions.js";
 import * as THREE from "three";
@@ -141,6 +142,10 @@ export class WeaponAnimator {
     const ads = this.aim.step(aim ? 1 : 0, dt, feel.ads),
       motion = shake ? (1 - ads) * Math.min(speed / 11.5, 1.4) : 0;
     const tuck = obstruction * (1 - ads);
+    const handling = reloadHandling(
+      model.userData.weaponId,
+      reloading ? reload : 0,
+    );
     const reloadState = reloadPose(reloading ? reload : 0),
       stride = grounded ? motion : motion * 0.12;
     const profile = model.userData.poseOffset || {};
@@ -195,7 +200,8 @@ export class WeaponAnimator {
         carry * 0.08 +
         tuck * 0.13,
       this.roll.step(
-        carry * 0.1 -
+        carry * 0.1 +
+          handling.cant -
           tuck * 0.08 -
           reloadState.lower * 0.3 -
           (shake ? (state.strafe || 0) * 0.025 * (1 - ads) : 0) -
@@ -248,6 +254,8 @@ export class WeaponAnimator {
         m.position.copy(m.userData.restPosition);
         m.position.y -= reloadState.extract * 0.28;
         m.position.z += reloadState.extract * 0.09;
+        m.position.x -= handling.reach * 0.35;
+        m.position.y += handling.seat;
       }
     if (parts.revolverCylinder) {
       const c = parts.revolverCylinder;
@@ -267,6 +275,8 @@ export class WeaponAnimator {
       m.position.copy(m.userData.restPosition);
       m.position.y -= reloadState.extract * 0.28;
       m.position.z += reloadState.extract * 0.09;
+      m.position.x -= handling.reach * 0.35;
+      m.position.y += handling.seat;
       m.rotation.x = m.userData.restRotationX + reloadState.extract * 0.3;
     }
     if (parts.bolt) {
@@ -287,13 +297,14 @@ export class WeaponAnimator {
       h.position.copy(h.userData.restPosition);
       h.position.y -= reloadState.extract * 0.22;
       h.position.z += reloadState.lower * 0.27;
-      h.position.x -= reloadState.extract * 0.045;
+      h.position.x -= reloadState.extract * 0.045 + handling.reach;
+      h.position.y += handling.seat + handling.shell;
       h.rotation.x = -reloadState.extract * 0.4;
       if (h.userData.sleeve)
         h.userData.sleeve.rotation.x =
           (h.userData.sleeve.userData.restRotationX || 0) +
           reloadState.extract * 0.25;
-      h.rotation.z = -reloadState.lower * 0.25;
+      h.rotation.z = -reloadState.lower * 0.25 - handling.wrist;
       if (parts.pump) h.position.z += mechanism.pump;
     }
     if (parts.dualGuns)
@@ -369,14 +380,14 @@ export class WeaponAnimator {
         parts.drawHand.position.x += draw * 0.012;
       }
     }
-    if (parts.muzzleFlash) {
-      parts.muzzleFlash.visible = !!state.flash;
-      parts.muzzleFlash.rotation.z = (state.time || 0) * 97;
-      parts.muzzleFlash.scale.setScalar(
-        (1.2 + Math.min(0.7, feel.kick * 4)) *
-          (1 + Math.sin((state.time || 0) * 177) * 0.14),
-      );
-    }
+    animateMuzzle(
+      parts.muzzleFlash,
+      parts.weaponId,
+      age,
+      state.shotSequence || 0,
+      !!state.flash,
+    );
+
     if (state.heal > 0) {
       model.rotation.set(-0.23, 0.2, 0.06);
       model.position.y += 0.055 + Math.sin((state.time || 0) * 5) * 0.005;

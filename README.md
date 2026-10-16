@@ -330,3 +330,26 @@ all-gun sizing and backend-free multiplayer architecture are retained.
 The host and guest now use the same acknowledged-input historical reconciliation rather than pulling a moving guest toward an old snapshot. Replaceable movement continues at **60 Hz plus immediate WASD transitions** while jump/fire/reload actions recover independently on reliable control. Snapshots run at **30 Hz**, packet limits support the actual input rate, and remote character/FX animation runs once per rendered frame instead of every physics tick. Authoritative damage, ammo, collision and the no-backend PeerJS architecture are preserved.
 
 A real two-browser WebRTC regression with added delay, jitter, state loss and slower reliable action delivery measured **25.555 units host / 25.531 guest** over identical inputs, with no backwards movement-correction steps. This is a controlled test, not a promise of zero Internet latency. **Both players should refresh the updated site and create a new lobby** because protocol 3 / binary grammar 2 is intentionally incompatible with earlier builds. The separately hosted public site still needs to publish the new frontend. See [networking details and measurements](docs/multiplayer.md).
+
+## Weapon handling and smoother presentation
+
+- More deliberate reloads: gun-family-specific cant, support-hand reach, wrist
+  movement and magazine seating. Remote players use the same reload phases;
+  magazines, cylinders and hands return to rest when interrupted.
+- Distinct muzzle-flash width, jet length, colour and decay for 15 gun profiles,
+  shared between first-person and remote models without new per-shot lights.
+- Short pistol brass, larger Sniper cases and red Shotgun hulls reuse the existing
+  bounded casing pool. Revolvers no longer eject a case on every trigger pull.
+- Release/seat/ready sounds follow real reload progress rather than an uncancelled
+  delayed callback. Reload speed, ammo, damage and aim direction are unchanged.
+- Warmed character arm posing reuses its math workspace; the HUD structurally
+  shares unchanged values instead of notifying React on identical snapshots.
+  In the actual browser test, 120 identical forced HUD samples caused zero updates.
+
+Validated with **502 unit tests**, **25 targeted browser scenarios**, a clean-build
+repeat of three key scenarios, and the production build. These include all 17 gun
+renders, unchanged ADS/aim, quick F/G actions, seven-map resource ownership,
+real six-client 3v3, delayed/lossy host/guest movement and disconnected reload.
+The calmer movement and backend-free multiplayer fixes are retained. See
+[handling and performance details](docs/handling-performance.md). A Git push is
+not verification that a separately published static site has updated.

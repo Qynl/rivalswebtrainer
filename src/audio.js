@@ -235,9 +235,19 @@ export class GameAudio {
       case "double":
         this.tone(280, 0.15, "sine", 0.15, 650);
         break;
+      case "reload-release":
+        this.noiseHit(0.035, 0.07 * level, 3100);
+        break;
+      case "reload-seat":
+        this.noiseHit(0.045, 0.1 * level, 1900);
+        this.tone(170, 0.025, "triangle", 0.035 * level, 90);
+        break;
+      case "reload-ready":
+        this.noiseHit(0.055, 0.08 * level, 4200);
+        break;
       case "reload":
         this.noiseHit(0.1, 0.15, 3500);
-        setTimeout(() => this.noiseHit(0.08, 0.1, 2000), 240);
+
         break;
       case "switch":
         this.noiseHit(0.05, 0.1, 3000);
