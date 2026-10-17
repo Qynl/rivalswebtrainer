@@ -251,6 +251,11 @@ function MatchHUD({ h, profile }) {
       {status && h.alive !== false && (
         <div className={`slap-status ${status === "CHILLED" ? "chilled" : ""}`}>
           {status}
+          {h.gloveStatusRemaining > 0 && (
+            <b className="slap-status-time">
+              {h.gloveStatusRemaining.toFixed(1)}s
+            </b>
+          )}
           <small>
             {status === "RAGDOLL"
               ? "Recovering · Movement returns automatically"
@@ -262,11 +267,14 @@ function MatchHUD({ h, profile }) {
                     POWERUP: "Protected · Enhanced slap power",
                     REFLECTING: "Incoming slaps return to the attacker",
                     "ZERO-G": "Low gravity · Air steering active",
+                    BOOSTING: "Speed boosted · Chill cleared",
+                    "DODGE ROLL": "Committed roll · Slapping allowed",
+                    "MAGNET RUSH": "Committed rush · Slapping allowed",
                   }[status] || ""}
           </small>
         </div>
       )}
-      {h.gloveWaypoint && (
+      {h.gloveWaypoint && h.alive !== false && (
         <div
           className="slap-waypoint"
           style={{ left: h.gloveWaypoint.x, top: h.gloveWaypoint.y }}
@@ -278,8 +286,17 @@ function MatchHUD({ h, profile }) {
           </small>
         </div>
       )}
-      {glove.key === "thanos" && h.gloveMarked && (
-        <div className="slap-return-hint">POINT MARKED · E TO RETURN</div>
+      {glove.key === "thanos" && h.gloveMarked && h.alive !== false && (
+        <div className="slap-return-hint">
+          POINT MARKED · {h.gloveMarkRemaining}s ·{" "}
+          {h.gloveAbilityLabel === "RETURN"
+            ? "E TO RETURN"
+            : h.gloveAbilityLabel === "RECOVER"
+              ? "RECOVERING"
+              : h.gloveCooldown > 0
+                ? "REARMING"
+                : "RETURN UNAVAILABLE"}
+        </div>
       )}
       {h.gloveNotice && (
         <div className="glove-cast-notice">{h.gloveNotice}</div>
@@ -328,7 +345,7 @@ function MatchHUD({ h, profile }) {
           <div
             className="slap-ability"
             style={{
-              "--ready": `${glove.activation === "passive" ? 100 : 100 * (1 - Math.min(1, (h.gloveCooldown || 0) / (glove.abilityCooldown || 1)))}%`,
+              "--ready": `${100 * (h.gloveAbilityProgress ?? (glove.activation === "passive" ? 1 : 0))}%`,
             }}
           >
             {glove.activation === "active" && (
@@ -338,13 +355,8 @@ function MatchHUD({ h, profile }) {
             )}
             <kbd>{glove.activation === "active" ? "E" : "∞"}</kbd>
             <span>
-              {h.alive === false
-                ? "OUT"
-                : glove.activation === "passive"
-                  ? "PASSIVE"
-                  : h.gloveCooldown > 0
-                    ? `${h.gloveCooldown.toFixed(1)}s`
-                    : "READY"}
+              {h.gloveAbilityLabel ||
+                (glove.activation === "passive" ? "PASSIVE" : "READY")}
             </span>
           </div>
         </div>

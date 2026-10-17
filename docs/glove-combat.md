@@ -201,3 +201,7 @@ The real delayed return has its own short inward rings, retracting link and quie
 ### Fair offline trap reactions
 
 Fighting opponents can notice an armed hostile Brick in front of them, on their floor and directly in their travel path, using actual world LOS. After their existing difficulty reaction delay they may attempt an ordinary jump near the trap, provided there is headroom. The normal physics/collision/arming/trip rules still decide the outcome. Late surprises still work; covered, allied, unarmed, expired, behind/off-path and other-storey traps do not grant automatic dodges. Stationary training targets remain targets. No hidden owner state, trap immunity, special force or network/player auto-jump is introduced.
+
+### Timed status and real cast availability
+
+The existing small status readout shows actual remaining timer values, including Fart Blast/Acrobat/Magnet's real movement window. It does not invent a cosmetic duration or change gameplay. Availability distinguishes prep, recovery, stone form, round-end waiting and elimination from ordinary cooldown readiness. Thanos uses its 0.4s rearm track while marked and full cooldown after return/expiry; its private hint shows remaining mark time, and eliminated players cannot see an actionable return prompt. Movement/aim and earned progression are unchanged.

@@ -205,9 +205,22 @@ test("real E input activates expanded mechanics with accurate HUD states and no 
       await expect(page.locator(".slap-status")).toContainText(status);
     if (id === "glove_thanos") {
       expect(result.mark).toEqual({ x: 0, y: 0, z: 8 });
+      await expect(page.locator(".slap-return-hint")).toContainText("REARMING");
+      await expect(page.locator(".slap-ability > span")).toHaveText("0.4s");
+      expect(
+        await page
+          .locator(".slap-ability")
+          .evaluate((e) => e.style.getPropertyValue("--ready")),
+      ).toBe("0%");
+      await page.evaluate(() => {
+        const g = window.__arena;
+        for (let i = 0; i < 50; i++) g.simulate(1 / 120);
+        g.events.update(g);
+      });
       await expect(page.locator(".slap-return-hint")).toContainText(
         "E TO RETURN",
       );
+      await expect(page.locator(".slap-ability > span")).toHaveText("RETURN");
     }
     if (id === "glove_brick") expect(result.bricks).toBe(1);
   }

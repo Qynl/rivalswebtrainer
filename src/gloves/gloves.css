@@ -2002,3 +2002,13 @@
     margin-bottom: 2px;
   }
 }
+
+.slap-status-time {
+  display: inline-block;
+  min-width: 3.5ch;
+  margin-left: 9px;
+  font-size: 11px;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}

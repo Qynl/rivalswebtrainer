@@ -1,3 +1,7 @@
+import {
+  gloveStatusReadout,
+  gloveAbilityReadout,
+} from "./gloves/status-readout.js";
 import { spectatorInfo } from "./gloves/spectating.js";
 import { matchRoster } from "./gloves/scoreboard.js";
 import { gloveReachCue } from "./gloves/readability.js";
@@ -174,6 +178,8 @@ function snapshot(g, force = false) {
     vitalsPlayer !== p,
   );
   vitalsPlayer = p;
+  const statusReadout = gloveStatusReadout(p, w.key),
+    abilityReadout = gloveAbilityReadout(p, w, g.state);
   if (g.clock >= (g.gloveReachAt ?? -1) || force) {
     g.gloveReach = gloveReachCue(g);
     g.gloveReachAt = g.clock + 0.08;
@@ -181,22 +187,11 @@ function snapshot(g, force = false) {
   hud.set({
     gloveReach: g.gloveReach,
     gloveNotice: g.gloveNotice?.until > g.clock ? g.gloveNotice.text : null,
-    gloveStatus:
-      p.stoneTime > 0
-        ? "STONE FORM"
-        : p.ragdollTime > 0
-          ? "RAGDOLL"
-          : p.goldTime > 0
-            ? "POWERUP"
-            : p.reverseTime > 0
-              ? "REFLECTING"
-              : p.ghostTime > 0
-                ? "HIDDEN"
-                : p.spaceTime > 0
-                  ? "ZERO-G"
-                  : p.chillTime > 0
-                    ? "CHILLED"
-                    : "",
+    gloveAbilityLabel: abilityReadout.label,
+    gloveAbilityProgress: abilityReadout.progress,
+    gloveStatus: statusReadout.label,
+    gloveStatusRemaining: statusReadout.remaining,
+    gloveMarkRemaining: Math.ceil(Math.max(0, p.markTime || 0)),
     gloveCooldown: p.abilityCooldown || 0,
     gloveMarked: p.markTime > 0,
     gloveRoll: g.lastDiceRoll || 0,

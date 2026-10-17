@@ -1690,3 +1690,121 @@ test("real offline opponents jump a noticed armed Brick using normal physics, bu
   expect(results.profileUnchanged).toBe(true);
   expect(errors).toEqual([]);
 });
+
+test("actual E buffs have live compact expiry readouts and Default shows its genuine boost instead of an empty status", async ({
+  page,
+}) => {
+  const errors = await prepare(page);
+  await practice(page);
+  await page.evaluate(async () => {
+    const g = window.__arena,
+      { configurePractice } = await import("/src/gloves/practice.js");
+    configurePractice(g, {
+      glove: "glove_golden",
+      mode: "stationary",
+      count: 1,
+    });
+    g.yaw = 0.37;
+    g.pitch = 0.12;
+  });
+  await page.keyboard.press("KeyE");
+  await expect(page.locator(".slap-status")).toContainText("POWERUP");
+  await expect(page.locator(".slap-status-time")).toHaveText("3.0s");
+  await page.evaluate(() => {
+    const g = window.__arena;
+    for (let i = 0; i < 60; i++) g.simulate(1 / 120);
+    g.events.update(g);
+  });
+  await expect(page.locator(".slap-status-time")).toHaveText("2.5s");
+  await page.evaluate(() => {
+    const g = window.__arena;
+    for (let i = 0; i < 400; i++) g.simulate(1 / 120);
+    g.events.update(g);
+  });
+  await expect(page.locator(".slap-status")).toHaveCount(0);
+  await page.evaluate(async () => {
+    const g = window.__arena,
+      { configurePractice } = await import("/src/gloves/practice.js");
+    configurePractice(g, {
+      glove: "glove_default",
+      mode: "stationary",
+      count: 1,
+    });
+    g.yaw = 0.37;
+    g.pitch = 0.12;
+    g.player.chillTime = 4;
+  });
+  await page.keyboard.press("KeyE");
+  await expect(page.locator(".slap-status")).toContainText("BOOSTING");
+  await expect(page.locator(".slap-status-time")).toHaveText("1.4s");
+  expect(
+    await page.evaluate(() => ({
+      chill: window.__arena.player.chillTime,
+      aim: [window.__arena.yaw, window.__arena.pitch],
+    })),
+  ).toEqual({ chill: 0, aim: [0.37, 0.12] });
+  expect(errors).toEqual([]);
+});
+
+test("ability HUD distinguishes prep and a real incoming ragdoll from cooldown readiness, then restores readiness after recovery", async ({
+  page,
+}) => {
+  const errors = await prepare(page);
+  await practice(page);
+  await page.evaluate(async () => {
+    const g = window.__arena,
+      { gloveLoadout } = await import("/src/gloves/catalog.js");
+    g.start({
+      map: "blockout",
+      mode: 1,
+      difficulty: "regular",
+      loadout: gloveLoadout(),
+      capture: false,
+    });
+    g.events.update(g);
+  });
+  await expect(page.locator(".slap-ability > span")).toHaveText("PREP");
+  await page.keyboard.press("KeyE");
+  expect(await page.evaluate(() => window.__arena.player.boostTime || 0)).toBe(
+    0,
+  );
+  await page.evaluate(() => {
+    const g = window.__arena;
+    for (let i = 0; i < 602; i++) g.simulate(1 / 120);
+    g.events.update(g);
+  });
+  await expect(page.locator(".slap-ability > span")).toHaveText("READY");
+  const hit = await page.evaluate(async () => {
+    const g = window.__arena,
+      { resolveSlap } = await import("/src/gloves/combat.js"),
+      p = g.player,
+      e = g.entities[1];
+    Object.assign(e, {
+      x: p.x,
+      y: p.y,
+      z: p.z - 2,
+      yaw: Math.PI,
+      abilityCooldown: 99,
+      gloveCooldown: 99,
+    });
+    const contacts = resolveSlap(g, e, "glove_default");
+    g.events.update(g);
+    return { contacts, hp: p.health, ragdoll: p.ragdollTime };
+  });
+  expect(hit.contacts).toBe(1);
+  expect(hit.hp).toBeLessThan(150);
+  expect(hit.ragdoll).toBeGreaterThan(0);
+  await expect(page.locator(".slap-ability > span")).toHaveText("RECOVER");
+  await expect(page.locator(".slap-status")).toContainText("RAGDOLL");
+  await page.keyboard.press("KeyE");
+  expect(await page.evaluate(() => window.__arena.player.boostTime || 0)).toBe(
+    0,
+  );
+  await page.evaluate(() => {
+    const g = window.__arena;
+    for (let i = 0; i < 100; i++) g.simulate(1 / 120);
+    g.events.update(g);
+  });
+  await expect(page.locator(".slap-ability > span")).toHaveText("READY");
+  expect(errors).toEqual([]);
+});
