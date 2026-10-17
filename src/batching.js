@@ -41,7 +41,10 @@ export function batchFixedMeshes(
       mesh.updateMatrix();
       const geometry = mesh.geometry.index
         ? mesh.geometry.toNonIndexed()
-        : mesh.geometry.clone();
+        : // Parametric geometry.clone() reruns its constructor before copying
+          // over the result. A plain buffer copy preserves all attributes while
+          // avoiding a second expensive bevel/UV build for every rounded box.
+          new THREE.BufferGeometry().copy(mesh.geometry);
       geometry.applyMatrix4(mesh.matrix);
       return geometry;
     });
