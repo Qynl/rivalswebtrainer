@@ -28,7 +28,7 @@ function textile() {
   t.needsUpdate = true;
   return t;
 }
-export function createOperator(team, name = "BOT") {
+export function createOperator(team, name = "BOT", { unarmed = false } = {}) {
   const group = new THREE.Group();
   group.name = "striker-operator";
   const { seed, kit, callsign } = operatorIdentity(name);
@@ -70,7 +70,10 @@ export function createOperator(team, name = "BOT") {
   lens.name = "smoked-optical-glass";
   teamMat.emissive.setHex(friendly ? 0x195c60 : 0x70301d);
   teamMat.emissiveIntensity = 0.12;
-  const parts = { armorMaterial: armor };
+  const parts = {
+    armorMaterial: armor,
+    materialPalette: { armor, cloth, trim, skin, team: teamMat },
+  };
   const joint = (name, parent, x, y, z) => {
     const g = new THREE.Group();
     g.name = name;
@@ -351,16 +354,20 @@ export function createOperator(team, name = "BOT") {
   const socket = new THREE.Group();
   weapon.add(socket);
   parts.onlineSocket = socket;
-  const rifle = detailedWeapon("rifle", WEAPONS.rifle, { hands: false });
-  rifle.scale.setScalar(0.85);
-  rifle.position.set(-0.24 * 0.85, 0.24 * 0.85, 0.62 * 0.85);
-  socket.add(rifle);
-  socket.userData.id = "rifle";
-  socket.userData.weapon = rifle;
   parts.baseMuzzleFlash = flash;
   flash.visible = false;
-  parts.muzzleFlash = rifle.userData.muzzleFlash;
   parts.gun.visible = parts.barrel.visible = false;
+  // Glove rounds replace the held item immediately: do not build, texture and
+  // then dispose a detailed rifle during every spawn / first third-person frame.
+  if (!unarmed) {
+    const rifle = detailedWeapon("rifle", WEAPONS.rifle, { hands: false });
+    rifle.scale.setScalar(0.85);
+    rifle.position.set(-0.24 * 0.85, 0.24 * 0.85, 0.62 * 0.85);
+    socket.add(rifle);
+    socket.userData.id = "rifle";
+    socket.userData.weapon = rifle;
+    parts.muzzleFlash = rifle.userData.muzzleFlash;
+  }
   // Batch each rigid bone separately. Never merge moving joints or retained rig handles.
   const retained = new Set([parts.gun, parts.barrel]);
   const isHeldWeapon = (o) => {

@@ -613,7 +613,8 @@ test("Brick traps are bounded, expire, have no damage/reward, and can be jumped 
     tickGloves(s.g, 10);
     assert.equal(s.g.gloveBricks.length, 0);
     const model = createBrickModel();
-    assert.equal(model.children.length, 5);
+    // Beveled studded body and underside are batched; the arm/expiry LED is independent.
+    assert.equal(model.children.length, 3);
     model.traverse((o) => o.geometry?.dispose());
   } finally {
     s.service.dispose();

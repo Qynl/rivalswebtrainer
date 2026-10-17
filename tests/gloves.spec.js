@@ -107,7 +107,6 @@ test("real mouse hits cause damage, launched ragdolls, one saved slap, no hidden
   expect(result.slaps).toBe(1);
   await page.keyboard.press("Digit2");
   await page.keyboard.press("KeyG");
-  await page.keyboard.press("KeyR");
   const recovered = await page.evaluate(() => {
     const g = window.__arena;
     g.__step(100);
@@ -135,6 +134,16 @@ test("real mouse hits cause damage, launched ragdolls, one saved slap, no hidden
   expect(burst.boost).toBeGreaterThan(1);
   expect(burst.cooldown).toBe(7);
   expect(burst.slaps).toBe(1);
+  // R is now an explicit practice reset, not a hidden firearm reload.
+  await page.keyboard.press("KeyR");
+  expect(
+    await page.evaluate(() => ({
+      health: window.__arena.player.health,
+      contacts: window.__arena.practiceStats.contacts,
+      weapon: window.__arena.loadout[0],
+      slaps: JSON.parse(localStorage.getItem("slap-arena-profile-v1")).slaps,
+    })),
+  ).toEqual({ health: 150, contacts: 0, weapon: "glove_default", slaps: 1 });
 
   expect(errors).toEqual([]);
 });

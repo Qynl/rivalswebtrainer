@@ -1,6 +1,11 @@
-import { presentGloveAbility, gloveAbilitySound } from "../gloves/fx.js";
+import { presentGloveAbility } from "../gloves/fx.js";
+import { playGloveAbilityAudio, playGloveSwingAudio } from "../gloves/audio.js";
 import { receiveGloveState } from "../gloves/states.js";
-import { createBrickModel } from "../gloves/brick.js";
+import {
+  createBrickModel,
+  alignBrickModel,
+  animateBrick,
+} from "../gloves/brick.js";
 import { isGlove } from "../gloves/catalog.js";
 import { progression } from "../gloves/progression.js";
 import { presentImpact } from "../gloves/combat.js";
@@ -67,10 +72,15 @@ export class MultiplayerSession {
       if (e.model) {
         g.scene.remove(e.model.group);
         g.disposeVisual(e.model.group);
+        e.model = null;
       }
     g.entities = [g.player];
     this.entities = new Map();
     this.round = snapshot.round;
+    const selfState = snapshot.players.find((p) => p.id === this.id);
+    // Set the viewer team before creating any remote models; snapshot ordering
+    // must not decide which team receives allied nameplates.
+    if (selfState) g.player.team = selfState.team;
     g.round = snapshot.round;
     g.roundCountdownPrevious = Math.ceil(snapshot.countdown);
     for (const state of snapshot.players) {
@@ -333,14 +343,16 @@ export class MultiplayerSession {
         e.netShotAge = Math.max(0, snapshot.time - state.shot);
         e.fireFlash = 0.065;
         const w = WEAPONS[state.weapon];
-        g.audio.playAt(
-          w.glove ? "slapSwing" : w.sound,
-          g.eye(e),
-          g.eye(g.player),
-          g.yaw,
-          w.type === "flame" ? 0.25 : 0.55,
-          !g.hasLOS(g.eye(e), g.eye(g.player), false),
-        );
+        if (w.glove) playGloveSwingAudio(g, e);
+        else
+          g.audio.playAt(
+            w.sound,
+            g.eye(e),
+            g.eye(g.player),
+            g.yaw,
+            w.type === "flame" ? 0.25 : 0.55,
+            !g.hasLOS(g.eye(e), g.eye(g.player), false),
+          );
         if (w.type === "flame") {
           const dir = new THREE.Vector3(
             -Math.sin(state.yaw) * Math.cos(state.pitch),
@@ -389,6 +401,14 @@ export class MultiplayerSession {
         if (event.id <= this.lastEvent) continue;
         this.lastEvent = event.id;
       }
+      if (
+        event.type === "gloveDenied" &&
+        event.player === this.id &&
+        event.round === this.round
+      ) {
+        g.gloveNotice = { text: event.reason, until: g.clock + 1.1 };
+        g.events.update?.(g);
+      }
       if (event.type === "gloveHit" && event.round === this.round) {
         presentImpact(
           g,
@@ -399,7 +419,7 @@ export class MultiplayerSession {
       }
       if (event.type === "gloveAbility" && event.round === this.round) {
         presentGloveAbility(g, event);
-        g.audio.play(gloveAbilitySound(WEAPONS[event.glove]?.key));
+        playGloveAbilityAudio(g, event);
         if (
           event.player === this.id &&
           ["glove_acrobat", "glove_magnet", "glove_space"].includes(event.glove)
@@ -838,6 +858,8 @@ export class MultiplayerSession {
     }
     for (const zone of this.zones.values()) {
       if (zone.type === "fire") animateFire(zone.mesh, g.clock, zone.life);
+      else if (zone.type === "brick")
+        animateBrick(zone.mesh, zone.life, g.clock);
       else if (zone.type === "smoke")
         animateSmoke(zone.mesh, g.clock, zone.life, 7, g.settings.performance);
     }
@@ -889,6 +911,8 @@ export class MultiplayerSession {
               ? createBrickModel()
               : createSmokeCloud();
         mesh.position.set(state.x, state.y, state.z);
+        if (state.type === "brick")
+          alignBrickModel(mesh, this.game.world.boxes, state);
         gAdd(this.game, mesh);
         zone = { mesh, type: state.type, life: state.life };
         this.zones.set(state.id, zone);

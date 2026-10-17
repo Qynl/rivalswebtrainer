@@ -1,3 +1,13 @@
+import { acceptsGameplayKeys } from "./gameplay-keys.js";
+import { animateBrick } from "./gloves/brick.js";
+import { cycleSpectator, updateSpectatorCamera } from "./gloves/spectating.js";
+import {
+  practiceOptions,
+  freshPracticeStats,
+  resetPractice,
+} from "./gloves/practice.js";
+import { rosterStats, recordRosterDamage } from "./gloves/scoreboard.js";
+import { abilityPose } from "./gloves/ability-motion.js";
 import { wheelZoom, updateOrbitCamera } from "./gloves/camera.js";
 import { gloveMoveScale, committedWish, lowGravity } from "./gloves/states.js";
 import { presentGloveStates } from "./gloves/visual-effects.js";
@@ -209,6 +219,7 @@ export class Game {
     this.burstCount = 0;
     this.player = null;
     this.score = [0, 0];
+    this.actorStats = new Map();
     this.matchStats = { shots: 0, hits: 0, kills: 0, deaths: 0, headshots: 0 };
     this.presentation = new ArenaRenderer(this.renderer);
     this.mouseLook = new MouseLook();
@@ -298,7 +309,7 @@ export class Game {
       }
     });
     window.addEventListener("keydown", (e) => {
-      if (this.state === "lobby" || this.state === "results") return;
+      if (!acceptsGameplayKeys(this, e)) return;
       if (
         [
           "Space",
@@ -332,6 +343,17 @@ export class Game {
         return;
       }
       this.keys.add(e.code);
+      if (e.code === "Tab") this.events.update(this);
+      if (
+        !e.repeat &&
+        !this.player.alive &&
+        ["playing", "roundend"].includes(this.state) &&
+        ["ArrowLeft", "ArrowRight"].includes(e.code)
+      ) {
+        e.preventDefault();
+        cycleSpectator(this, e.code === "ArrowLeft" ? -1 : 1);
+        this.events.update(this);
+      }
       if (!e.repeat && this.state === "playing")
         this.network?.keyAction(e.code);
       if (e.repeat || this.state !== "playing") return;
@@ -344,19 +366,24 @@ export class Game {
         e.code.startsWith("Shift")
       )
         this.slide();
-      if (e.code === "KeyV" && gloveMatch(this))
+      if (e.code === "KeyV" && gloveMatch(this) && this.player.alive)
         this.cameraZoom = (this.cameraZoom || 0) > 0.3 ? 0 : 6;
       if (e.code === "KeyF" || (e.code === "KeyE" && gloveMatch(this))) {
         if (e.code === "KeyE") this.network?.action("ability");
         this.meleeAbility(true);
       }
       if (e.code === "KeyG") this.quickUtility();
-      if (e.code === "KeyR") this.reload();
+      if (e.code === "KeyR") {
+        if (this.range && gloveMatch(this) && !this.network)
+          resetPractice(this);
+        else this.reload();
+      }
       if (e.code === "KeyT" && !this.reloadTime) this.inspectTime = 1.8;
       if (/^Digit[1-4]$/.test(e.code)) this.equip(+e.code.slice(-1) - 1);
     });
     window.addEventListener("keyup", (e) => {
       this.keys.delete(e.code);
+      if (e.code === "Tab" && this.player) this.events.update(this);
       if (["KeyW", "KeyA", "KeyS", "KeyD"].includes(e.code))
         this.network?.sendInput();
     });
@@ -409,7 +436,13 @@ export class Game {
           return;
         e.preventDefault();
         if (gloveMatch(this)) {
-          this.cameraZoom = wheelZoom(this.cameraZoom, e.deltaY);
+          if (this.player?.alive)
+            this.cameraZoom = wheelZoom(this.cameraZoom, e.deltaY);
+          else
+            this.spectatorZoom = Math.max(
+              2,
+              wheelZoom(this.spectatorZoom ?? 6, e.deltaY),
+            );
           return;
         }
         if (this.state === "playing")
@@ -505,6 +538,10 @@ export class Game {
     this.score = [0, 0];
     this.matchStats = { shots: 0, hits: 0, kills: 0, deaths: 0, headshots: 0 };
     this.range = config.range || false;
+    this.testDrive = !!(this.range && config.testDrive && !config.online);
+    this.practiceOptions = this.range
+      ? practiceOptions(config.practiceOptions)
+      : null;
     this.world.build(this.range ? "range" : config.map);
     this.round = 0;
     this.clock = 0;
@@ -560,6 +597,9 @@ export class Game {
     this.gloveBricks = [];
     this.gloveFX?.clear();
     this.gloveNotice = null;
+    this.gloveReach = null;
+    this.gloveReachAt = -1;
+    this.lastGloveDeniedAt = -100;
     this.cancelThrow(false);
     this.disposeQuickModels();
     this.damageNumbers?.clear();
@@ -594,6 +634,8 @@ export class Game {
     displayName = null,
   ) {
     const e = {
+      id: `local:${this.round || 0}:${this.entities.length}`,
+      arenaStats: rosterStats(this, team, index, isPlayer),
       team,
       name:
         displayName ||
@@ -639,7 +681,10 @@ export class Game {
         ],
       );
     if (!isPlayer) {
-      e.model = createCharacter(team, e.name);
+      e.model = createCharacter(team, e.name, {
+        unarmed: gloveMatch(this),
+        localTeam: this.player?.team ?? 0,
+      });
       this.scene.add(e.model.group);
       e.model.group.position.set(e.x, e.y, e.z);
     }
@@ -656,6 +701,10 @@ export class Game {
     return e;
   }
   startRound() {
+    this.incomingImpacts = [];
+    this.deathRecap = null;
+    this.spectatorTargetId = null;
+    this.spectatorFollow = null;
     this.clearQuickMelee();
     this.cleanEntities();
     this.audio?.clearSpatial?.();
@@ -707,20 +756,35 @@ export class Game {
     this.roundTime = 90;
     this.eyeHeight = 1.66;
     if (this.range) {
-      for (let i = 0; i < 5; i++)
-        this.createEntity(
+      this.practiceStats = freshPracticeStats();
+      const lab = practiceOptions(this.practiceOptions);
+      for (let i = 0; i < lab.count; i++) {
+        const spawn = {
+          x: (i - (lab.count - 1) / 2) * 7,
+          z: -14 + (i % 2) * 5,
+        };
+        const bot = this.createEntity(
           1,
-          { x: -14 + i * 7, z: -14 + (i % 2) * 5 },
+          spawn,
           i,
           false,
-          true,
+          lab.mode !== "sparring",
         );
+        bot.practiceMode = lab.mode;
+        bot.practiceSpawn = { ...spawn };
+        if (lab.mode === "sparring") {
+          bot.activeWeapon = lab.opponent;
+          updateBotWeapon(bot.model, bot, this.clock);
+        }
+      }
       this.state = "playing";
       this.events.banner(
         "PRACTICE RANGE",
         "GET DIALED IN.",
         gloveMatch(this)
-          ? "Moving targets · Confirmed hits earn slaps · ESC to leave"
+          ? this.testDrive
+            ? "Test Drive · No saved rewards · ESC to leave"
+            : "Moving targets · Confirmed hits earn slaps · ESC to leave"
           : "Moving targets · Infinite reserves · ESC to leave",
         2.7,
       );
@@ -1632,6 +1696,7 @@ export class Game {
       e.hitDirection = source ? Math.atan2(e.x - source.x, e.z - source.z) : 0;
     }
     e.health = Math.max(0, e.health - amount);
+    recordRosterDamage(this, e, source, applied, e.health <= 0);
     if (e.isPlayer) {
       if (this.healTime > 0 && this.quickUtilityTime > 0)
         this.clearQuickMelee();
@@ -2070,7 +2135,16 @@ export class Game {
   }
   updatePlayer(dt) {
     const p = this.player;
-    if (!p.alive) return;
+    if (!p.alive) {
+      if (
+        this.range &&
+        !this.network &&
+        this.practiceOptions?.mode === "sparring" &&
+        this.clock >= p.respawnAt
+      )
+        resetPractice(this);
+      return;
+    }
     this.updatePlayerMelee(dt);
     if (gloveMatch(this) && blocked(p)) {
       this.trigger = false;
@@ -2671,6 +2745,13 @@ export class Game {
   animateBot(e, dt = 1 / 60) {
     if (
       gloveMatch(this) &&
+      e.model &&
+      isGlove(e.activeWeapon) &&
+      !e.model.parts.onlineSocket?.userData.weapon
+    )
+      updateBotWeapon(e.model, e, this.clock);
+    if (
+      gloveMatch(this) &&
       (presentStone(this, e) || presentRagdoll(this, e, dt))
     ) {
       presentGloveStates(this, e);
@@ -2745,14 +2826,20 @@ export class Game {
         16,
         dt,
       );
+      const castLean = gloveMatch(this)
+        ? abilityPose(
+            GLOVES[e.activeWeapon]?.key,
+            this.clock - (e.gloveCastTime ?? -10),
+          ).lean
+        : 0;
       m.parts.upperBody.rotation.x = THREE.MathUtils.damp(
         m.parts.upperBody.rotation.x,
-        crouch
+        (crouch
           ? -0.55
           : e.dashTime > 0
             ? -0.18
             : clamp(-forward * 0.006, -0.07, 0.07) +
-              hitPulse * Math.cos((e.hitDirection || 0) - e.yaw),
+              hitPulse * Math.cos((e.hitDirection || 0) - e.yaw)) + castLean,
         16,
         dt,
       );
@@ -2827,6 +2914,10 @@ export class Game {
     for (let i = this.effects.length - 1; i >= 0; i--) {
       const e = this.effects[i];
       e.life -= dt;
+      if (e.brick) {
+        e.life = Math.min(e.life, e.brick.life);
+        animateBrick(e.mesh, e.life, this.clock);
+      }
       if (e.velocity) {
         if (e.gravity) e.velocity.y -= 8 * dt;
         e.mesh.position.addScaledVector(e.velocity, dt);
@@ -3061,20 +3152,14 @@ export class Game {
       if (gloveMatch(this) && !this.headless)
         updateOrbitCamera(this, this.camera.position.clone(), dt);
     } else {
-      const follow =
-        this.entities.find((e) => e.alive && e.team === 0) ||
-        this.entities.find((e) => e.alive);
-      if (follow) {
-        this.camera.position.lerp(
-          v3(follow.x + 4, follow.y + 4, follow.z + 4),
-          Math.min(1, dt * 3),
-        );
-        this.camera.lookAt(follow.x, follow.y + 1, follow.z);
-      }
+      updateSpectatorCamera(this, dt);
     }
     if (gloveMatch(this) && !this.headless) {
       if ((this.cameraZoom || 0) > 0.3 && !p.model) {
-        p.model = createCharacter(p.team, p.name);
+        p.model = createCharacter(p.team, p.name, {
+          unarmed: gloveMatch(this),
+          nametag: false,
+        });
         p.model.group.name = "local-third-person-avatar";
         this.scene.add(p.model.group);
       }

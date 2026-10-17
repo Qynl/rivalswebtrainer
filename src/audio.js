@@ -1,3 +1,4 @@
+import { releaseEndedNodes } from "./audio-node-lifetime.js";
 import { spatialMix } from "./combat-feedback.js";
 const SPATIAL_LIFETIME = Object.freeze({
   rifle: 0.16,
@@ -50,6 +51,7 @@ export class GameAudio {
     g.gain.setValueAtTime(level * this.volume, this.ctx.currentTime);
     g.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
     o.connect(g).connect(this.output || this.ctx.destination);
+    releaseEndedNodes(o, g);
     o.start();
     o.stop(this.ctx.currentTime + duration);
   }
@@ -66,6 +68,7 @@ export class GameAudio {
     s.connect(f)
       .connect(g)
       .connect(this.output || this.ctx.destination);
+    releaseEndedNodes(s, f, g);
     s.start(0, Math.random() * 0.5);
     s.stop(this.ctx.currentTime + duration);
   }

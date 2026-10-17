@@ -25,10 +25,10 @@ export const EXTRA_COURTS = {
     ],
     theme: {
       name: "FOUNDRY",
-      wall: 0x859398,
+      wall: 0x587180,
       floor: 0x68777b,
       accent: 0xb98751,
-      trim: 0x394a53,
+      trim: 0x283d4c,
     },
   },
   courtyard: {
@@ -56,7 +56,7 @@ export const EXTRA_COURTS = {
     ],
     theme: {
       name: "COURTYARD",
-      wall: 0xb1a692,
+      wall: 0xb5a07d,
       floor: 0x979585,
       accent: 0x6e8871,
       trim: 0x6c756a,

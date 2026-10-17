@@ -1,3 +1,4 @@
+import { abilityPose } from "./gloves/ability-motion.js";
 import { gloveMotion } from "./gloves/motion.js";
 import { isGlove, GLOVES } from "./gloves/catalog.js";
 import { animateGlove } from "./gloves/model.js";
@@ -300,8 +301,10 @@ function updateGloveWeapon(model, e, clock) {
       GLOVES[id].windup,
       e.slapSequence || 1,
     ),
-    glove = socket.userData.weapon;
+    glove = socket.userData.weapon,
+    cast = abilityPose(GLOVES[id].key, clock - (e.gloveCastTime ?? -10));
   animateGlove(glove, {
+    gloveCastAge: clock - (e.gloveCastTime ?? -10),
     gloveSwingAge: age,
     gloveSequence: e.slapSequence || 1,
     time: clock,
@@ -311,16 +314,16 @@ function updateGloveWeapon(model, e, clock) {
   });
   if (p.upperBody)
     p.upperBody.rotation.y =
-      pose.side * (pose.wind * 0.22 - pose.strike * 0.35);
+      pose.side * (pose.wind * 0.22 - pose.strike * 0.35) + cast.ry * 0.18;
   glove.position.set(
-    0.15 + pose.wind * 0.26 - pose.strike * 0.55,
-    -0.14 + pose.wind * 0.14,
-    -0.46 - pose.strike * 0.25,
+    0.15 + pose.wind * 0.26 - pose.strike * 0.55 + cast.x,
+    -0.14 + pose.wind * 0.14 + cast.y,
+    -0.46 - pose.strike * 0.25 + cast.z,
   );
   glove.rotation.set(
-    -1.35 + pose.wind * 0.4,
-    -0.3 - pose.strike * 1.2,
-    -0.25 - pose.strike * 0.9,
+    -1.35 + pose.wind * 0.4 + cast.rx,
+    -0.3 - pose.strike * 1.2 + cast.ry,
+    -0.25 - pose.strike * 0.9 + cast.rz,
   );
   p.botRightGrip ||= new THREE.Vector3();
   p.botLeftGrip ||= new THREE.Vector3();

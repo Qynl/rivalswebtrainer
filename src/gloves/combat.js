@@ -1,11 +1,21 @@
-import { GloveFX, presentGloveAbility, gloveAbilitySound } from "./fx.js";
+import { recordIncomingImpact } from "./impact-history.js";
+import { recordRosterSlap } from "./scoreboard.js";
+import { recordPracticeImpact, resetPracticeTarget } from "./practice.js";
+import { duelBotIntent } from "./bot-dueling.js";
+import { denyGloveAbility } from "./readability.js";
+import { GloveFX, presentGloveAbility } from "./fx.js";
+import {
+  playGloveAbilityAudio,
+  playGloveImpactAudio,
+  playGloveSwingAudio,
+} from "./audio.js";
 import { gloveMoveScale, committedWish, lowGravity } from "./states.js";
-import { createBrickModel } from "./brick.js";
+import { createBrickModel, brickPlacement, alignBrickModel } from "./brick.js";
 import * as THREE from "three";
 import { GLOVES, GLOVE_ROSTER, DEFAULT_GLOVE, isGlove } from "./catalog.js";
 import { MOVEMENT, accelerate } from "../movement.js";
 import { moveBody, verticalStep, canOccupy, clamp } from "../physics.js";
-import { followRoute } from "../bot-tactics.js";
+import { selectOpponent, followRoute } from "../bot-tactics.js";
 const v = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 export const gloveMatch = (g) => isGlove(g.loadout?.[0]);
 export function blocked(body) {
@@ -95,8 +105,9 @@ export function beginSlap(g, body = g.player, id = g.loadout?.[0]) {
     const stats =
       body.context?.matchStats || (body.isPlayer ? g.matchStats : null);
     if (stats) stats.shots++;
+    if (!g.headless && body.arenaStats) body.arenaStats.shots++;
   }
-  g.audio?.play("slapSwing", body === g.player ? 0.85 : 0.4);
+  playGloveSwingAudio(g, body);
   return true;
 }
 export function advanceSlap(g, body, dt) {
@@ -249,21 +260,27 @@ export function applyImpact(
     context.aiming = false;
   }
   // The health/round engine remains the sole authority for elimination.
+  const healthBefore = target.health;
   g.damage(target, earn ? damage : (glove.effectDamage ?? 0), source);
+  recordPracticeImpact(g, source, healthBefore, target, velocity, earn);
+  const rewardAllowed = !(g.testDrive && source === g.player);
   if (earn) {
     const stats =
       source.context?.matchStats || (source.isPlayer ? g.matchStats : null);
     const reward = glove.key === "dual" ? 2 : 1;
+    recordRosterSlap(g, source, rewardAllowed ? reward : 0);
     if (stats) {
       const earned = stats.slaps ?? stats.hits ?? 0;
       stats.hits++;
-      stats.slaps = earned + reward;
+      stats.slaps = earned + (rewardAllowed ? reward : 0);
     }
-    if (source === g.player && !g.headless)
+    if (source === g.player && !g.headless && rewardAllowed)
       for (let i = 0; i < reward; i++) g.events.slap?.(g);
   }
   const event = {
     type: "gloveHit",
+    damage: Math.max(0, healthBefore - target.health),
+    healthAfter: target.health,
     source: source.id,
     victim: target.id,
     glove: glove.id,
@@ -273,7 +290,8 @@ export function applyImpact(
     position: [target.x, target.y + 1.1, target.z],
     round: g.round,
     time: g.clock,
-    earned: earn,
+    earned: earn && rewardAllowed,
+    direct: earn,
     roll,
     reflected,
   };
@@ -282,17 +300,25 @@ export function applyImpact(
   return true;
 }
 export function presentImpact(g, event, source, target) {
+  recordIncomingImpact(g, event, source, target);
   const glove = GLOVES[event.glove];
   if (!glove) return;
   const position = v(...event.position),
     color = new THREE.Color(glove.color).getHex();
   g.combatFX?.burst(position, color, glove.key === "bull" ? 16 : 10);
-  g.audio?.play("slapImpact", source === g.player ? 1 : 0.6);
+  playGloveImpactAudio(g, event, source, target);
   if (g.scene?.add && !g.headless) {
     g.gloveFX ||= new GloveFX(g.scene);
     g.gloveFX.hit(position, color, glove.key === "bull", glove.key);
+    if (["pull", "boomerang", "anchor"].includes(glove.key))
+      g.gloveFX.link(
+        source,
+        target,
+        color,
+        glove.key === "boomerang" ? 0.5 : 0.3,
+      );
   }
-  if (source === g.player && event.earned) {
+  if (source === g.player && (event.direct ?? event.earned)) {
     g.lastDiceRoll = event.roll || 0;
     g.slapImpact = 0.15;
     g.events.hit?.(false);
@@ -307,38 +333,30 @@ export function useGloveAbility(g, body = g.player, id = g.loadout?.[0]) {
   const glove = GLOVES[id];
   if (
     !glove ||
-    glove.activation !== "active" ||
-    blocked(body) ||
-    body.abilityCooldown > 0 ||
+    !body?.alive ||
     g.state !== "playing" ||
-    g.selectingLoadout
+    g.selectingLoadout ||
+    g.network
   )
     return false;
-  // Clients request abilities, but never move other players or invent effects locally.
-  if (g.network) return false;
+  const deny = (reason) => denyGloveAbility(g, body, reason);
+  if (glove.activation !== "active")
+    return deny("PASSIVE GLOVE · NO ABILITY KEY NEEDED");
+  if (blocked(body))
+    return deny(
+      body.stoneTime > 0 ? "STONE FORM ACTIVE" : "RECOVERING · WAIT TO CAST",
+    );
+  if (body.abilityCooldown > 0)
+    return deny(`READY IN ${Math.ceil(body.abilityCooldown)}s`);
   const origin = [body.x, body.y + 0.6, body.z];
   let target,
     destination,
     affected = 0;
   const yaw = body.context?.yaw ?? (body === g.player ? g.yaw : body.yaw);
   if (glove.key === "brick") {
-    if (!body.grounded) return false;
-    const position = {
-      x: body.x + Math.sin(yaw) * 0.9,
-      y: body.y,
-      z: body.z + Math.cos(yaw) * 0.9,
-    };
-    if (
-      !canOccupy(
-        { radius: 0.25, height: 0.2 },
-        position.x,
-        position.y,
-        position.z,
-        g.world.boxes,
-        0.2,
-      )
-    )
-      return false;
+    if (!body.grounded) return deny("LAND TO PLACE A TRAP");
+    const position = brickPlacement(body, yaw, g.world.boxes);
+    if (!position) return deny("PLACE ON A CLEAR, SUPPORTED SURFACE");
     const bounds = g.world.bounds;
     if (
       bounds &&
@@ -347,7 +365,7 @@ export function useGloveAbility(g, body = g.player, id = g.loadout?.[0]) {
         position.z < bounds.minZ ||
         position.z > bounds.maxZ)
     )
-      return false;
+      return deny("NO CLEAR SPACE FOR TRAP");
     g.gloveBricks ||= [];
     const owned = g.gloveBricks.filter((b) => b.owner === body && b.life > 0);
     if (owned.length >= 4) {
@@ -360,8 +378,9 @@ export function useGloveAbility(g, body = g.player, id = g.loadout?.[0]) {
     if (!g.headless && g.scene) {
       brick.mesh = createBrickModel();
       brick.mesh.position.set(position.x, position.y, position.z);
+      alignBrickModel(brick.mesh, g.world.boxes, position);
       g.scene.add(brick.mesh);
-      g.effects.push({ mesh: brick.mesh, life: 9, max: 9 });
+      g.effects.push({ mesh: brick.mesh, life: 9, max: 9, brick });
     }
   } else if (glove.key === "ghost") {
     body.ghostTime = 3.2;
@@ -381,7 +400,7 @@ export function useGloveAbility(g, body = g.player, id = g.loadout?.[0]) {
     if (body.markTime > 0 && body.gloveMark) {
       const m = body.gloveMark;
       if (!canOccupy(body, m.x, m.y, m.z, g.world.boxes, body.height))
-        return false;
+        return deny("RETURN POINT BLOCKED");
       Object.assign(body, m);
       body.vx = body.vy = body.vz = 0;
       destination = [body.x, body.y, body.z];
@@ -400,11 +419,11 @@ export function useGloveAbility(g, body = g.player, id = g.loadout?.[0]) {
     target = nearbyEnemies(g, body, 14).find(
       (e) => !(e.ragdollTime > 0) && !(e.ghostTime > 0),
     );
-    if (!target) return false;
+    if (!target) return deny("NO VISIBLE TARGET · 14 m");
     const dx = target.x - body.x,
       dz = target.z - body.z,
       d = Math.hypot(dx, dz);
-    if (d < 0.1) return false;
+    if (d < 0.1) return deny("TARGET TOO CLOSE");
     body.vx = (dx / d) * 22;
     body.vz = (dz / d) * 22;
     body.boostTime = 0.55;
@@ -456,7 +475,11 @@ export function useGloveAbility(g, body = g.player, id = g.loadout?.[0]) {
       body.x = x;
       body.z = z;
     }
-    if (Math.hypot(body.x - start.x, body.z - start.z) < 0.25) return false;
+    if (Math.hypot(body.x - start.x, body.z - start.z) < 0.25) {
+      body.x = start.x;
+      body.z = start.z;
+      return deny("BLINK PATH BLOCKED");
+    }
     destination = [body.x, body.y, body.z];
   } else if (glove.key === "swapper") {
     target = slapTargets(g, body, glove, 20, 0.93).find(
@@ -464,7 +487,7 @@ export function useGloveAbility(g, body = g.player, id = g.loadout?.[0]) {
         canOccupy(body, e.x, e.y, e.z, g.world.boxes, body.height) &&
         canOccupy(e, body.x, body.y, body.z, g.world.boxes, e.height),
     );
-    if (!target) return false;
+    if (!target) return deny("AIM AT A CLEAR TARGET · 20 m");
     const a = { x: body.x, y: body.y, z: body.z };
     Object.assign(body, { x: target.x, y: target.y, z: target.z });
     Object.assign(target, a);
@@ -492,7 +515,7 @@ export function useGloveAbility(g, body = g.player, id = g.loadout?.[0]) {
   };
   if (g.emitGlove) g.emitGlove(event);
   else {
-    g.audio?.play(gloveAbilitySound(glove.key));
+    playGloveAbilityAudio(g, event);
     g.combatFX?.burst(
       v(...event.position),
       new THREE.Color(glove.color).getHex(),
@@ -508,14 +531,11 @@ export function updateGloveBot(g, e, dt) {
     ragdollStep(g, e, dt);
     g.animateBot(e, dt);
     if (g.range && g.clock >= e.respawnAt) {
-      e.alive = true;
-      e.health = e.maxHealth;
-      e.ragdollTime = e.slapGrace = 0;
-      e.y = 0;
-      e.vy = 0;
-      e.grounded = true;
-      e.x = clamp(e.x, -12, 12);
-      e.z = -10;
+      if (!e.practiceSpawn) {
+        e.x = clamp(e.x, -12, 12);
+        e.z = -10;
+      }
+      resetPracticeTarget(e);
     }
     return;
   }
@@ -529,7 +549,10 @@ export function updateGloveBot(g, e, dt) {
   e.height = 1.9;
   advanceSlap(g, e, dt);
   if (e.target) {
-    e.vx = Math.sin(g.clock * 1.1 + e.seed) * 2.2;
+    e.vx =
+      e.practiceMode === "stationary"
+        ? 0
+        : Math.sin(g.clock * 1.1 + e.seed) * 2.2;
     e.vz = 0;
     moveBody(e, e.vx * dt, 0, g.world.boxes);
     verticalStep(e, dt, g.world.boxes);
@@ -542,10 +565,16 @@ export function updateGloveBot(g, e, dt) {
       other.team !== e.team &&
       (!(other.ghostTime > 0) || Math.hypot(other.x - e.x, other.z - e.z) < 2),
   );
-  const target = enemies.sort(
-    (a, b) =>
-      Math.hypot(a.x - e.x, a.z - e.z) - Math.hypot(b.x - e.x, b.z - e.z),
-  )[0];
+  if (
+    g.clock >= (e.gloveRetargetAt || 0) ||
+    !enemies.includes(e.targetEntity)
+  ) {
+    e.gloveRetargetAt = g.clock + 0.25;
+    e.targetEntity = selectOpponent(e, enemies, (other) =>
+      g.hasLOS(g.eye(e), g.eye(other)),
+    ).target;
+  }
+  const target = e.targetEntity;
   if (!target) {
     g.animateBot(e, dt);
     return;
@@ -554,9 +583,17 @@ export function updateGloveBot(g, e, dt) {
   const dx = target.x - e.x,
     dz = target.z - e.z,
     distance = Math.hypot(dx, dz) || 1;
-  e.yaw = Math.atan2(-dx, -dz);
   const los = g.hasLOS(g.eye(e), g.eye(target));
-  let wish = { x: dx / distance, z: dz / distance };
+  const intent = duelBotIntent(e, target, glove, {
+    now: g.clock,
+    dt,
+    difficulty: g.config.difficulty,
+    visible: los,
+    entities: g.entities,
+  });
+  e.yaw = intent.yaw;
+  e.gloveTactic = intent.tactic;
+  let wish = intent.wish;
   if (!los) {
     e.pathTimer = (e.pathTimer || 0) - dt;
     if (e.pathTimer <= 0) {
@@ -565,21 +602,7 @@ export function updateGloveBot(g, e, dt) {
     }
     wish = followRoute(e, e.path || []);
   }
-  const difficulty =
-    g.config.difficulty === "elite"
-      ? 1.05
-      : g.config.difficulty === "easy"
-        ? 0.72
-        : 0.9;
-  let speed = MOVEMENT.runSpeed * difficulty * gloveMoveScale(e, glove);
-  const preferred = glove.range * 0.72;
-  if (distance < preferred * 0.65) {
-    wish = { x: -dx / distance, z: -dz / distance };
-    speed *= 0.7;
-  } else if (distance < preferred && los) {
-    wish = { x: (-dz / distance) * e.strafe, z: (dx / distance) * e.strafe };
-    speed *= 0.55;
-  }
+  const speed = MOVEMENT.runSpeed * intent.speed * gloveMoveScale(e, glove);
   wish = committedWish(e, glove, wish);
   accelerate(e, wish, speed, dt);
   moveBody(e, e.vx * dt, e.vz * dt, g.world.boxes);
@@ -590,9 +613,13 @@ export function updateGloveBot(g, e, dt) {
     e.grounded = false;
     e.jumps = 1;
   }
-  if (los && distance < glove.range + 0.1 && Math.abs(target.y - e.y) < 2.2)
-    beginSlap(g, e, glove.id);
-  if (glove.activation === "active" && !(e.abilityCooldown > 0)) {
+  if (intent.attack) beginSlap(g, e, glove.id);
+  if (
+    glove.activation === "active" &&
+    !(e.abilityCooldown > 0) &&
+    intent.reacted &&
+    intent.facing
+  ) {
     if (
       (glove.key === "default" && distance > 4 && distance < 13) ||
       (glove.key === "flash" && distance > 6 && distance < 15) ||
@@ -602,7 +629,9 @@ export function updateGloveBot(g, e, dt) {
       (glove.key === "ghost" && distance > 4 && distance < 12) ||
       (["golden", "reverse", "stun"].includes(glove.key) && distance < 5) ||
       (glove.key === "za_hando" && distance > 4 && distance < 9) ||
-      (glove.key === "magnet" && distance > 5 && distance < 14) ||
+      (glove.key === "magnet" &&
+        distance > glove.range + 0.4 &&
+        distance < 14) ||
       (glove.key === "anchor" && !(e.markTime > 0)) ||
       (glove.key === "space" && (target.y > e.y + 0.5 || distance < 6)) ||
       (glove.key === "acrobat" && distance > 4 && distance < 10) ||

@@ -13,7 +13,7 @@ npm run dev
 
 Open the printed Vite address (normally port **5173**). Choose **1v1, 2v2 or 3v3**, an arena and bot difficulty, then **Enter the Arena**. All other players in offline matches are bots. Matches retain **150 health, five-second preparation countdowns, team elimination and first to five rounds**; this is not a continuous FFA conversion.
 
-Choose **Practice** to learn timing against moving targets. Choose **Multiplayer** to create/join a browser-hosted room with an invite link/code, select an unlocked glove, ready up and start. No accounts, gameplay backend deployment, manual ICE exchange or visitor configuration are required. The host must keep the game open. Network/firewall and public signaling availability can still prevent connections; see [network limits](docs/multiplayer.md).
+Choose **Practice** to learn timing against moving targets. Pause to open the **Practice Lab**: borrow any glove, set stationary/strafing/fighting opponents and target count, choose the sparring glove, then reset with **R**. Applying a sandbox setup explicitly enables no-reward Test Drive without changing saved unlocks/equipment; ordinary practice still earns confirmed slaps. Choose **Multiplayer** to create/join a browser-hosted room with an invite link/code, select an unlocked glove, ready up and start. No accounts, gameplay backend deployment, manual ICE exchange or visitor configuration are required. The host must keep the game open. Network/firewall and public signaling availability can still prevent connections; see [network limits](docs/multiplayer.md).
 
 An embedded preview needs pointer-lock permission. If capture is blocked, open the preview in a separate tab.
 
@@ -29,6 +29,10 @@ An embedded preview needs pointer-lock permission. If capture is blocked, open t
 | Mouse wheel              | Zoom out to third person / back into first person |
 | V                        | Toggle first person / third person                |
 | M during preparation     | Choose **one** unlocked glove                     |
+| Tab (hold)               | Match roster, real slaps and K/D                  |
+| R in practice            | Reset health, targets, cooldowns and run metrics  |
+| ← / → after elimination  | Spectate previous/next living teammate           |
+| Wheel after elimination  | Independent spectator zoom                       |
 | Escape                   | Pause/settings/leave; online matches continue     |
 
 There are no accessible guns, ammo, reloads, throwable utilities or four-slot loadout selection in glove matches. Number keys and weapon-wheel requests cannot equip hidden compatibility slots. The old firearm catalog remains internal to support earlier engine/network regression tests.
@@ -79,9 +83,11 @@ See [implementation, balancing adaptations, research and validation](docs/glove-
 - Rounded, articulated five-finger glove rigs with original textile/PBR finishes, contact-aligned windup/strike/recovery, alternating wrist poses, sweep ribbons and differentiated heavy hits. The collection preview supports dragging or arrow-key rotation.
 - Wheel zoom and **V** switch between first person and a full-body, animated shoulder view. The camera retracts around walls/floors (including rotated cover); zoom never changes hit origins or rotates aim. First person remains the initial view; the chosen distance stays through rounds during this game session.
 - Distinct synthesized ability sound families, teleport departure/arrival rings, expanding EMP and inward pull waves, status auras, icy impact mist and Default’s drifting gas trail. Small activation notices confirm actual abilities; area-effect notices count authority-confirmed affected enemies, not invented hits.
+- Fifteen distinct ability gestures, different Golden/Reverse/Space silhouettes, advisory visible-target range/LOS cues, and clear cast rejections; these never alter hit authority.
+- Incoming-impact bearings, an actual-health damage chip, match roster and accepted-hit elimination recaps. Enemy remaining health/hidden positions are not exposed; spectators stay on living teammates.
 - Bounded pooled impacts and particles, genuine hit confirmation and projected damage numbers. Cosmetic effects never resolve damage or mint progression.
-- Fifteen-node, constrained articulated **visual ragdolls**, driven by the collision-resolved gameplay body. Limbs do not become separate authoritative damage hitboxes. A separate rock mesh represents Diamond's protected form.
-- Bots navigate the actual arenas, close distance, strafe, slap with windups, use abilities, jump to elevated opponents and get knocked down. They do not fire invisible guns. Their glove tier follows your selected glove rather than giving beginners arbitrary late-game equipment.
+- Fifteen-node, constrained articulated **visual ragdolls**, driven by the collision-resolved gameplay body. Ragdolls retain each actor’s detailed kit, skin, boots and actual held glove (including both Dual hands), with real surface support and cosmetic torso exclusion. Limbs do not become separate authoritative damage hitboxes. A separate rock mesh represents Diamond’s protected form; form recovery preserves hidden original equipment.
+- Bots navigate the actual arenas, close distance, strafe, slap with windups, use abilities, jump to elevated opponents and get knocked down. They do not fire invisible guns. Their glove tier follows your selected glove rather than giving beginners arbitrary late-game equipment. Tiered reactions, bounded turning, recovery circling, protection-aware spacing and visible-opponent selection make their melee decisions less robotic.
 - Both browser-hosted WebRTC and optional dedicated matches share the same combat implementation. Protocol **5**, glove snapshot format **4** (legacy firearm format **3** remains supported); both players must refresh and create a fresh lobby after updating.
 
 ## Production / offline
@@ -105,4 +111,4 @@ npm run test:gloves      # Build + glove unit suite + focused browser/real-RTC t
 
 The browser command requires Playwright-compatible Chromium (`BROWSER_EXECUTABLE` can point to an installed binary). The focused suite includes a real static-site, browser-worker-hosted WebRTC match using local test signaling; the test signaling override is not a user deployment requirement. Synthetic scripts do not benchmark public Internet latency or GPU frame rates.
 
-Historical gun-specific browser scenarios in `tests/` describe the previous UI/arsenal and are not current menu acceptance tests. Their unit-level foundations remain covered by `npm test`. Current glove UI/combat/network coverage lives in `tests/gloves*.spec.js` and `tests/gloves.test.js`.
+Historical gun-specific browser scenarios in `tests/` describe the previous UI/arsenal and are not current menu acceptance tests. Their unit-level foundations remain covered by `npm test`. Current glove UI/combat/network coverage lives in `tests/gloves*.spec.js`, `tests/glove-experience.spec.js` and `tests/glove*.test.js`.

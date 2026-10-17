@@ -12,6 +12,8 @@ import {
   gloveCategory,
   gloveLoadout,
 } from "./catalog.js";
+import { Scoreboard } from "./Scoreboard.jsx";
+import { PracticeLab } from "./PracticeLab.jsx";
 import { progression } from "./progression.js";
 import { Multiplayer, OnlineButton } from "../net/Multiplayer.jsx";
 import { multiplayer } from "../net/client.js";
@@ -161,6 +163,9 @@ function MatchHUD({ h, profile }) {
     status = h.gloveStatus;
   return (
     <div className="slap-hud">
+      {h.testDrive && (
+        <div className="slap-trial-label">TEST DRIVE · NO SAVED REWARDS</div>
+      )}
       <header className="slap-match-header">
         <span>
           {h.map} <small>{h.round}</small>
@@ -175,12 +180,43 @@ function MatchHUD({ h, profile }) {
           <small>{profile.slaps.toLocaleString()} SLAPS</small>
         </span>
       </header>
-      <div className={`slap-crosshair ${h.marker ? "confirmed" : ""}`}>
-        <i />
-        <i />
-        <i />
-        <i />
+      {h.alive !== false && (
+        <div
+          className={`slap-crosshair ${h.marker ? "confirmed" : ""} reach-${h.gloveReach?.state || "none"}`}
+        >
+          <i />
+          <i />
+          <i />
+          <i />
+        </div>
+      )}
+      <div className="slap-damage-bearings" aria-hidden="true">
+        {h.arcs?.map(
+          (arc, i) =>
+            arc.opacity > 0 && (
+              <svg
+                key={i}
+                viewBox="-90 -90 180 180"
+                style={{
+                  transform: `rotate(${arc.bearing}rad)`,
+                  opacity: arc.opacity,
+                }}
+              >
+                <path d="M -23 -68 Q 0 -80 23 -68" />
+                <path
+                  className="slap-bearing-tip"
+                  d="M -4 -65 L 0 -59 L 4 -65"
+                />
+              </svg>
+            ),
+        )}
       </div>
+      {h.gloveReach && !h.marker && (
+        <div className={`slap-reach ${h.gloveReach.state}`}>
+          {h.gloveReach.label}
+          <small>{h.gloveReach.distance.toFixed(1)} m</small>
+        </div>
+      )}
       {h.marker && (
         <div className="slap-confirm" key={h.markerPulse}>
           {h.marker === "elimination"
@@ -212,7 +248,7 @@ function MatchHUD({ h, profile }) {
           <p>{h.banner.subtitle}</p>
         </div>
       )}
-      {status && (
+      {status && h.alive !== false && (
         <div className={`slap-status ${status === "CHILLED" ? "chilled" : ""}`}>
           {status}
           <small>
@@ -256,14 +292,23 @@ function MatchHUD({ h, profile }) {
         ))}
       </aside>
       <footer className="slap-match-footer">
-        <div className="slap-health">
-          <small>HEALTH</small>
+        <div
+          className={`slap-health ${h.alive !== false && h.health <= 45 ? "critical" : ""}`}
+        >
+          <small>{h.alive === false ? "ELIMINATED" : "HEALTH"}</small>
           <strong>
             {h.health}
             <span>/ 150</span>
           </strong>
           <div>
-            <i style={{ width: `${h.health / 1.5}%` }} />
+            <i
+              className="slap-health-chip"
+              style={{ width: `${(h.healthTrail ?? h.health) / 1.5}%` }}
+            />
+            <i
+              className="slap-health-current"
+              style={{ width: `${h.health / 1.5}%` }}
+            />
           </div>
           <p>
             {h.team?.map((t) => (
@@ -280,14 +325,26 @@ function MatchHUD({ h, profile }) {
             <h3>{glove.name}</h3>
             <p>{glove.ability}</p>
           </section>
-          <div className="slap-ability">
+          <div
+            className="slap-ability"
+            style={{
+              "--ready": `${glove.activation === "passive" ? 100 : 100 * (1 - Math.min(1, (h.gloveCooldown || 0) / (glove.abilityCooldown || 1)))}%`,
+            }}
+          >
+            {glove.activation === "active" && (
+              <div className="slap-cooldown-track" aria-hidden="true">
+                <i />
+              </div>
+            )}
             <kbd>{glove.activation === "active" ? "E" : "∞"}</kbd>
             <span>
-              {glove.activation === "passive"
-                ? "PASSIVE"
-                : h.gloveCooldown > 0
-                  ? `${h.gloveCooldown.toFixed(1)}s`
-                  : "READY"}
+              {h.alive === false
+                ? "OUT"
+                : glove.activation === "passive"
+                  ? "PASSIVE"
+                  : h.gloveCooldown > 0
+                    ? `${h.gloveCooldown.toFixed(1)}s`
+                    : "READY"}
             </span>
           </div>
         </div>
@@ -295,9 +352,60 @@ function MatchHUD({ h, profile }) {
       <div className="slap-game-controls">
         LMB <b>SLAP</b> · E / RMB <b>ABILITY</b> · C / SHIFT <b>SLIDE</b> ·
         SPACE <b>JUMP</b> · V <b>VIEW</b> · WHEEL <b>ZOOM</b> ·{" "}
-        {h.canSelect ? "M GLOVE · " : ""}ESC <b>PAUSE</b>
+        {h.range ? (
+          <>
+            R <b>RESET</b> ·{" "}
+          </>
+        ) : null}
+        {h.canSelect ? "M GLOVE · " : ""}
+        {!h.range && (
+          <>
+            TAB <b>ROSTER</b> ·{" "}
+          </>
+        )}
+        ESC <b>PAUSE</b>
       </div>
       {h.hurt > 0 && <div className="slap-hurt" />}
+      {h.alive === false && !h.range && (
+        <aside className="slap-spectator" aria-label="Spectator camera">
+          {h.deathRecap && (
+            <div className="slap-death-recap">
+              <span>
+                ELIMINATED BY <b>{h.deathRecap.source}</b>
+              </span>
+              <strong>
+                {h.deathRecap.reflected ? "Reflected " : ""}
+                {GLOVES[h.deathRecap.glove]?.name || "Glove"} ·{" "}
+                {h.deathRecap.damage} DMG
+              </strong>
+              <small>
+                FINAL LAUNCH {h.deathRecap.launch.toFixed(1)} m/s · RECENT{" "}
+                {h.deathRecap.hits} {h.deathRecap.hits === 1 ? "HIT" : "HITS"} /{" "}
+                {h.deathRecap.total} DMG
+              </small>
+            </div>
+          )}
+          <span className="slap-kicker">
+            {h.spectator ? "SPECTATING TEAMMATE" : "ROUND IN PROGRESS"}
+          </span>
+          <strong>{h.spectator?.name || "Waiting for the next round"}</strong>
+          {h.spectator && (
+            <small>
+              {GLOVES[h.spectator.glove]?.name || "Glove"} · {h.spectator.index}{" "}
+              / {h.spectator.count}
+              {h.spectator.count > 1 && " · ← → SWITCH"} · WHEEL ZOOM
+            </small>
+          )}
+        </aside>
+      )}
+      {h.scoreboard && (
+        <Scoreboard
+          rows={h.roster || []}
+          team={h.playerTeam}
+          score={h.score}
+          round={h.round}
+        />
+      )}
       {h.fps > 0 && game?.settings.showFps && (
         <span className="slap-fps">{h.fps} FPS</span>
       )}
@@ -356,14 +464,15 @@ export function GloveApp() {
   useEffect(() => {
     ui.set({ loadout: gloveLoadout(profile.selected) });
   }, [profile.selected]);
-  const start = (range = false) => {
+  const start = (range = false, trial = null) => {
     if (!game || !s.ready) return;
     game.start({
       map: MAPS[map].id,
       mode,
       difficulty,
       range,
-      loadout: gloveLoadout(profile.selected),
+      testDrive: !!trial,
+      loadout: gloveLoadout(trial || profile.selected),
     });
   };
   const pick = (id) => {
@@ -621,6 +730,13 @@ export function GloveApp() {
                       : "EQUIP GLOVE →"}
                   </button>
                 )}
+                <button
+                  className="slap-test-drive"
+                  onClick={() => start(true, inspect)}
+                >
+                  TRY IN PRACTICE ↗
+                  <small>Borrow this glove · no unlock or saved rewards</small>
+                </button>
               </div>
             </section>
           </div>
@@ -759,6 +875,9 @@ export function GloveApp() {
                 ? "Your online match continues while this menu is open."
                 : "Your offline match is paused."}
             </p>
+            {game?.range && !game.network && (
+              <PracticeLab game={game} stats={h.practiceStats} />
+            )}
             <button
               id="resume-button"
               className="slap-primary"

@@ -1,3 +1,5 @@
+import { batchFixedMeshes } from "../batching.js";
+import { abilityPose } from "./ability-motion.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { gloveFinish, createSweep } from "./finishes.js";
 import { gloveMotion, slapPose } from "./motion.js";
@@ -194,6 +196,20 @@ export function createGloveModel(id, options = {}) {
     box(palm, 0.46, 0.12, 0.24, 0, 0.02, 0, dark);
   }
   addGloveDetails(glove, { palm, wrist, box, main, dark, trim });
+  // Preserve every articulated joint; merge only fixed same-material siblings.
+  // This keeps the exact triangles, textures and animation with fewer submissions.
+  const batching = { before: 0, after: 0 };
+  if (options.batch !== false) {
+    const bones = [];
+    wrist.traverse((o) => {
+      if (o.isGroup) bones.push(o);
+    });
+    for (const bone of bones) {
+      const result = batchFixedMeshes(bone, { opaqueOnly: true });
+      batching.before += result.before;
+      batching.after += result.after;
+    }
+  }
   const sweep = createSweep(glove.color);
   root.add(sweep);
   // Palm faces left/front in first person, with visible open fingers.
@@ -204,6 +220,7 @@ export function createGloveModel(id, options = {}) {
     id,
     weaponId: id,
     glove: true,
+    batching,
     gloveRig: { wrist, palm, fingers, trim, main, sweep },
     basePosition: root.position.clone(),
     baseRotation: root.rotation.clone(),
@@ -237,25 +254,27 @@ export function animateGlove(model, state) {
     state.shake !== false && state.gloveImpact > 0.1
       ? Math.min(rawAge, glove.windup + 0.008)
       : rawAge;
-  const p = gloveMotion(glove.key, age, glove.windup, state.gloveSequence ?? 1);
+  const p = gloveMotion(glove.key, age, glove.windup, state.gloveSequence ?? 1),
+    cast = abilityPose(glove.key, state.gloveCastAge);
   const bob =
     state.shake === false
       ? 0
       : Math.sin(state.phase || 0) *
         Math.min(0.012, (state.speed || 0) * 0.0015);
   model.position.copy(model.userData.basePosition);
-  model.position.x += p.x;
-  model.position.y += p.y + bob - (state.gloveRagdoll > 0 ? 0.24 : 0);
-  model.position.z += p.z + (state.slide ? 0.09 : 0);
+  model.position.x += p.x + cast.x;
+  model.position.y += p.y + cast.y + bob - (state.gloveRagdoll > 0 ? 0.24 : 0);
+  model.position.z += p.z + cast.z + (state.slide ? 0.09 : 0);
   model.rotation.copy(model.userData.baseRotation);
-  model.rotation.y += p.ry;
-  model.rotation.z += p.rz;
-  model.rotation.x += p.rx;
+  model.rotation.y += p.ry + cast.ry;
+  model.rotation.z += p.rz + cast.rz;
+  model.rotation.x += p.rx + cast.rx;
   const stop = state.shake === false ? 0 : Math.max(0, state.gloveImpact || 0);
   model.position.z += Math.sin(stop * 100) * stop * 0.18;
   for (let i = 0; i < 5; i++) {
     const digit = rig.fingers[i],
-      curl = p.curl * (i === 4 ? 0.55 : 1 + i * 0.07);
+      curl =
+        Math.max(-0.1, p.curl + cast.curl) * (i === 4 ? 0.55 : 1 + i * 0.07);
     digit.rotation.x = curl;
     for (const [j, bone] of (digit.userData.phalanges || []).entries())
       bone.rotation.x = curl * (j === 0 ? 1.25 : 0.8);
@@ -268,14 +287,7 @@ export function animateGlove(model, state) {
   rig.wrist.rotation.x =
     (state.gloveRagdoll > 0 ? -0.3 : 0) +
     Math.sin((state.time || 0) * 1.7) * 0.008;
-  const castAge = state.gloveCastAge ?? 10,
-    cast =
-      castAge >= 0 && castAge < 0.55 ? Math.sin((castAge / 0.55) * Math.PI) : 0;
-  if (cast) {
-    model.position.y += cast * 0.09;
-    model.rotation.x -= cast * 0.28;
-    rig.wrist.rotation.z = cast * 0.2;
-  } else rig.wrist.rotation.z = 0;
+  rig.wrist.rotation.z = cast.rz * 0.3;
   rig.trim.emissiveIntensity =
     0.18 +
     (state.gloveStone > 0 ? 0.6 : 0) +

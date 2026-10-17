@@ -1,3 +1,6 @@
+import { spectatorInfo } from "./gloves/spectating.js";
+import { matchRoster } from "./gloves/scoreboard.js";
+import { gloveReachCue } from "./gloves/readability.js";
 import { progression } from "./gloves/progression.js";
 import { presentationEqual } from "./presentation-equality.js";
 import { HealthTrail, magazineFraction } from "./vitals-presentation.js";
@@ -171,7 +174,12 @@ function snapshot(g, force = false) {
     vitalsPlayer !== p,
   );
   vitalsPlayer = p;
+  if (g.clock >= (g.gloveReachAt ?? -1) || force) {
+    g.gloveReach = gloveReachCue(g);
+    g.gloveReachAt = g.clock + 0.08;
+  }
   hud.set({
+    gloveReach: g.gloveReach,
     gloveNotice: g.gloveNotice?.until > g.clock ? g.gloveNotice.text : null,
     gloveStatus:
       p.stoneTime > 0
@@ -212,6 +220,9 @@ function snapshot(g, force = false) {
         remaining: Math.ceil(p.markTime),
       };
     })(),
+    alive: !!p.alive,
+    spectator: !p.alive ? spectatorInfo(g) : null,
+    deathRecap: !p.alive ? g.deathRecap : null,
     health: Math.ceil(p.health),
     healthTrail: trailingHealth,
     magazineFraction: magazineFraction(a.mag, w.mag, w.slot),
@@ -333,6 +344,12 @@ function snapshot(g, force = false) {
       healing: utility.type === "heal",
     },
     stats: { ...g.matchStats },
+    testDrive: !!g.testDrive,
+    practiceOptions: g.range ? { ...g.practiceOptions } : null,
+    practiceStats: g.range ? { ...g.practiceStats } : null,
+    scoreboard: !g.range && g.state !== "paused" && g.keys.has("Tab"),
+    roster: !g.range && g.keys.has("Tab") ? matchRoster(g) : [],
+    playerTeam: p.team,
     range: g.range,
     map: g.range
       ? "PRACTICE RANGE"
@@ -353,6 +370,7 @@ function snapshot(g, force = false) {
 }
 export const events = {
   slap(g) {
+    if (g.testDrive) return;
     g.slapReceipt = (g.slapReceipt || 0) + 1;
     progression.award(`offline:${g.slapSessionId}:${g.slapReceipt}`);
   },

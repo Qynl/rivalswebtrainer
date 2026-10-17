@@ -526,9 +526,22 @@ test("real RTC carries visible Brick trap geometry and Ghost invisibility throug
           const b = [...window.__arena.network.zones.values()].find(
             (z) => z.type === "brick",
           );
-          return { type: b.type, children: b.mesh.children.length };
+          return {
+            type: b.type,
+            children: b.mesh.children.length,
+            signal: !!b.mesh.userData.brickRig,
+            vertices: b.mesh.children.reduce(
+              (sum, o) => sum + (o.geometry?.attributes.position.count || 0),
+              0,
+            ),
+          };
         }),
-      ).toEqual({ type: "brick", children: 5 });
+      ).toEqual({
+        type: "brick",
+        children: 3,
+        signal: true,
+        vertices: expect.any(Number),
+      });
     await expect
       .poll(() =>
         page.evaluate(
@@ -685,6 +698,163 @@ test("real RTC Default launches from rest in third person and both peers see abi
     expect(
       await page.evaluate(() => window.__arena.gloveNotice?.text),
     ).toContain("BOOSTING");
+    expect(requests).toEqual([]);
+    expect(errors).toEqual([]);
+  } finally {
+    await guest.close();
+  }
+});
+
+test("real RTC denied Magnet casts explain the authority decision only to the correct player, with no cooldown or rewards", async ({
+  browser,
+  page,
+}) => {
+  const guest = await browser.newPage({
+    viewport: { width: 800, height: 600 },
+  });
+  const requests = [],
+    errors = [];
+  try {
+    await expandedRoom(
+      page,
+      guest,
+      "glove_magnet",
+      "glove_magnet",
+      requests,
+      errors,
+    );
+    await expandedAbility(page);
+    await expect
+      .poll(() => page.evaluate(() => window.__arena.gloveNotice?.text || ""), {
+        timeout: 10000,
+      })
+      .toContain("NO VISIBLE TARGET");
+    expect(
+      await guest.evaluate(() => window.__arena.gloveNotice?.text || ""),
+    ).toBe("");
+    for (const p of [page, guest]) {
+      expect(
+        await p.evaluate(() => {
+          const g = window.__arena,
+            n = g.network;
+          return {
+            trial: !!g.testDrive,
+            cooldown: n.latest.players.find((p) => p.id === n.id).dashCooldown,
+            slaps: n.latest.players.reduce(
+              (s, p) => s + (p.stats.slaps || 0),
+              0,
+            ),
+          };
+        }),
+      ).toMatchObject({ trial: false, cooldown: 0, slaps: 0 });
+    }
+    const filtered = await guest.evaluate(() => {
+      const g = window.__arena,
+        n = g.network,
+        start = n.lastEvent;
+      n.processEvents([
+        {
+          type: "gloveDenied",
+          id: start + 1,
+          player: "not-self",
+          round: n.round,
+          reason: "WRONG PLAYER",
+        },
+        {
+          type: "gloveDenied",
+          id: start + 2,
+          player: n.id,
+          round: n.round - 1,
+          reason: "STALE ROUND",
+        },
+      ]);
+      // Keep this fixture from consuming IDs that the real authority will emit next.
+      n.lastEvent = start;
+      return g.gloveNotice?.text || "";
+    });
+    expect(filtered).toBe("");
+    await expandedAbility(guest);
+    await expect
+      .poll(
+        () => guest.evaluate(() => window.__arena.gloveNotice?.text || ""),
+        { timeout: 10000 },
+      )
+      .toContain("NO VISIBLE TARGET");
+    expect(requests).toEqual([]);
+    expect(errors).toEqual([]);
+  } finally {
+    await guest.close();
+  }
+});
+
+test("RTC viewers get team-relative nameplates and third-person avatars reattach after snapshot rebuilds", async ({
+  browser,
+  page,
+}) => {
+  const guest = await browser.newPage({
+      viewport: { width: 800, height: 600 },
+    }),
+    requests = [],
+    errors = [];
+  try {
+    await expandedRoom(
+      page,
+      guest,
+      "glove_default",
+      "glove_default",
+      requests,
+      errors,
+    );
+    for (const p of [page, guest]) {
+      const observed = await p.evaluate(() => {
+        const g = window.__arena,
+          n = g.network;
+        const sprites = (model) => {
+          let count = 0;
+          model?.group.traverse((o) => {
+            if (o.isSprite) count++;
+          });
+          return count;
+        };
+        const enemy = [...n.entities.values()].find((e) => e !== g.player);
+        const enemyTags = sprites(enemy.model);
+        const ally = g.createEntity(
+          g.player.team,
+          { x: 0, z: 0 },
+          99,
+          false,
+          false,
+          "ALLY PROBE",
+        );
+        const allyTags = sprites(ally.model);
+        g.entities.pop();
+        g.scene.remove(ally.model.group);
+        g.disposeVisual(ally.model.group);
+        g.cameraZoom = 6;
+        g.updateCamera(1 / 60);
+        const oldModel = g.player.model;
+        // Rehydrate from the genuinely received authority body through the same
+        // build path used on a new round. No authority health/position is authored.
+        n.build(n.latest);
+        g.updateCamera(1 / 60);
+        g.renderWorld();
+        return {
+          team: g.player.team,
+          enemyTags,
+          allyTags,
+          rebuilt: g.player.model !== oldModel,
+          inScene: g.player.model?.group.parent === g.scene,
+          localTags: sprites(g.player.model),
+          count: g.entities.length,
+        };
+      });
+      expect(observed.enemyTags).toBe(0);
+      expect(observed.allyTags).toBe(1);
+      expect(observed.localTags).toBe(0);
+      expect(observed.rebuilt).toBe(true);
+      expect(observed.inScene).toBe(true);
+      expect(observed.count).toBe(2);
+    }
     expect(requests).toEqual([]);
     expect(errors).toEqual([]);
   } finally {

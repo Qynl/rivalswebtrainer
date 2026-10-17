@@ -1,3 +1,4 @@
+import { GloveLinks } from "./links.js";
 import * as THREE from "three";
 import { GLOVES } from "./catalog.js";
 const X = new THREE.Vector3(1, 0, 0);
@@ -106,6 +107,10 @@ export class GloveFX {
     pool.mesh.setColorAt(i, this.color.set(color));
     pool.mesh.instanceColor.needsUpdate = true;
     return s;
+  }
+  link(source, target, color, life = 0.35) {
+    this.links ||= new GloveLinks(this.scene);
+    this.links.emit(source, target, color, life);
   }
   hit(position, color, heavy = false, key = "") {
     if (key === "snow")
@@ -236,6 +241,7 @@ export class GloveFX {
   }
   update(dt, camera) {
     if (!Number.isFinite(dt) || dt < 0) return;
+    this.links?.update(dt);
     for (const [data, ray] of [
       [this.rings, false],
       [this.rays, true],
@@ -273,11 +279,13 @@ export class GloveFX {
     }
   }
   clear() {
+    this.links?.clear();
     for (const data of [this.rings, this.rays, this.puffs])
       for (const s of data.states) s.life = 0;
     this.update(0);
   }
   dispose() {
+    this.links?.dispose();
     for (const data of [this.rings, this.rays, this.puffs]) {
       data.mesh.removeFromParent();
       data.mesh.geometry.dispose();
@@ -286,16 +294,17 @@ export class GloveFX {
     }
   }
 }
+export function gloveActor(g, id) {
+  if (id === undefined || id === null) return null;
+  if (g.player && (g.player.id === id || g.player.netId === id))
+    return g.player;
+  return g.entities?.find((e) => e.id === id || e.netId === id) || null;
+}
 export function presentGloveAbility(g, event) {
   if (!g.scene?.add || g.headless) return;
   g.gloveFX ||= new GloveFX(g.scene);
   g.gloveFX.ability(event);
-  const source =
-    event.player === g.player?.id
-      ? g.player
-      : g.entities?.find(
-          (e) => e.id === event.player || e.netId === event.player,
-        );
+  const source = gloveActor(g, event.player);
   if (source && source === g.player) {
     const glove = GLOVES[event.glove];
     const names = {
@@ -320,20 +329,14 @@ export function presentGloveAbility(g, event) {
       until: g.clock + 1.1,
     };
   }
+  if (source && event.glove === "glove_magnet") {
+    const target = gloveActor(g, event.target);
+    g.gloveFX.link(source, target, GLOVES[event.glove].color, 0.55);
+  }
   if (source) {
     source.gloveCastTime = g.clock;
     source.gloveCastId = event.glove;
   }
 }
 
-export function gloveAbilitySound(key) {
-  if (key === "default") return "slapBlast";
-  if (["flash", "thanos", "swapper"].includes(key)) return "gloveBlink";
-  if (key === "stun") return "gloveEMP";
-  if (["za_hando", "magnet", "anchor"].includes(key)) return "glovePull";
-  if (key === "diamond" || key === "brick") return "gloveStone";
-  if (key === "ghost") return "gloveGhost";
-  if (key === "golden" || key === "reverse" || key === "space")
-    return "glovePower";
-  return "gloveRoll";
-}
+export { gloveAbilitySound } from "./audio.js";

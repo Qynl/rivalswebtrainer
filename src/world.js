@@ -1,3 +1,4 @@
+import { paintCourtMaterial } from "./court-finishes.js";
 import { isGlove } from "./gloves/catalog.js";
 import { createGloveModel } from "./gloves/model.js";
 import { createOperator } from "./character-model.js";
@@ -6,7 +7,7 @@ import { EXTRA_COURTS, dressCourt } from "./map-layouts.js";
 import { createArenaDressing } from "./arena-dressing.js";
 import { batchFixedMeshes } from "./batching.js";
 import { muzzleFlash } from "./animation.js";
-import { applyMapLighting, createMapArchitecture } from "./map-art.js";
+import { MAP_ART, applyMapLighting, createMapArchitecture } from "./map-art.js";
 import { ArenaAtmosphere } from "./atmosphere.js";
 import { ARENA, HALF_COVER, HALF_WINDOWS } from "./arena-layout.js";
 import * as THREE from "three";
@@ -290,7 +291,7 @@ export class ArenaWorld {
       this.label("THE RANGE", 0, 3, -23.45, 10, 1.3, 0, "#827794");
       for (let i = 0; i < 5; i++) {
         const x = -14 + i * 7;
-        this.floorMark(x, -2, 4.8, 30, i % 2 ? 0xb2a8c0 : 0xb8aec6, 3);
+        this.floorMark(x, -2, 4.8, 30, i % 2 ? 0x3b6373 : 0x47747b, 3);
         this.floorMark(x - 2.6, -2, 0.06, 31, 0x887d9a, 4);
         this.floorMark(x + 2.6, -2, 0.06, 31, 0x887d9a, 4);
         this.label(
@@ -431,7 +432,7 @@ export class ArenaWorld {
         this.materials.set(
           key,
           new THREE.MeshStandardMaterial({
-            color: this.mapId === "rooftops" ? 0x85949d : 0x899195,
+            color: (MAP_ART[this.mapId] || MAP_ART.blockout).floor,
             roughness: 0.9,
             map: this.graphics.texture("floor"),
             roughnessMap: this.graphics.texture("floor-roughness"),
@@ -627,18 +628,13 @@ export class ArenaWorld {
       this.blockMaterial = material;
       this.materials.set("reference-concrete", material);
     }
-    if (layout.theme) {
-      const key = this.mapId + "-concrete";
-      if (!this.materials.has(key)) {
-        const base = this.blockMaterial,
-          mat = base.clone();
-        mat.color.setHex(layout.theme.wall);
-        mat.onBeforeCompile = base.onBeforeCompile;
-        mat.customProgramCacheKey = base.customProgramCacheKey;
-        this.materials.set(key, mat);
-      }
-      this.blockMaterial = this.materials.get(key);
-    }
+    const concreteKey = this.mapId + "-concrete";
+    if (!this.materials.has(concreteKey))
+      this.materials.set(
+        concreteKey,
+        paintCourtMaterial(this.blockMaterial, this.mapId, layout.theme?.wall),
+      );
+    this.blockMaterial = this.materials.get(concreteKey);
     this.box(0, -0.7, 0, width + 2, 1, depth + 2, 0x63717a, false);
     const floor = this.box(0, -0.1, 0, width, 0.2, depth, 0x858e95, false);
     if (!this.materials.has("arena-floor"))
@@ -654,15 +650,13 @@ export class ArenaWorld {
         }),
       );
     floor.material = this.materials.get("arena-floor");
-    if (layout.theme) {
-      const key = this.mapId + "-floor";
-      if (!this.materials.has(key)) {
-        const mat = floor.material.clone();
-        mat.color.setHex(layout.theme.floor);
-        this.materials.set(key, mat);
-      }
-      floor.material = this.materials.get(key);
+    const floorKey = this.mapId + "-floor";
+    if (!this.materials.has(floorKey)) {
+      const material = floor.material.clone();
+      material.color.setHex((MAP_ART[this.mapId] || MAP_ART.blockout).floor);
+      this.materials.set(floorKey, material);
     }
+    floor.material = this.materials.get(floorKey);
     this.solidMeshes.push(floor);
     for (const x of [-1, 1])
       this.concrete(
@@ -861,10 +855,10 @@ export class ArenaWorld {
     this.atmosphere.dispose();
   }
 }
-export function createCharacter(team, name = "BOT") {
-  const { group, parts } = createOperator(team, name);
+export function createCharacter(team, name = "BOT", options = {}) {
+  const { group, parts } = createOperator(team, name, options);
   // Nametag: only shown for allies, so rivals can't be tracked through walls.
-  if (team === 0) {
+  if (options.nametag !== false && team === (options.localTeam ?? 0)) {
     const tag = new THREE.Sprite(
       new THREE.SpriteMaterial({
         map: textTexture(name, "#222333", "#b7f9dc", 256, 64),

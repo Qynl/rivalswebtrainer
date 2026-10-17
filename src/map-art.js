@@ -8,6 +8,7 @@ export const MAP_ART = Object.freeze(
   Object.fromEntries(
     Object.entries({
       blockout: {
+        floor: 0x445e69,
         name: "CONCRETE WORKS",
         code: "01 / TRAINING",
         trim: 0x4f626a,
@@ -22,11 +23,12 @@ export const MAP_ART = Object.freeze(
         ground: 0x596572,
       },
       foundry: {
+        floor: 0x354a56,
         name: "FOUNDRY",
         code: "07 / CASTING BAY",
-        trim: 0x4b565b,
-        accent: 0xb17d43,
-        stone: 0x8c9190,
+        trim: 0x243b48,
+        accent: 0xe7a153,
+        stone: 0x708b92,
         sun: [-28, 32, 16],
         light: 0xffe7ce,
         power: 2.5,
@@ -36,10 +38,11 @@ export const MAP_ART = Object.freeze(
         ground: 0x635e58,
       },
       courtyard: {
+        floor: 0x82765b,
         name: "THE COURTYARD",
         code: "03 / BOTANICAL",
-        trim: 0x596b5e,
-        accent: 0xa48757,
+        trim: 0x345c52,
+        accent: 0xd9ae66,
         stone: 0xa1a395,
         sun: [-16, 40, -22],
         light: 0xfff1da,
@@ -50,6 +53,7 @@ export const MAP_ART = Object.freeze(
         ground: 0x64705c,
       },
       compound: {
+        floor: 0x48615d,
         name: "THE COMPOUND",
         code: "02 / OPERATIONS",
         trim: 0x526269,
@@ -64,6 +68,7 @@ export const MAP_ART = Object.freeze(
         ground: 0x596874,
       },
       rooftops: {
+        floor: 0x3b5668,
         name: "SKYLINE",
         code: "04 / ROOF ACCESS",
         trim: 0x475e6c,
@@ -78,6 +83,7 @@ export const MAP_ART = Object.freeze(
         ground: 0x55687b,
       },
       hangar: {
+        floor: 0x4d5b62,
         name: "HANGAR 09",
         code: "09 / FREIGHT",
         trim: 0x48565c,
@@ -92,6 +98,7 @@ export const MAP_ART = Object.freeze(
         ground: 0x58656e,
       },
       range: {
+        floor: 0x415d66,
         name: "THE RANGE",
         code: "00 / QUALIFICATION",
         trim: 0x52646b,

@@ -4,7 +4,10 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 // Batch only fixed siblings. Joint groups, custom shaders, shadow flags and draw
 // order stay intact. For the arena, original collision meshes live in a hidden
 // ray-only group: accurate windows/slopes are not replaced with bounding boxes.
-export function batchFixedMeshes(group, { rayMeshes = null } = {}) {
+export function batchFixedMeshes(
+  group,
+  { rayMeshes = null, opaqueOnly = false } = {},
+) {
   const batches = new Map(),
     solid = new Set(rayMeshes || []),
     rayGroup = new THREE.Group();
@@ -17,6 +20,7 @@ export function batchFixedMeshes(group, { rayMeshes = null } = {}) {
     if (
       !mesh.isMesh ||
       Array.isArray(mesh.material) ||
+      (opaqueOnly && mesh.material.transparent) ||
       !mesh.geometry.attributes.uv
     )
       continue;
