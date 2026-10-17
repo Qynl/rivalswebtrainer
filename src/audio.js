@@ -161,6 +161,22 @@ export class GameAudio {
   }
   play(name, level = 1) {
     switch (name) {
+      case "slapSwing":
+        this.noiseHit(0.1, 0.1 * level, 1800);
+        break;
+      case "slapImpact":
+        this.noiseHit(0.055, 0.55 * level, 2200);
+        this.tone(155, 0.13, "triangle", 0.34 * level, 45);
+        this.tone(1000, 0.035, "triangle", 0.14 * level, 350);
+        break;
+      case "slapBlast":
+        this.tone(80, 0.23, "sawtooth", 0.13 * level, 26);
+        this.noiseHit(0.16, 0.2 * level, 550);
+        break;
+      case "slapAbility":
+        this.tone(180, 0.23, "sine", 0.2 * level, 820);
+        this.noiseHit(0.16, 0.15 * level, 1400);
+        break;
       case "bow":
         this.noiseHit(0.065, 0.15, 4200);
         this.tone(760, 0.075, "triangle", 0.13, 160);

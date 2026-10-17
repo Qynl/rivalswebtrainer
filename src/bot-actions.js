@@ -1,5 +1,5 @@
 import { isBackstab } from "./combat-rules.js";
-import { WEAPONS } from "./data.js";
+import { COMBAT_ITEMS as WEAPONS } from "./data.js";
 import {
   MOVEMENT,
   accelerate,

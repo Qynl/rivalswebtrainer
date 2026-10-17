@@ -1,3 +1,4 @@
+import { progression } from "../gloves/progression.js";
 import { readMultiplayerHealth } from "./health.js";
 import { decodeSnapshot } from "./snapshot-codec.js";
 import { PROTOCOL } from "./protocol.js";
@@ -245,6 +246,12 @@ export class MultiplayerClient {
     });
   }
   send(packet) {
+    if (this.glovesMode && ["create", "join"].includes(packet.type))
+      packet = {
+        ...packet,
+        gloves: true,
+        slaps: progression.getSnapshot().slaps,
+      };
     this.connection?.send(packet);
   }
   async packet(packet, generation) {

@@ -1,5 +1,6 @@
-import { WEAPONS } from "../data.js";
-export const PROTOCOL = 3,
+import { isGlove, gloveLoadout } from "../gloves/catalog.js";
+import { COMBAT_ITEMS as WEAPONS } from "../data.js";
+export const PROTOCOL = 4,
   MAX_PLAYERS = 6,
   ONLINE_MAPS = ["blockout", "foundry", "courtyard"];
 export const DEFAULT_LOADOUT = ["rifle", "pistol", "fists", "grenade"];
@@ -28,6 +29,10 @@ export function cleanName(value) {
 }
 export function cleanLoadout(value) {
   if (!Array.isArray(value) || value.length !== 4) return null;
+  if (isGlove(value[0]))
+    return value.every((id, i) => id === gloveLoadout(value[0])[i])
+      ? [...value]
+      : null;
   return value.every(
     (id, i) => typeof id === "string" && WEAPONS[id]?.slot === i,
   )

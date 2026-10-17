@@ -4,7 +4,7 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import { batchFixedMeshes } from "./batching.js";
 import { muzzleFlash } from "./animation.js";
 import { detailedWeapon } from "./weapon-models.js";
-import { WEAPONS } from "./data.js";
+import { COMBAT_ITEMS as WEAPONS } from "./data.js";
 
 // Original articulated Striker operators. Cosmetic geometry never defines hitboxes.
 // Each actor owns its tiny textile map, so normal character disposal is sufficient.

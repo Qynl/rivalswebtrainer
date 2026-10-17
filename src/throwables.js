@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { detailedWeapon } from "./weapon-models.js";
-import { WEAPONS } from "./data.js";
+import { COMBAT_ITEMS as WEAPONS } from "./data.js";
 export const THROW_DURATION = 0.48,
   THROW_RELEASE = 0.16;
 export const THROWN_UTILITIES = new Set([

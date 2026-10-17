@@ -1,3 +1,5 @@
+import { isGlove } from "./gloves/catalog.js";
+import { createGloveModel } from "./gloves/model.js";
 import { createOperator } from "./character-model.js";
 import { addElevations } from "./elevation-layout.js";
 import { EXTRA_COURTS, dressCourt } from "./map-layouts.js";
@@ -876,6 +878,7 @@ export function createCharacter(team, name = "BOT") {
   return { group, parts };
 }
 export function createViewModel(id, data, options) {
+  if (isGlove(id)) return createGloveModel(id, options);
   const model = detailedWeapon(id, data, options);
   if (!model) throw new Error("Unknown weapon model: " + id);
   return model;

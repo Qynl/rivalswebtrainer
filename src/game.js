@@ -1,3 +1,15 @@
+import { GLOVES, isGlove } from "./gloves/catalog.js";
+import {
+  gloveMatch,
+  blocked,
+  tickGloves,
+  ragdollStep,
+  beginSlap,
+  advanceSlap,
+  useGloveAbility,
+  updateGloveBot,
+} from "./gloves/combat.js";
+import { presentRagdoll, presentStone } from "./gloves/ragdoll.js";
 import { ReloadCues } from "./weapon-handling.js";
 import { WeaponClearance } from "./weapon-clearance.js";
 import { weaponPresentation } from "./weapon-presentation.js";
@@ -46,7 +58,7 @@ import * as THREE from "three";
 import { createProjectileModel } from "./projectile-model.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { ArenaWorld, createCharacter, createViewModel } from "./world.js";
-import { WEAPONS, DIFFICULTIES, MAPS } from "./data.js";
+import { COMBAT_ITEMS as WEAPONS, DIFFICULTIES, MAPS } from "./data.js";
 import {
   MOVEMENT,
   SIMULATION_STEP,
@@ -329,7 +341,10 @@ export class Game {
         e.code.startsWith("Shift")
       )
         this.slide();
-      if (e.code === "KeyF") this.meleeAbility(true);
+      if (e.code === "KeyF" || (e.code === "KeyE" && gloveMatch(this))) {
+        if (e.code === "KeyE") this.network?.action("ability");
+        this.meleeAbility(true);
+      }
       if (e.code === "KeyG") this.quickUtility();
       if (e.code === "KeyR") this.reload();
       if (e.code === "KeyT" && !this.reloadTime) this.inspectTime = 1.8;
@@ -356,7 +371,8 @@ export class Game {
         this.network?.secondary();
         this.inspectTime = 0;
         const w = WEAPONS[this.loadout[this.slot]];
-        if (w.type === "heal") this.beginHeal(true);
+        if (w.glove) this.meleeAbility(false);
+        else if (w.type === "heal") this.beginHeal(true);
         else if (w.dash || w.deflect) this.meleeAbility(false);
         else
           this.aiming = w.slot < 2 && this.deflectTime <= 0 && !this.quickModel;
@@ -471,6 +487,8 @@ export class Game {
   }
   start(config) {
     if (config.capture !== false) this.requestLock();
+    this.slapSessionId = `${Date.now()}:${Math.random().toString(36).slice(2)}`;
+    this.slapReceipt = 0;
     this.config = { ...config };
     this.loadout = [...config.loadout];
     this.score = [0, 0];
@@ -611,6 +629,15 @@ export class Game {
       this.scene.add(e.model.group);
       e.model.group.position.set(e.x, e.y, e.z);
     }
+    if (gloveMatch(this) && !isPlayer) {
+      const ids = Object.keys(GLOVES);
+      // Bots grow with the equipped tier; Default duels do not pit beginners against Bull.
+      const tier = Math.max(0, ids.indexOf(this.loadout[0]));
+      e.activeWeapon = ids[Math.max(0, tier - ((index + this.round) % 3))];
+      e.meleeId = null;
+      e.abilityCooldown = 1.5;
+      if (e.model) updateBotWeapon(e.model, e, this.clock);
+    }
     this.entities.push(e);
     return e;
   }
@@ -678,7 +705,9 @@ export class Game {
       this.events.banner(
         "PRACTICE RANGE",
         "GET DIALED IN.",
-        "Moving targets · Infinite reserves · ESC to leave",
+        gloveMatch(this)
+          ? "Moving targets · Confirmed hits earn slaps · ESC to leave"
+          : "Moving targets · Infinite reserves · ESC to leave",
         2.7,
       );
     } else {
@@ -694,7 +723,9 @@ export class Game {
       this.events.banner(
         "ROUND " + this.round,
         String(ROUND_COUNTDOWN),
-        "M to change weapons · Eliminate the rivals. First to 5.",
+        gloveMatch(this)
+          ? "M to change glove · First to five rounds."
+          : "M to change weapons · Eliminate the rivals. First to 5.",
         0,
       );
     }
@@ -705,6 +736,7 @@ export class Game {
     this.camera.updateMatrixWorld();
   }
   equip(slot) {
+    if (gloveMatch(this) && slot !== 0) return;
     if (slot === this.slot || !this.player?.alive) return;
     if (!this.network?.applying) this.network?.action("slot" + slot);
     this.cancelThrow();
@@ -757,6 +789,7 @@ export class Game {
     this.events.update(this);
   }
   jump() {
+    if (gloveMatch(this) && blocked(this.player)) return;
     if (!this.player?.alive) return;
     this.jumpBuffer = MOVEMENT.jumpBuffer;
     this.slideBuffer = 0;
@@ -776,7 +809,10 @@ export class Game {
     const p = this.player;
     const w = WEAPONS[this.loadout[this.slot]];
     if (p.grounded || (this.coyoteTime > 0 && p.jumps === 0)) {
-      p.vy = MOVEMENT.jumpSpeed + rampJumpBoost(p);
+      p.vy =
+        (w.id === "glove_spring" ? 13.4 : MOVEMENT.jumpSpeed) *
+          (p.chillTime > 0 ? 0.65 : 1) +
+        rampJumpBoost(p);
       p.grounded = false;
       p.jumps = 1;
       this.coyoteTime = 0;
@@ -804,7 +840,8 @@ export class Game {
     const p = this.player;
     // No speed gate or post-slide lockout. Ignore extra presses during an
     // active slide instead of resetting its timer or stacking another boost.
-    if (!p?.alive || this.slideTime > 0) return;
+    if (!p?.alive || this.slideTime > 0 || (gloveMatch(this) && blocked(p)))
+      return;
     if (!p.grounded) {
       this.slideBuffer = MOVEMENT.slideBuffer;
       return;
@@ -833,6 +870,7 @@ export class Game {
     return true;
   }
   meleeAbility(quick = false) {
+    if (gloveMatch(this)) return useGloveAbility(this);
     if (
       !this.player?.alive ||
       this.state !== "playing" ||
@@ -898,6 +936,7 @@ export class Game {
   }
   // G uses utility-slot inventory/recovery, never the selected gun's ammo or timer.
   quickUtility() {
+    if (gloveMatch(this)) return false;
     const id = this.loadout[3],
       w = WEAPONS[id],
       a = this.ammunition?.[3];
@@ -1014,6 +1053,7 @@ export class Game {
     ).normalize();
   }
   reload() {
+    if (gloveMatch(this)) return false;
     if (
       !this.player?.alive ||
       this.reloadTime > 0 ||
@@ -1064,6 +1104,7 @@ export class Game {
     this.fireBufferedWeapon = this.loadout[this.slot];
   }
   firePlayer() {
+    if (gloveMatch(this)) return beginSlap(this);
     const p = this.player;
     if (
       !p?.alive ||
@@ -1192,6 +1233,7 @@ export class Game {
     return true;
   }
   updatePlayerMelee(dt) {
+    if (gloveMatch(this)) return advanceSlap(this, this.player, dt);
     const attack = this.playerMeleePending;
     if (!attack) return;
     attack.remaining -= dt;
@@ -1247,6 +1289,11 @@ export class Game {
   // Presentation only: safe for immediate network prediction; never spends
   // ammunition, spawns a gameplay projectile, or confirms damage.
   presentShot(id = this.loadout[this.slot], age = 0) {
+    if (isGlove(id)) {
+      this.lastSlapAt = this.clock - age;
+      this.audio.play("slapSwing");
+      return;
+    }
     const w = WEAPONS[id];
     if (!w || w.slot > 1) return;
     this.flash = Math.max(0, 0.065 - age);
@@ -1405,6 +1452,7 @@ export class Game {
     this.effects.push({ mesh, life: 7, max: 7 });
   }
   updateSupport(dt) {
+    tickGloves(this, dt);
     this.reloadCues ||= new ReloadCues();
     const cue = this.reloadCues.sample(
       this.loadout?.[this.slot],
@@ -2003,6 +2051,12 @@ export class Game {
     const p = this.player;
     if (!p.alive) return;
     this.updatePlayerMelee(dt);
+    if (gloveMatch(this) && blocked(p)) {
+      this.trigger = false;
+      this.slideTime = this.jumpBuffer = 0;
+      ragdollStep(this, p, dt);
+      return;
+    }
     this.updateThrow(dt);
     const w = WEAPONS[this.loadout[this.slot]];
     this.slideCooldown = Math.max(0, this.slideCooldown - dt);
@@ -2020,7 +2074,10 @@ export class Game {
     p.yaw = this.yaw;
     const dir = this.moveDirection();
     let speed = w.slot === 2 ? MOVEMENT.meleeSpeed : MOVEMENT.runSpeed;
-    speed *= w.moveSpeed || 1;
+    speed *=
+      (w.moveSpeed || 1) *
+      (p.chillTime > 0 ? 0.55 : 1) *
+      (p.boostTime > 0 ? 1 + 0.65 * Math.min(1, p.boostTime / 0.35) : 1);
     if (this.healTime > 0) speed *= 0.55;
     if (this.aiming) speed *= 0.75;
 
@@ -2168,7 +2225,7 @@ export class Game {
       }
     } else if (
       w.type !== "burst" &&
-      (w.type === "auto" || w.type === "flame"
+      (w.glove || w.type === "auto" || w.type === "flame"
         ? this.mouseDown || fireRequested
         : fireRequested)
     ) {
@@ -2178,6 +2235,7 @@ export class Game {
     this.trigger = false;
   }
   animateDeath(e, dt) {
+    if (gloveMatch(this) && presentRagdoll(this, e, dt)) return;
     if (e.model) {
       e.deathTime = (e.deathTime || 0) + dt;
       const t = THREE.MathUtils.smoothstep(e.deathTime, 0, 0.3);
@@ -2190,6 +2248,7 @@ export class Game {
     }
   }
   updateBot(e, dt) {
+    if (gloveMatch(this)) return updateGloveBot(this, e, dt);
     if (!e.alive) {
       this.animateDeath(e, dt);
       if (this.range && this.clock >= e.respawnAt) {
@@ -2589,6 +2648,8 @@ export class Game {
     }
   }
   animateBot(e, dt = 1 / 60) {
+    if (gloveMatch(this) && presentStone(this, e)) return;
+    if (gloveMatch(this) && presentRagdoll(this, e, dt)) return;
     const m = e.model;
     if (!m) return;
     const speed = Math.hypot(e.vx, e.vz),
@@ -3014,6 +3075,10 @@ export class Game {
       const look = this.lookSway || { x: 0, y: 0 };
       this.weaponAnimator.update(activeModel, {
         dt,
+        gloveSwingAge: this.clock - (this.lastSlapAt ?? -10),
+        gloveImpact: this.slapImpact || 0,
+        gloveRagdoll: p.ragdollTime || 0,
+        gloveStone: p.stoneTime || 0,
         phase: this.walkPhase,
         speed: Math.hypot(p.vx, p.vz),
         clearance,

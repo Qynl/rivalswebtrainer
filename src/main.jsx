@@ -1,6 +1,6 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { App } from "./App.jsx";
+import { GloveApp as App } from "./gloves/GloveApp.jsx";
 import "./style.css";
 performance.mark("arena-ui-start");
 createRoot(document.getElementById("root")).render(<App />);

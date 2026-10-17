@@ -1,14 +1,17 @@
+import { isGlove, GLOVES } from "./gloves/catalog.js";
+import { slapPose } from "./gloves/model.js";
 import { reloadHandling, animateMuzzle } from "./weapon-handling.js";
 import { THROW_DURATION, THROW_RELEASE } from "./throwables.js";
 import { knifeStabPose, sniperBoltPose } from "./weapon-actions.js";
 import { selectShotSide, mechanismPose, reloadPose } from "./animation.js";
 import * as THREE from "three";
 import { createViewModel } from "./world.js";
-import { WEAPONS } from "./data.js";
+import { COMBAT_ITEMS as WEAPONS } from "./data.js";
 
 // One cached world-sized melee per actor, not a fresh model for each ability.
 // All resources remain children of the character and use its normal disposal.
 export function updateBotWeapon(model, e, clock = 0) {
+  if (isGlove(e.activeWeapon)) return updateGloveWeapon(model, e, clock);
   const p = model.parts,
     melee =
       !(e.quickUtilityTime > 0) &&
@@ -261,4 +264,49 @@ export function updateBotWeapon(model, e, clock = 0) {
     blade.material.emissiveIntensity =
       e.guardFlash > 0 ? 0.9 : e.deflectTime > 0 ? 0.16 : 0;
   }
+}
+
+function updateGloveWeapon(model, e, clock) {
+  const p = model.parts,
+    id = e.activeWeapon;
+  p.gun.visible = p.barrel.visible = false;
+  if (p.baseMuzzleFlash) p.baseMuzzleFlash.visible = false;
+  if (p.muzzleFlash) p.muzzleFlash.visible = false;
+  if (p.meleeSocket) p.meleeSocket.visible = false;
+  if (!p.onlineSocket) {
+    p.onlineSocket = new THREE.Group();
+    p.weaponRig.add(p.onlineSocket);
+  }
+  const socket = p.onlineSocket;
+  if (socket.userData.id !== id) {
+    const mats = new Set();
+    socket.traverse((o) => {
+      o.geometry?.dispose();
+      if (o.material) mats.add(o.material);
+    });
+    for (const m of mats) m.dispose();
+    socket.clear();
+    const glove = createViewModel(id, WEAPONS[id], { hands: false });
+    glove.scale.setScalar(0.8);
+    socket.add(glove);
+    socket.userData = { id, weapon: glove };
+  }
+  socket.visible = true;
+  const age = e.netId ? (e.netShotAge ?? 10) : clock - (e.lastSlapAt ?? -10),
+    pose = slapPose(age, GLOVES[id].windup),
+    glove = socket.userData.weapon;
+  glove.position.set(
+    0.15 + pose.wind * 0.26 - pose.strike * 0.55,
+    -0.14 + pose.wind * 0.14,
+    -0.46 - pose.strike * 0.25,
+  );
+  glove.rotation.set(
+    -1.35 + pose.wind * 0.4,
+    -0.3 - pose.strike * 1.2,
+    -0.25 - pose.strike * 0.9,
+  );
+  p.botRightGrip ||= new THREE.Vector3();
+  p.botLeftGrip ||= new THREE.Vector3();
+  p.botRightGrip.copy(glove.position).add(new THREE.Vector3(0, 0.15, 0.05));
+  p.botLeftGrip.set(-0.24, -0.15, -0.2);
 }

@@ -1,6 +1,7 @@
+import { gloveMatch } from "../src/gloves/combat.js";
 import * as THREE from "three";
 import { Game } from "../src/game.js";
-import { WEAPONS } from "../src/data.js";
+import { COMBAT_ITEMS as WEAPONS } from "../src/data.js";
 import { MAX_HEALTH, ROUND_COUNTDOWN } from "../src/combat-rules.js";
 import { createServerWorld } from "./world.js";
 import { THROWN_UTILITIES } from "../src/throwables.js";
@@ -122,6 +123,18 @@ export class Match {
       context: g,
     });
     g.player = actor;
+    g.rewindMelee = (run) => this.rewind(g, run);
+    g.emitGlove = (event) => {
+      this.emit(event);
+      if (event.type === "gloveHit")
+        this.emit({
+          type: "impulse",
+          player: event.victim,
+          velocity: event.velocity,
+          round: this.round,
+          time: this.time,
+        });
+    };
     g.bullet = (shooter, ...args) => {
       if (shooter.context && shooter.context !== g)
         return shooter.context.bullet(shooter, ...args);
@@ -545,13 +558,13 @@ export class Match {
           inputTime: g.lastInputAt,
           lastAction: g.lastAction,
           slide: g.slideTime,
-          dash: g.dashTime,
-          deflect: g.deflectTime,
+          dash: gloveMatch(g) ? e.ragdollTime || 0 : g.dashTime,
+          deflect: gloveMatch(g) ? e.stoneTime || 0 : g.deflectTime,
           swing: g.swingTime,
           aiming: !!g.aiming,
           knifeStab: !!g.knifeStabAttack && g.swingTime > 0,
-          throw: g.throwTime,
-          heal: g.healTime,
+          throw: gloveMatch(g) ? e.boostTime || 0 : g.throwTime,
+          heal: gloveMatch(g) ? e.chillTime || 0 : g.healTime,
           reload: g.reloadTime,
           blind: g.blindTime,
           paint: g.paintTintTime,
@@ -559,7 +572,7 @@ export class Match {
           quickUtility: g.quickUtilityTime,
           shot: g.lastShotAt ?? -1,
           shotSide: (Math.max(1, g.shotSequence || 1) - 1) % 2,
-          dashCooldown: g.dashCooldown,
+          dashCooldown: gloveMatch(g) ? e.abilityCooldown || 0 : g.dashCooldown,
           deflectCooldown: g.deflectCooldown,
           stats: { ...g.matchStats },
         };

@@ -1,3 +1,4 @@
+import { animateGlove } from "./gloves/model.js";
 import { reloadHandling, animateMuzzle } from "./weapon-handling.js";
 import { weaponPresentation } from "./weapon-presentation.js";
 import { knifeStabPose, sniperBoltPose } from "./weapon-actions.js";
@@ -89,6 +90,7 @@ export class WeaponAnimator {
     }
   }
   update(model, state) {
+    if (model.userData.glove) return animateGlove(model, state);
     const {
       dt,
       phase = 0,

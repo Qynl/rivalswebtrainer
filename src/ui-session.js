@@ -1,3 +1,4 @@
+import { progression } from "./gloves/progression.js";
 import { presentationEqual } from "./presentation-equality.js";
 import { HealthTrail, magazineFraction } from "./vitals-presentation.js";
 import { shotEnvelope } from "./weapon-feel.js";
@@ -5,7 +6,13 @@ import { smokeImmersion } from "./smoke-fx.js";
 import { BOW_DRAW_TIME } from "./combat-rules.js";
 import { createStore } from "./ui-store.js";
 import { loadEnvironment } from "./environment.js";
-import { DEFAULT_SETTINGS, WEAPONS, MAPS, loadSaved, save } from "./data.js";
+import {
+  DEFAULT_SETTINGS,
+  COMBAT_ITEMS as WEAPONS,
+  MAPS,
+  loadSaved,
+  save,
+} from "./data.js";
 import {
   DamageCompass,
   HitConfirmation,
@@ -165,6 +172,15 @@ function snapshot(g, force = false) {
   );
   vitalsPlayer = p;
   hud.set({
+    gloveStatus:
+      p.stoneTime > 0
+        ? "STONE FORM"
+        : p.ragdollTime > 0
+          ? "RAGDOLL"
+          : p.chillTime > 0
+            ? "CHILLED"
+            : "",
+    gloveCooldown: p.abilityCooldown || 0,
     health: Math.ceil(p.health),
     healthTrail: trailingHealth,
     magazineFraction: magazineFraction(a.mag, w.mag, w.slot),
@@ -305,6 +321,10 @@ function snapshot(g, force = false) {
   });
 }
 export const events = {
+  slap(g) {
+    g.slapReceipt = (g.slapReceipt || 0) + 1;
+    progression.award(`offline:${g.slapSessionId}:${g.slapReceipt}`);
+  },
   deferWarmup: true,
   toast,
   start() {

@@ -1,4 +1,4 @@
-import { WEAPONS } from "../data.js";
+import { COMBAT_ITEMS as WEAPONS } from "../data.js";
 const WEAPON_IDS = Object.keys(WEAPONS),
   PHASES = ["countdown", "playing", "roundend", "finished"];
 const TIMERS = [
@@ -61,7 +61,7 @@ export function encodeSnapshot(snapshot) {
       offset += 4;
     };
   u16(MAGIC);
-  u8(2);
+  u8(3);
   u32(snapshot.matchId || 1);
   u16(snapshot.round);
   f32(snapshot.time);
@@ -147,7 +147,7 @@ export function decodeSnapshot(data, metadata) {
       if (!Number.isFinite(n)) throw Error("Nonfinite snapshot");
       return n;
     };
-  if (bytes.length < HEADER || u16() !== MAGIC || u8() !== 2)
+  if (bytes.length < HEADER || u16() !== MAGIC || u8() !== 3)
     throw Error("Invalid snapshot version");
   const matchId = u32(),
     round = u16(),

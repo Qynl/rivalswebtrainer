@@ -1,3 +1,4 @@
+import { GLOVES } from "./gloves/catalog.js";
 export const WEAPONS = {
   rifle: {
     name: "Assault Rifle",
@@ -574,3 +575,6 @@ export function save(key, value) {
     /* Private mode may disallow storage. */
   }
 }
+
+// Unified runtime registry. WEAPONS remains the legacy firearm catalog.
+export const COMBAT_ITEMS = { ...WEAPONS, ...GLOVES };

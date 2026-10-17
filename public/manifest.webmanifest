@@ -1,1 +1,16 @@
-{"name":"Rivals Offline Arena — Fan-made Trainer","short_name":"Offline Arena","start_url":"./","display":"standalone","background_color":"#12131c","theme_color":"#12131c","icons":[{"src":"icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any"}]}
+{
+  "name": "Slap Arena — Glove Combat",
+  "short_name": "Slap Arena",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0b171f",
+  "theme_color": "#0b171f",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

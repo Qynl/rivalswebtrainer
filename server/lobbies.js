@@ -1,4 +1,10 @@
-import { WEAPONS } from "../src/data.js";
+import {
+  isGlove,
+  gloveLoadout,
+  canUseGlove,
+  sanitizeSlaps,
+} from "../src/gloves/catalog.js";
+import { COMBAT_ITEMS as WEAPONS } from "../src/data.js";
 // Web Crypto works in Node and secure browsers. The same validated match/lobby
 // simulation can therefore run in a player's browser without a game backend.
 const randomHex = (length) =>
@@ -72,6 +78,7 @@ export class LobbyService {
       name: room.name,
       map: room.map,
       private: room.private,
+      gloves: !!room.gloves,
       host: room.host,
       phase: room.match?.phase || "lobby",
       players: [...room.members.values()].map(
@@ -192,11 +199,19 @@ export class LobbyService {
       if (room) return this.error(id, "Leave your current lobby first.");
       if (this.rooms.size >= this.maxRooms)
         return this.error(id, "Server is full. Try again later.");
-      const loadout = cleanLoadout(message.loadout) || [...DEFAULT_LOADOUT];
+      const slaps = sanitizeSlaps(message.slaps),
+        gloves = message.gloves === true;
+      const requested = cleanLoadout(message.loadout);
+      const loadout = gloves
+        ? gloveLoadout(
+            canUseGlove(requested?.[0], slaps) ? requested[0] : undefined,
+          )
+        : requested || [...DEFAULT_LOADOUT];
       let roomCode = this.roomCode();
       while (this.rooms.has(roomCode)) roomCode = code();
       const r = {
         code: roomCode,
+        gloves,
         name: cleanName(message.name) + "’S LOBBY",
         map: ONLINE_MAPS.includes(message.map) ? message.map : "blockout",
         private: message.private === true,
@@ -209,7 +224,14 @@ export class LobbyService {
       c.name = cleanName(message.name);
       c.room = roomCode;
       c.epoch++;
-      r.members.set(id, { id, name: c.name, team: 0, ready: true, loadout });
+      r.members.set(id, {
+        id,
+        name: c.name,
+        team: 0,
+        ready: true,
+        loadout,
+        slaps,
+      });
       this.publish(r);
       return;
     }
@@ -236,7 +258,14 @@ export class LobbyService {
         name: c.name,
         team,
         ready: false,
-        loadout: cleanLoadout(message.loadout) || [...DEFAULT_LOADOUT],
+        slaps: sanitizeSlaps(message.slaps),
+        loadout: r.gloves
+          ? gloveLoadout(
+              canUseGlove(message.loadout?.[0], sanitizeSlaps(message.slaps))
+                ? message.loadout[0]
+                : undefined,
+            )
+          : cleanLoadout(message.loadout) || [...DEFAULT_LOADOUT],
       });
       this.publish(r);
       return;
@@ -270,6 +299,11 @@ export class LobbyService {
         next = cleanLoadout(message.loadout);
       if (
         !next ||
+        (room.gloves &&
+          !canUseGlove(
+            next[0],
+            (member.slaps || 0) + (member.stats?.hits || 0),
+          )) ||
         !g?.player.alive ||
         !(g.selectingLoadout || room.match.phase === "countdown")
       )
@@ -301,7 +335,15 @@ export class LobbyService {
     }
     if (message.type === "loadout") {
       const loadout = cleanLoadout(message.loadout);
-      if (!loadout) return this.error(id, "Invalid loadout.");
+      if (
+        !loadout ||
+        (room.gloves &&
+          !canUseGlove(
+            loadout[0],
+            (member.slaps || 0) + (member.stats?.hits || 0),
+          ))
+      )
+        return this.error(id, "Glove is locked or invalid.");
       member.loadout = loadout;
       this.publish(room);
       return;
@@ -335,6 +377,8 @@ export class LobbyService {
       if (members.some((m) => !m.ready))
         return this.error(id, "Every player must be ready.");
       for (const m of members) {
+        if (room.gloves)
+          m.slaps = sanitizeSlaps((m.slaps || 0) + (m.stats?.hits || 0));
         m.stats = { shots: 0, hits: 0, kills: 0, deaths: 0, headshots: 0 };
         m.lastAction = 0;
       }

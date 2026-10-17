@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { createViewModel } from "./world.js";
-import { WEAPONS } from "./data.js";
+import { COMBAT_ITEMS as WEAPONS } from "./data.js";
 
 // Invisible muzzle flashes and the glint billboard are not part of a gun's
 // physical silhouette. Counting the 1x1 glint quad made Sniper cards shrink.
@@ -71,7 +71,7 @@ export class WeaponPreview {
     model.position.sub(center);
     const pivot = new THREE.Group();
     pivot.add(model);
-    pivot.rotation.y = 1.25;
+    pivot.rotation.y = WEAPONS[id]?.glove ? -.32 : 1.25;
     this.model = pivot;
     this.scene.add(pivot);
     pivot.updateMatrixWorld(true);

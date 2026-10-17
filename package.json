@@ -15,7 +15,8 @@
     "audit:arena": "node scripts/arena-audit.mjs",
     "audit:maps": "node scripts/audit-map-art.mjs",
     "server": "node server/index.js",
-    "start": "SERVE_DIST=1 node server/index.js"
+    "start": "SERVE_DIST=1 node server/index.js",
+    "test:gloves": "npm run build && node --test tests/gloves.test.js && playwright test --config tests/gloves.playwright.config.js"
   },
   "dependencies": {
     "@geckos.io/client": "^3.1.0",

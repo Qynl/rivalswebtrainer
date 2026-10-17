@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { WEAPONS } from "./data.js";
+import { COMBAT_ITEMS as WEAPONS } from "./data.js";
 import { THROWN_UTILITIES, createThrownModel } from "./throwables.js";
 // Identical offline/online presentation; the server only uses an Object3D pose.
 export function createProjectileModel(id) {

@@ -1,3 +1,4 @@
+import { progression } from "../gloves/progression.js";
 import React, {
   useEffect,
   useRef,
@@ -5,7 +6,13 @@ import React, {
   useSyncExternalStore,
 } from "react";
 import { multiplayer } from "./client.js";
-import { WEAPONS, MAPS, SLOT_NAMES, loadSaved, save } from "../data.js";
+import {
+  COMBAT_ITEMS as WEAPONS,
+  MAPS,
+  SLOT_NAMES,
+  loadSaved,
+  save,
+} from "../data.js";
 import { ONLINE_MAPS } from "./protocol.js";
 const mapName = (id) => MAPS.find((m) => m.id === id)?.name || id;
 export function OnlineButton() {
@@ -20,7 +27,13 @@ export function OnlineButton() {
     </button>
   );
 }
-export function Multiplayer({ ready, playing, loadout }) {
+export function Multiplayer({
+  ready,
+  playing,
+  loadout,
+  gloves = false,
+  profile,
+}) {
   const s = useSyncExternalStore(
       multiplayer.subscribe,
       multiplayer.getSnapshot,
@@ -315,8 +328,8 @@ export function Multiplayer({ ready, playing, loadout }) {
                       </>
                     )}
                     <p className="mp-detail">
-                      1v1, 2v2 or 3v3. First to five rounds. Pick any loadout,
-                      choose teams, then ready up.
+                      1v1, 2v2 or 3v3. First to five rounds. Pick your unlocked
+                      glove, choose teams, then ready up.
                     </p>
                     <button
                       id="create-lobby"
@@ -402,23 +415,32 @@ export function Multiplayer({ ready, playing, loadout }) {
                   ))}
                 </div>
                 <div className="mp-loadout">
-                  <label>YOUR LOADOUT</label>
+                  <label>YOUR GLOVE</label>
                   <div>
-                    {[0, 1, 2, 3].map((slot) => (
+                    {(gloves ? [0] : [0, 1, 2, 3]).map((slot) => (
                       <label key={slot}>
-                        {SLOT_NAMES[slot]}
+                        {gloves ? "GLOVE" : SLOT_NAMES[slot]}
                         <select
-                          aria-label={`Online ${SLOT_NAMES[slot]}`}
+                          aria-label={
+                            gloves
+                              ? "Online glove"
+                              : `Online ${SLOT_NAMES[slot]}`
+                          }
                           value={self?.loadout[slot] || loadout[slot]}
                           disabled={!lobby}
                           onChange={(e) => {
                             const next = [...self.loadout];
                             next[slot] = e.target.value;
+                            if (gloves) progression.select(e.target.value);
                             send({ type: "loadout", loadout: next });
                           }}
                         >
                           {Object.entries(WEAPONS)
-                            .filter(([, w]) => w.slot === slot)
+                            .filter(([, w]) =>
+                              gloves
+                                ? w.glove && w.cost <= (profile?.slaps || 0)
+                                : w.slot === slot,
+                            )
                             .map(([id, w]) => (
                               <option key={id} value={id}>
                                 {w.name}

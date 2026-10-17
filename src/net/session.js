@@ -1,10 +1,13 @@
+import { isGlove } from "../gloves/catalog.js";
+import { progression } from "../gloves/progression.js";
+import { presentImpact } from "../gloves/combat.js";
 import { isDisposableEffect } from "./realtime-delivery.js";
 import { PredictionHistory } from "./prediction-history.js";
 import { updateProjectileTrail } from "../projectile-feedback.js";
 import { moveBody, canOccupy, GRAVITY } from "../physics.js";
 import * as THREE from "three";
 import { createProjectileModel } from "../projectile-model.js";
-import { WEAPONS } from "../data.js";
+import { COMBAT_ITEMS as WEAPONS } from "../data.js";
 import { SnapshotBuffer, KEYS } from "./protocol.js";
 import { createSmokeCloud, animateSmoke } from "../smoke-fx.js";
 import { createFirePatch, animateFire, animateThrown } from "../throwables.js";
@@ -166,6 +169,26 @@ export class MultiplayerSession {
         e.health = 0;
         e.disconnected = true;
       }
+    // Settle the final confirmed slap before finish() snapshots match results.
+    g.matchStats = { ...self.stats };
+    if (isGlove(self.weapon)) {
+      const count = Math.max(0, self.stats?.hits || 0);
+      for (let hit = this.earnedHits || 0; hit < count; hit++)
+        progression.award(`online:${snapshot.matchId}:${this.id}:${hit}`);
+      this.earnedHits = Math.max(this.earnedHits || 0, count);
+      g.player.ragdollTime = self.dash || 0;
+      g.player.stoneTime = self.deflect || 0;
+      g.player.chillTime = self.heal || 0;
+      g.player.abilityCooldown = self.dashCooldown || 0;
+      g.player.boostTime = self.throw || 0;
+      // Restore lost impulse state from snapshots as well as the reliable hit event.
+      if (self.dash > 0) {
+        g.player.vx = self.vx;
+        g.player.vy = self.vy;
+        g.player.vz = self.vz;
+        g.player.grounded = self.grounded;
+      }
+    }
     if (snapshot.phase === "finished") {
       if (g.state !== "results") g.finish();
       this.applying = false;
@@ -199,7 +222,6 @@ export class MultiplayerSession {
     const wasAlive = g.player.alive;
     g.player.health = self.health;
     g.player.alive = self.alive;
-    g.matchStats = { ...self.stats };
     g.blindTime = self.blind;
     g.paintTintTime = self.paint || 0;
     g.dashCooldown = self.dashCooldown;
@@ -218,7 +240,7 @@ export class MultiplayerSession {
       }
       g.reloadTime = self.reload;
       g.reloadTotal = WEAPONS[g.loadout[g.slot]].reload;
-      g.healTime = self.heal;
+      g.healTime = isGlove(self.weapon) ? 0 : self.heal;
       if (self.alive && self.quickUtility > 0) {
         if (g.quickModelId !== g.loadout[3] && g.slot !== 3)
           g.showQuickAction(g.loadout[3], self.quickUtility, true);
@@ -232,7 +254,7 @@ export class MultiplayerSession {
         g.cancelThrow(false);
         g.clearQuickMelee();
       }
-      g.deflectTime = self.deflect;
+      g.deflectTime = isGlove(self.weapon) ? 0 : self.deflect;
     }
     this.actions = this.actions.filter((a) => a.id > self.lastAction);
     if (!self.alive && wasAlive) {
@@ -284,14 +306,17 @@ export class MultiplayerSession {
         alive: state.alive,
         activeWeapon: state.weapon,
         shotSide: state.shotSide || 0,
-        deflectTime: state.deflect,
+        deflectTime: isGlove(state.weapon) ? 0 : state.deflect,
+        ragdollTime: isGlove(state.weapon) ? state.dash : 0,
+        stoneTime: isGlove(state.weapon) ? state.deflect : 0,
+        chillTime: isGlove(state.weapon) ? state.heal : 0,
         quickMeleeTime: state.quickMelee || 0,
         quickUtilityTime: state.quickUtility || 0,
         utilityId: state.loadout[3],
         utilityAmmo: state.ammo[3].mag ?? Infinity,
         throwTime: state.throw,
         healTime: state.heal,
-        dashTime: state.dash,
+        dashTime: isGlove(state.weapon) ? 0 : state.dash,
         swingTime: state.swing,
         aiming: !!state.aiming,
         reload: state.reload,
@@ -357,6 +382,42 @@ export class MultiplayerSession {
       } else {
         if (event.id <= this.lastEvent) continue;
         this.lastEvent = event.id;
+      }
+      if (event.type === "gloveHit" && event.round === this.round) {
+        presentImpact(
+          g,
+          event,
+          this.entities.get(event.source),
+          this.entities.get(event.victim),
+        );
+      }
+      if (event.type === "gloveAbility" && event.round === this.round) {
+        g.audio.play(
+          event.glove === "glove_default" ? "slapBlast" : "slapAbility",
+        );
+        if (event.player === this.id && event.glove === "glove_default") {
+          g.player.boostTime = 1.35;
+          g.player.chillTime = 0;
+          if (event.velocity)
+            [g.player.vx, g.player.vy, g.player.vz] = event.velocity;
+        }
+        g.combatFX?.burst(
+          v(event.position),
+          new THREE.Color(WEAPONS[event.glove].color).getHex(),
+          16,
+        );
+        const destination =
+          event.player === this.id
+            ? event.destination
+            : event.target === this.id
+              ? event.targetDestination
+              : null;
+        if (destination) {
+          [g.player.x, g.player.y, g.player.z] = destination;
+          g.player.vx = g.player.vy = g.player.vz = 0;
+          this.correction.set(0, 0, 0);
+          this.prediction.clear();
+        }
       }
       if (event.type === "trace") {
         const origin =
@@ -491,6 +552,7 @@ export class MultiplayerSession {
     if (
       !self ||
       !w ||
+      w.glove ||
       w.slot > 1 ||
       w.type === "bow" ||
       g.state !== "playing" ||
@@ -527,6 +589,14 @@ export class MultiplayerSession {
     this.lastSelfShotCount = count;
     if (!(self.shot >= 0) || self.shot === this.lastSelfShot) return;
     this.lastSelfShot = self.shot;
+    if (isGlove(self.weapon)) {
+      if (this.game.clock - (this.game.lastSlapAt ?? -10) > 0.4)
+        this.game.presentShot(
+          self.weapon,
+          Math.max(0, snapshot.time - self.shot),
+        );
+      return;
+    }
     const g = this.game,
       id = self.weapon;
     // A snapshot can confirm several shots after loss/coalescing. Retiring just
@@ -704,6 +774,8 @@ export class MultiplayerSession {
         vy: state.vy,
         vz: state.vz,
         height: state.height,
+        ragdollTime: isGlove(state.weapon) ? state.dash : 0,
+        stoneTime: isGlove(state.weapon) ? state.deflect : 0,
       });
       if (e.alive) {
         const model = e.model.group;

@@ -53,7 +53,7 @@ async function network() {
   return { net, client };
 }
 test("peer invitations use normalized protocol-scoped IDs and default requires no API", () => {
-  assert.equal(peerId("ABC123"), "rivalsweb-v3-abc123");
+  assert.equal(peerId("ABC123"), "rivalsweb-v4-abc123");
   assert.equal(new MultiplayerClient().mode, "peer");
   assert.equal(new MultiplayerClient({ mode: "server" }).mode, "server");
 });
