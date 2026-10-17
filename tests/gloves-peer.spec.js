@@ -861,3 +861,137 @@ test("RTC viewers get team-relative nameplates and third-person avatars reattach
     await guest.close();
   }
 });
+
+test("real RTC authority Dice outcome reaches the owning and remote pip models once, with only earned contact rewards", async ({
+  browser,
+  page,
+}) => {
+  test.setTimeout(120000);
+  const guest = await browser.newPage({
+      viewport: { width: 800, height: 600 },
+    }),
+    requests = [],
+    errors = [];
+  try {
+    await expandedRoom(
+      page,
+      guest,
+      "glove_dice",
+      "glove_default",
+      requests,
+      errors,
+    );
+    const hostId = await page.evaluate(() => window.__arena.network.id);
+    for (const p of [page, guest])
+      await p.evaluate(() => {
+        const g = window.__arena,
+          n = g.network;
+        g.audio.volume = 0;
+        window.__diceDriver = setInterval(() => {
+          const s = n.latest,
+            self = s?.players.find((e) => e.id === n.id),
+            other = s?.players.find((e) => e.id !== n.id && e.alive);
+          if (!self?.alive || !other || s.phase !== "playing") return;
+          const distance = Math.hypot(self.x - other.x, self.z - other.z),
+            path = g.world.nav.path(self, other),
+            goal =
+              distance < 3.1
+                ? other
+                : path.find(
+                    (p) => Math.hypot(p.x - self.x, p.z - self.z) > 0.4,
+                  ) || other;
+          const yaw = Math.atan2(-(goal.x - self.x), -(goal.z - self.z));
+          n.seq = Math.max(n.seq, 9000) + 1;
+          n.client.send({
+            type: "input",
+            input: {
+              seq: n.seq,
+              yaw,
+              pitch: 0,
+              keys: distance > 2.2 ? 1 : 0,
+              fire: self.weapon === "glove_dice" && distance < 3.1,
+              aim: false,
+              paused: false,
+              actions: [],
+            },
+          });
+        }, 16);
+      });
+    for (const p of [page, guest])
+      await p.waitForFunction(
+        (id) => window.__arena.network.entities.get(id)?.diceRoll > 0,
+        hostId,
+        { timeout: 35000 },
+      );
+    for (const p of [page, guest])
+      await p.evaluate(() => {
+        clearInterval(window.__diceDriver);
+        const g = window.__arena,
+          n = g.network;
+        n.client.send({
+          type: "input",
+          input: {
+            seq: ++n.seq,
+            yaw: g.yaw,
+            pitch: g.pitch,
+            keys: 0,
+            fire: false,
+            aim: false,
+            paused: false,
+            actions: [],
+          },
+        });
+      });
+    await guest.waitForFunction(() => {
+      const n = window.__arena.network;
+      return n.latest.players.find((p) => p.id === n.id).health < 150;
+    });
+    const views = await Promise.all(
+      [page, guest].map((p) =>
+        p.evaluate((hostId) => {
+          const g = window.__arena,
+            n = g.network,
+            source = n.entities.get(hostId);
+          if (source === g.player) g.cameraZoom = 6;
+          for (let i = 0; i < 6; i++) {
+            n.present(1 / 60);
+            g.updateCamera(1 / 60);
+          }
+          g.renderWorld();
+          const panel =
+              source.model.parts.onlineSocket.userData.weapon.userData.gloveRig
+                .dicePanel,
+            self = n.latest.players.find((e) => e.id === n.id);
+          return {
+            roll: source.diceRoll,
+            model: panel.userData.roll,
+            indexCount: panel.children[0].geometry.drawRange.count,
+            sourceHits: n.latest.players.find((e) => e.id === hostId).stats
+              .hits,
+            slaps: JSON.parse(localStorage.getItem("slap-arena-profile-v1"))
+              .slaps,
+            selfHits: self.stats.hits,
+          };
+        }, hostId),
+      ),
+    );
+    expect(views[0].roll).toBeGreaterThanOrEqual(1);
+    expect(views[0].roll).toBeLessThanOrEqual(6);
+    expect(views[1].roll).toBe(views[0].roll);
+    for (const v of views) {
+      expect(v.model).toBe(v.roll);
+      expect(v.sourceHits).toBeGreaterThan(0);
+      expect(v.slaps).toBe(5500 + v.selfHits);
+    }
+    expect(views[1].indexCount).toBe(views[0].indexCount);
+    expect(requests).toEqual([]);
+    expect(errors).toEqual([]);
+    console.log("RTC CONFIRMED DICE", JSON.stringify(views));
+  } finally {
+    for (const p of [page, guest])
+      await p
+        .evaluate(() => clearInterval(window.__diceDriver))
+        .catch(() => {});
+    await guest.close();
+  }
+});

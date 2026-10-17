@@ -305,6 +305,8 @@ function updateGloveWeapon(model, e, clock) {
     cast = abilityPose(GLOVES[id].key, clock - (e.gloveCastTime ?? -10));
   animateGlove(glove, {
     gloveCastAge: clock - (e.gloveCastTime ?? -10),
+    gloveDiceRoll: e.diceRoll || 0,
+    gloveDiceAge: clock - (e.diceRollAt ?? -10),
     gloveSwingAge: age,
     gloveSequence: e.slapSequence || 1,
     time: clock,

@@ -1288,3 +1288,121 @@ test("starting on the ready map retains actual GPU geometry, collision and navig
   expect(result.noRedundantPreview).toBe(true);
   expect(errors).toEqual([]);
 });
+
+test("Dice pips reveal only accepted rolls on the first- and third-person hand, keep one buffer, and reset without trial rewards", async ({
+  page,
+}) => {
+  const errors = await prepare(page);
+  await practice(page);
+  const result = await page.evaluate(async () => {
+    const g = window.__arena,
+      { configurePractice, resetPracticeTarget, resetPractice } =
+        await import("/src/gloves/practice.js");
+    const before = localStorage.getItem("slap-arena-profile-v1");
+    configurePractice(g, {
+      glove: "glove_dice",
+      mode: "stationary",
+      count: 1,
+      opponent: "glove_default",
+    });
+    let p = g.player,
+      t = g.entities[1];
+    g.yaw = g.pitch = 0;
+    Object.assign(p, { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, grounded: true });
+    Object.assign(t, {
+      x: 0,
+      y: 0,
+      z: -12,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      grounded: true,
+    });
+    const step = () => {
+      for (let i = 0; i < 35; i++) g.simulate(1 / 120);
+      g.updateCamera(1 / 60);
+    };
+    g.gloveRandom = () => 0;
+    g.firePlayer();
+    step();
+    const panel = g.viewModel.userData.gloveRig.dicePanel,
+      geometry = panel.children[0].geometry,
+      index = geometry.index,
+      whiff = { roll: panel.userData.roll, health: t.health };
+    const hit = (roll) => {
+      resetPracticeTarget(t);
+      Object.assign(t, {
+        x: 0,
+        y: 0,
+        z: -2.2,
+        vx: 0,
+        vy: 0,
+        vz: 0,
+        grounded: true,
+      });
+      Object.assign(p, {
+        x: 0,
+        y: 0,
+        z: 0,
+        vx: 0,
+        vy: 0,
+        vz: 0,
+        grounded: true,
+        gloveCooldown: 0,
+      });
+      g.gloveRandom = () => (roll === 6 ? 0.999999 : 0);
+      g.firePlayer();
+      step();
+      return {
+        roll: panel.userData.roll,
+        hp: t.health,
+        indices: geometry.drawRange.count,
+        confirmed: p.diceRoll,
+      };
+    };
+    const low = hit(1),
+      high = hit(6),
+      sameBuffer =
+        geometry === panel.children[0].geometry && index === geometry.index;
+    g.renderer.autoClear = true;
+    g.renderWorld();
+    g.renderer.autoClear = false;
+    g.renderer.clearDepth();
+    g.renderer.render(g.weaponScene, g.weaponCamera);
+    g.renderer.autoClear = true;
+    g.cameraZoom = 6;
+    for (let i = 0; i < 12; i++) g.updateCamera(1 / 60);
+    const third =
+      p.model.parts.onlineSocket.userData.weapon.userData.gloveRig.dicePanel;
+    g.renderWorld();
+    const thirdRoll = third.userData.roll,
+      aim = [g.yaw, g.pitch];
+    resetPractice(g);
+    g.updateCamera(1 / 60);
+    const reset = {
+      roll: g.lastDiceRoll,
+      panel: g.viewModel.userData.gloveRig.dicePanel.userData.roll,
+    };
+    return {
+      whiff,
+      low,
+      high,
+      sameBuffer,
+      thirdRoll,
+      aim,
+      reset,
+      profileUnchanged:
+        before === localStorage.getItem("slap-arena-profile-v1"),
+    };
+  });
+  expect(result.whiff).toEqual({ roll: 0, health: 150 });
+  expect(result.low).toMatchObject({ roll: 1, hp: 134, confirmed: 1 });
+  expect(result.high).toMatchObject({ roll: 6, hp: 114, confirmed: 6 });
+  expect(result.high.indices).toBe(result.low.indices * 6);
+  expect(result.sameBuffer).toBe(true);
+  expect(result.thirdRoll).toBe(6);
+  expect(result.aim).toEqual([0, 0]);
+  expect(result.reset).toEqual({ roll: 0, panel: 0 });
+  expect(result.profileUnchanged).toBe(true);
+  expect(errors).toEqual([]);
+});

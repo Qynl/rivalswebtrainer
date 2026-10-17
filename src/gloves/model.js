@@ -1,3 +1,4 @@
+import { animateDicePanel } from "./dice-panel.js";
 import { GeometryCopyCache } from "../geometry-copy-cache.js";
 import { batchFixedMeshes } from "../batching.js";
 import { abilityPose } from "./ability-motion.js";
@@ -202,7 +203,14 @@ export function createGloveModel(id, options = {}) {
       box(palm, 0.085, 0.09, 0.11, (i - 1.5) * 0.1, 0.27, 0.15, dark);
     box(palm, 0.46, 0.12, 0.24, 0, 0.02, 0, dark);
   }
-  addGloveDetails(glove, { palm, wrist, box, main, dark, trim });
+  const details = addGloveDetails(glove, {
+    palm,
+    wrist,
+    box,
+    main,
+    dark,
+    trim,
+  });
   // Preserve every articulated joint; merge only fixed same-material siblings.
   // This keeps the exact triangles, textures and animation with fewer submissions.
   const batching = { before: 0, after: 0 };
@@ -228,7 +236,15 @@ export function createGloveModel(id, options = {}) {
     weaponId: id,
     glove: true,
     batching,
-    gloveRig: { wrist, palm, fingers, trim, main, sweep },
+    gloveRig: {
+      wrist,
+      palm,
+      fingers,
+      trim,
+      main,
+      sweep,
+      dicePanel: details?.dicePanel,
+    },
     basePosition: root.position.clone(),
     baseRotation: root.rotation.clone(),
     botRightGrip: new THREE.Vector3(0, -0.4, 0),
@@ -263,6 +279,12 @@ export function animateGlove(model, state) {
       : rawAge;
   const p = gloveMotion(glove.key, age, glove.windup, state.gloveSequence ?? 1),
     cast = abilityPose(glove.key, state.gloveCastAge);
+  animateDicePanel(
+    rig.dicePanel,
+    state.gloveDiceRoll,
+    state.gloveDiceAge,
+    state.shake !== false,
+  );
   const bob =
     state.shake === false
       ? 0

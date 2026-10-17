@@ -703,6 +703,7 @@ export class Game {
     return e;
   }
   startRound() {
+    this.lastDiceRoll = 0;
     this.incomingImpacts = [];
     this.deathRecap = null;
     this.spectatorTargetId = null;
@@ -3238,6 +3239,8 @@ export class Game {
         gloveSequence: this.shotSequence || 1,
         gloveCastAge: this.clock - (p.gloveCastTime ?? -10),
         gloveImpact: this.slapImpact || 0,
+        gloveDiceRoll: p.diceRoll || 0,
+        gloveDiceAge: this.clock - (p.diceRollAt ?? -10),
         gloveRagdoll: p.ragdollTime || 0,
         gloveStone: p.stoneTime || 0,
         gloveBoost: p.boostTime || 0,

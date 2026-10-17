@@ -1,3 +1,4 @@
+import { createDicePanel } from "./dice-panel.js";
 import * as THREE from "three";
 // Original, bounded procedural geometry. No Roblox meshes, textures or audio.
 export function addGloveDetails(glove, { palm, wrist, box, main, dark, trim }) {
@@ -44,18 +45,12 @@ export function addGloveDetails(glove, { palm, wrist, box, main, dark, trim }) {
         b.rotation.z = -0.35;
       }
       break;
-    case "dice":
+    case "dice": {
       box(palm, 0.29, 0.29, 0.11, 0, 0.15, 0.16, trim);
-      for (const [x, y] of [
-        [-0.08, 0.07],
-        [-0.08, 0.15],
-        [-0.08, 0.23],
-        [0.08, 0.07],
-        [0.08, 0.15],
-        [0.08, 0.23],
-      ])
-        pip(x, y, 0.225);
-      break;
+      const dicePanel = createDicePanel(dark);
+      palm.add(dicePanel);
+      return { dicePanel };
+    }
     case "ghost":
       main.transparent = true;
       main.opacity = 0.68;

@@ -1,3 +1,4 @@
+import { recordDiceOutcome } from "./dice-outcome.js";
 import { gloveBotWish, recordGloveBotTravel } from "./bot-navigation.js";
 import { recordIncomingImpact } from "./impact-history.js";
 import { recordRosterSlap } from "./scoreboard.js";
@@ -308,6 +309,7 @@ export function presentImpact(g, event, source, target) {
   recordIncomingImpact(g, event, source, target);
   const glove = GLOVES[event.glove];
   if (!glove) return;
+  const diceOutcome = recordDiceOutcome(g, event, source);
   const position = v(...event.position),
     color = new THREE.Color(glove.color).getHex();
   g.combatFX?.burst(position, color, glove.key === "bull" ? 16 : 10);
@@ -324,7 +326,7 @@ export function presentImpact(g, event, source, target) {
       );
   }
   if (source === g.player && (event.direct ?? event.earned)) {
-    g.lastDiceRoll = event.roll || 0;
+    g.lastDiceRoll = diceOutcome ? event.roll : 0;
     g.slapImpact = 0.15;
     g.events.hit?.(false);
   }
