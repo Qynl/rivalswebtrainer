@@ -39,7 +39,16 @@ export function gloveBotWish(
     }
     if (actor.path?.length) wish = followRoute(actor, actor.path);
   }
-  return steerBotWish(actor, wish, g.world, g.clock);
+  const safe = steerBotWish(actor, wish, g.world, g.clock);
+  // In a boxed-in retreat, the general obstacle helper may choose its final
+  // reverse fallback. Holding is safer than charging a protected opponent.
+  if (
+    visible &&
+    ["disengage", "space"].includes(intent.tactic) &&
+    safe.x * (goal.x - actor.x) + safe.z * (goal.z - actor.z) > 0.0001
+  )
+    return { x: 0, z: 0 };
+  return safe;
 }
 export function recordGloveBotTravel(
   g,

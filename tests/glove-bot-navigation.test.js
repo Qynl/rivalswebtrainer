@@ -149,3 +149,39 @@ test("guard disengagement is not overridden by a latched pursuit route and targe
   assert.equal(e.gloveNavigation.target, next);
   assert.equal(e.path.length, 0);
 });
+
+test("boxed-in defensive steering holds rather than reversing forward into a protected target; open tangents remain usable", () => {
+  const back = { minX: -2, maxX: 2, minZ: 0.4, maxZ: 2, minY: 0, maxY: 4 },
+    left = { minX: -2, maxX: -0.4, minZ: -0.1, maxZ: 2, minY: 0, maxY: 4 },
+    right = { ...left, minX: 0.4, maxX: 2 };
+  const target = body({ id: "target", team: 0, z: -2 });
+  for (const tactic of ["disengage", "space"]) {
+    const e = body(),
+      g = { clock: 1, world: { boxes: [back, left, right] } };
+    const safe = gloveBotWish(
+      g,
+      e,
+      target,
+      { tactic, wish: { x: 0, z: 1 } },
+      true,
+      2,
+      3.2,
+      0.01,
+    );
+    assert.deepEqual(safe, { x: 0, z: 0 });
+  }
+  const e = body(),
+    g = { clock: 1, world: { boxes: [back] } };
+  const safe = gloveBotWish(
+    g,
+    e,
+    target,
+    { tactic: "disengage", wish: { x: 0, z: 1 } },
+    true,
+    2,
+    3.2,
+    0.01,
+  );
+  assert.ok(Math.abs(safe.x) > 0.9);
+  assert.ok(safe.z >= -0.0001);
+});

@@ -115,3 +115,25 @@ test("a remembered empty position does not cause defensive spacing against an un
   assert.equal(intent.attack, false);
   assert.ok(intent.wish.z < 0);
 });
+
+test("exact enemy overlap produces finite real spacing travel without moving either actor in the planner", () => {
+  const { bot, target } = fixture();
+  target.z = 0;
+  const intent = plan(bot, target, 1);
+  assert.equal(intent.tactic, "space");
+  assert.ok(Math.hypot(intent.wish.x, intent.wish.z) > 0.5);
+  assert.ok(Number.isFinite(intent.yaw));
+  assert.equal(bot.z, 0);
+  assert.equal(target.z, 0);
+});
+test("exact same-level ally overlap separates the pair symmetrically but another storey does not repel it", () => {
+  const a = { ...fixture().bot, id: "a" },
+    b = { ...fixture().bot, id: "b" },
+    target = { ...fixture().target, z: -10 };
+  const ia = plan(a, target, 1, { entities: [a, b] }),
+    ib = plan(b, target, 1, { entities: [a, b] });
+  assert.ok(ia.wish.x * ib.wish.x < 0);
+  b.y = 2.8;
+  const upstairs = plan(a, target, 1, { entities: [a, b] });
+  assert.equal(upstairs.wish.x, 0);
+});

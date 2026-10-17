@@ -34,7 +34,12 @@ export function duelBotIntent(
   const dx = target.x - bot.x,
     dz = target.z - bot.z;
   const distance = Math.max(0.001, Math.hypot(dx, dz));
-  const toward = { x: dx / distance, z: dz / distance };
+  // An exact overlap has no bearing. Back out along the current facing instead
+  // of normalizing zero into a motionless/undefined spacing decision.
+  const toward =
+    distance < 0.01
+      ? { x: -Math.sin(bot.yaw || 0), z: -Math.cos(bot.yaw || 0) }
+      : { x: dx / distance, z: dz / distance };
   const guarded =
     visible &&
     (target.goldTime > 0 || target.stoneTime > 0 || target.reverseTime > 0);
@@ -45,7 +50,8 @@ export function duelBotIntent(
   const leadTime = reacted ? Math.min(0.11, distance / 100) : 0;
   const leadX = Math.max(-0.65, Math.min(0.65, (target.vx || 0) * leadTime));
   const leadZ = Math.max(-0.65, Math.min(0.65, (target.vz || 0) * leadTime));
-  const desiredYaw = Math.atan2(-(dx + leadX), -(dz + leadZ));
+  const desiredYaw =
+    distance < 0.01 ? bot.yaw || 0 : Math.atan2(-(dx + leadX), -(dz + leadZ));
   const yaw = turnBotYaw(
     bot.yaw || 0,
     desiredYaw,
@@ -82,10 +88,22 @@ export function duelBotIntent(
   // It never moves an entity directly or bypasses world collision.
   for (const ally of entities) {
     if (ally === bot || !ally.alive || ally.team !== bot.team) continue;
+    if (
+      (ally.y || 0) >= (bot.y || 0) + (bot.height || 1.9) ||
+      (bot.y || 0) >= (ally.y || 0) + (ally.height || 1.9)
+    )
+      continue;
     const ax = bot.x - ally.x,
       az = bot.z - ally.z,
       d = Math.hypot(ax, az);
-    if (d > 0.01 && d < 1.35) {
+    if (d <= 0.01) {
+      // Unique entity IDs make a symmetric pair choose opposite directions.
+      const sign =
+        String(bot.id ?? bot.seed ?? "a") < String(ally.id ?? ally.seed ?? "b")
+          ? 1
+          : -1;
+      wish.x += sign * skill.footwork;
+    } else if (d < 1.35) {
       const force = (1 - d / 1.35) * skill.footwork;
       wish.x += (ax / d) * force;
       wish.z += (az / d) * force;

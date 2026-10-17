@@ -1145,3 +1145,63 @@ test("real Foundry cover breaks live bot tracking; sight reacquisition updates t
   expect(result.finite).toBe(true);
   expect(errors).toEqual([]);
 });
+
+test("exact overlapping real glove opponents separate through ordinary movement without pushing the stationary player", async ({
+  page,
+}) => {
+  const errors = await prepare(page);
+  await practice(page);
+  const result = await page.evaluate(async () => {
+    const g = window.__arena,
+      { gloveLoadout } = await import("/src/gloves/catalog.js"),
+      { canOccupy } = await import("/src/physics.js");
+    g.start({
+      mode: 2,
+      map: "courtyard",
+      difficulty: "regular",
+      loadout: gloveLoadout("glove_default"),
+      capture: false,
+    });
+    g.state = "playing";
+    const p = g.player,
+      enemies = g.entities.filter((e) => e.team === 1),
+      ally = g.entities.find((e) => e !== p && e.team === 0);
+    Object.assign(ally, { x: 10, z: 10 });
+    Object.assign(p, { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, grounded: true });
+    for (const e of enemies)
+      Object.assign(e, {
+        x: 0,
+        y: 0,
+        z: 0,
+        vx: 0,
+        vy: 0,
+        vz: 0,
+        yaw: 0,
+        grounded: true,
+        activeWeapon: "glove_default",
+        abilityCooldown: 99,
+      });
+    let physical = true;
+    for (let i = 0; i < 20; i++) {
+      g.simulate(1 / 120);
+      for (const e of enemies)
+        physical &&=
+          canOccupy(e, e.x, e.y, e.z, g.world.boxes) &&
+          [e.x, e.y, e.z, e.yaw].every(Number.isFinite);
+    }
+    return {
+      separation: Math.hypot(
+        enemies[0].x - enemies[1].x,
+        enemies[0].z - enemies[1].z,
+      ),
+      fromPlayer: enemies.map((e) => Math.hypot(e.x - p.x, e.z - p.z)),
+      player: [p.x, p.z],
+      physical,
+    };
+  });
+  expect(result.physical).toBe(true);
+  expect(result.separation).toBeGreaterThan(0.5);
+  expect(Math.min(...result.fromPlayer)).toBeGreaterThan(0.3);
+  expect(result.player).toEqual([0, 0]);
+  expect(errors).toEqual([]);
+});
