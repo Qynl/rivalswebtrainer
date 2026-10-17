@@ -1,3 +1,4 @@
+import { GeometryCopyCache } from "../geometry-copy-cache.js";
 import { batchFixedMeshes } from "../batching.js";
 import { abilityPose } from "./ability-motion.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
@@ -7,8 +8,14 @@ export { slapPose } from "./motion.js";
 import { addGloveDetails } from "./model-details.js";
 import * as THREE from "three";
 import { GLOVES } from "./catalog.js";
-const rounded = (w, h, d, r = 0.035) =>
-  new RoundedBoxGeometry(w, h, d, 2, Math.min(r, w * 0.22, h * 0.22, d * 0.22));
+const gloveShapes = new GeometryCopyCache(64);
+const rounded = (w, h, d, r = 0.035) => {
+  const radius = Math.min(r, w * 0.22, h * 0.22, d * 0.22);
+  return gloveShapes.copy(
+    `${w}:${h}:${d}:${radius}`,
+    () => new RoundedBoxGeometry(w, h, d, 2, radius),
+  );
+};
 export function createGloveModel(id, options = {}) {
   const glove = GLOVES[id];
   const root = new THREE.Group();

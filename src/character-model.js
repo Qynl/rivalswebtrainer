@@ -1,3 +1,4 @@
+import { GeometryCopyCache } from "./geometry-copy-cache.js";
 import * as THREE from "three";
 import { operatorIdentity, callsignTexture } from "./operator-kit.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
@@ -5,6 +6,8 @@ import { batchFixedMeshes } from "./batching.js";
 import { muzzleFlash } from "./animation.js";
 import { detailedWeapon } from "./weapon-models.js";
 import { COMBAT_ITEMS as WEAPONS } from "./data.js";
+
+const operatorShapes = new GeometryCopyCache(96);
 
 // Original articulated Striker operators. Cosmetic geometry never defines hitboxes.
 // Each actor owns its tiny textile map, so normal character disposal is sufficient.
@@ -83,10 +86,12 @@ export function createOperator(team, name = "BOT", { unarmed = false } = {}) {
     return g;
   };
   const box = (parent, w, h, d, x, y, z, m, r = 0.014) => {
-    const mesh = new THREE.Mesh(
-      new RoundedBoxGeometry(w, h, d, 1, Math.min(r, w / 4, h / 4, d / 4)),
-      m,
+    const radius = Math.min(r, w / 4, h / 4, d / 4);
+    const geometry = operatorShapes.copy(
+      `box:${w}:${h}:${d}:${radius}`,
+      () => new RoundedBoxGeometry(w, h, d, 1, radius),
     );
+    const mesh = new THREE.Mesh(geometry, m);
     mesh.position.set(x, y, z);
     mesh.castShadow = mesh.receiveShadow = true;
     parent.add(mesh);
@@ -147,17 +152,21 @@ export function createOperator(team, name = "BOT", { unarmed = false } = {}) {
     torso.add(label);
   }
   const cable = new THREE.Mesh(
-    new THREE.TubeGeometry(
-      new THREE.CatmullRomCurve3([
-        new THREE.Vector3(0.24, 0.22, 0.26),
-        new THREE.Vector3(0.29, 0.34, 0.17),
-        new THREE.Vector3(0.27, 0.36, -0.08),
-        new THREE.Vector3(0.24, 0.21, -0.25),
-      ]),
-      12,
-      0.009,
-      5,
-      false,
+    operatorShapes.copy(
+      "radio-cable",
+      () =>
+        new THREE.TubeGeometry(
+          new THREE.CatmullRomCurve3([
+            new THREE.Vector3(0.24, 0.22, 0.26),
+            new THREE.Vector3(0.29, 0.34, 0.17),
+            new THREE.Vector3(0.27, 0.36, -0.08),
+            new THREE.Vector3(0.24, 0.21, -0.25),
+          ]),
+          12,
+          0.009,
+          5,
+          false,
+        ),
     ),
     trim,
   );
