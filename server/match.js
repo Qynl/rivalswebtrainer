@@ -1,3 +1,4 @@
+import { gloveState } from "../src/gloves/states.js";
 import { gloveMatch } from "../src/gloves/combat.js";
 import * as THREE from "three";
 import { Game } from "../src/game.js";
@@ -250,7 +251,7 @@ export class Match {
           time: this.time,
           velocity,
         });
-      for (const zone of [...g.fires, ...g.smokes])
+      for (const zone of [...g.fires, ...g.smokes, ...(g.gloveBricks || [])])
         if (!zone.netId) zone.netId = ++this.zoneId;
     };
     return g;
@@ -391,6 +392,8 @@ export class Match {
     if (
       this.phase !== "playing" ||
       !e.alive ||
+      e.goldTime > 0 ||
+      e.stoneTime > 0 ||
       !Number.isFinite(amount) ||
       amount <= 0
     )
@@ -574,6 +577,7 @@ export class Match {
           shotSide: (Math.max(1, g.shotSequence || 1) - 1) % 2,
           dashCooldown: gloveMatch(g) ? e.abilityCooldown || 0 : g.dashCooldown,
           deflectCooldown: g.deflectCooldown,
+          ...(gloveMatch(g) ? gloveState(e) : {}),
           stats: { ...g.matchStats },
         };
       }),
@@ -591,6 +595,14 @@ export class Match {
         })),
       ),
       zones: [...this.contexts.values()].flatMap((g) => [
+        ...(g.gloveBricks || []).map((b) => ({
+          id: (b.netId ||= ++this.zoneId),
+          type: "brick",
+          x: b.x,
+          y: b.y,
+          z: b.z,
+          life: b.life,
+        })),
         ...g.fires.map((f) => ({
           id: f.netId,
           type: "fire",

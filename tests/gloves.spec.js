@@ -52,7 +52,7 @@ test("glove-only collection, locked ability descriptions, settings and responsiv
   await expect(
     page.getByRole("button", { name: "Default glove", exact: true }),
   ).toBeVisible();
-  await expect(page.locator(".slap-glove-grid>button")).toHaveCount(9);
+  await expect(page.locator(".slap-glove-grid>button")).toHaveCount(24);
   await page
     .getByRole("button", { name: "Flash glove locked", exact: true })
     .click();
@@ -217,7 +217,10 @@ test("bots genuinely approach, slap, knock back and eliminate in glove-only team
         maxLaunch = 0;
       // Advance real simulation time, with the actual navigation, arena collision and AI.
       // Teams can legitimately focus your teammate first, so measure the duel separately.
-      for (let i = 0; i < 120 * 65; i++) {
+      // Cover the actual 90-second round limit as well: random team fights need
+      // not eliminate every survivor in 65 seconds. We still require real
+      // early contacts, health loss, launches, eliminations and round progress.
+      for (let i = 0; i < 120 * 110; i++) {
         if (["playing", "roundend", "countdown"].includes(g.state))
           g.simulate(1 / 120);
         minPlayerHealth = Math.min(minPlayerHealth, g.player?.health ?? 150);
@@ -250,7 +253,7 @@ test("bots genuinely approach, slap, knock back and eliminate in glove-only team
   for (const result of results) {
     expect(result.firstHit).toBeGreaterThanOrEqual(0);
     expect(result.firstHit).toBeLessThan(15);
-    expect(result.minHealth).toBeLessThan(150);
+    expect(result.minHealth).toBe(0);
     expect(result.maxLaunch).toBeGreaterThan(10);
     expect(result.gloves).toBe(true);
     expect(result.score.some((n) => n > 0)).toBe(true);
@@ -265,7 +268,7 @@ test("between-round selection is one unlocked glove and preserves health and mov
   await page.click("#play-button");
   await page.waitForFunction(() => !!document.pointerLockElement);
   await page.keyboard.press("KeyM");
-  await expect(page.locator(".slap-round-gloves button")).toHaveCount(9);
+  await expect(page.locator(".slap-round-gloves button")).toHaveCount(24);
   await expect(
     page.getByRole("button", { name: "Bull 475 SLAPS" }),
   ).toBeDisabled();

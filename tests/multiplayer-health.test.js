@@ -55,7 +55,7 @@ test("production API routes never fall through to the HTML SPA", async () => {
     }
     assert.equal(
       (await (await fetch(base + "/api/health")).json()).protocol,
-      4,
+      5,
     );
   } finally {
     await app.close();

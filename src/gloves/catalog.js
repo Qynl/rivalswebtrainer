@@ -1,3 +1,4 @@
+import { EXTRA_GLOVE_DEFINITIONS } from "./expanded-catalog.js";
 // Original implementations inspired by the publicly documented Slap Battles gloves.
 // Damage, reach, launch velocity and cooldowns are adapted to these round-based arenas.
 const definitions = [
@@ -146,6 +147,7 @@ const definitions = [
     0,
   ],
 ];
+definitions.push(...EXTRA_GLOVE_DEFINITIONS);
 export const GLOVES = Object.freeze(
   Object.fromEntries(
     definitions.map(
@@ -213,3 +215,26 @@ export const canUseGlove = (id, slaps) =>
   isGlove(id) && Number.isSafeInteger(slaps) && slaps >= GLOVES[id].cost;
 export const sanitizeSlaps = (value) =>
   Number.isSafeInteger(value) && value >= 0 ? Math.min(10_000_000, value) : 0;
+
+// Display ordering is separate from the append-only wire-ID ordering.
+export const GLOVE_ROSTER = Object.freeze(
+  Object.values(GLOVES).sort((a, b) => a.cost - b.cost),
+);
+export const gloveCategory = (g) =>
+  ["dual", "dice", "boomerang", "bull", "extended"].includes(g.key)
+    ? "Power"
+    : ["ghost", "diamond", "golden", "reverse"].includes(g.key)
+      ? "Defense"
+      : [
+            "default",
+            "acrobat",
+            "flash",
+            "spring",
+            "space",
+            "magnet",
+            "speedrun",
+            "thanos",
+            "swapper",
+          ].includes(g.key)
+        ? "Mobility"
+        : "Control";

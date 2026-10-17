@@ -1,14 +1,24 @@
+import {
+  gloveMoveScale,
+  committedWish,
+  lowGravity,
+  receiveGloveState,
+} from "../src/gloves/states.js";
+import { presentGloveStates } from "../src/gloves/visual-effects.js";
+import { createBrickModel } from "../src/gloves/brick.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as THREE from "three";
 import {
   GLOVES,
+  GLOVE_ROSTER,
   gloveLoadout,
   canUseGlove,
   sanitizeSlaps,
 } from "../src/gloves/catalog.js";
 import { SlapProgression, sanitizeProfile } from "../src/gloves/progression.js";
 import {
+  applyImpact,
   beginSlap,
   advanceSlap,
   resolveSlap,
@@ -81,8 +91,8 @@ function setup(id = "glove_default") {
   other.hasLOS = () => true;
   return { service, room, match, g, other, a, b, received };
 }
-test("nine gloves have unique costs, original rigs and valid canonical internal inventory", () => {
-  assert.equal(Object.keys(GLOVES).length, 9);
+test("24 gloves have unique costs, original rigs and valid canonical internal inventory", () => {
+  assert.equal(Object.keys(GLOVES).length, 24);
   for (const glove of Object.values(GLOVES)) {
     assert.deepEqual(
       cleanLoadout(gloveLoadout(glove.id)),
@@ -483,5 +493,596 @@ test("Bull hits at most three valid enemies in one heavy slap, awarding one slap
     assert.equal(s.g.matchStats.hits, 3);
   } finally {
     s.service.dispose();
+  }
+});
+
+test("expanded roster preserves the original nine wire IDs, saves and sorted milestones", () => {
+  assert.deepEqual(Object.keys(GLOVES).slice(0, 9), [
+    "glove_default",
+    "glove_diamond",
+    "glove_extended",
+    "glove_snow",
+    "glove_pull",
+    "glove_flash",
+    "glove_spring",
+    "glove_swapper",
+    "glove_bull",
+  ]);
+  assert.equal(new Set(GLOVE_ROSTER.map((g) => g.cost)).size, 24);
+  assert.deepEqual(
+    GLOVE_ROSTER.slice(0, 7).map((g) => g.cost),
+    [0, 15, 30, 40, 65, 85, 110],
+  );
+  for (const g of GLOVE_ROSTER) {
+    assert.equal(canUseGlove(g.id, g.cost), true);
+    if (g.cost) assert.equal(canUseGlove(g.id, g.cost - 1), false);
+    assert.equal(
+      sanitizeProfile({ slaps: g.cost, selected: g.id }).selected,
+      g.id,
+    );
+  }
+  const p = new SlapProgression({
+    getItem: () => JSON.stringify({ slaps: 30, selected: "glove_extended" }),
+    setItem: noop,
+  });
+  assert.equal(p.next().id, "glove_dual");
+  assert.equal(p.profile.selected, "glove_extended");
+});
+
+test("Dual has a real second animated hand, a wider two-target sweep and two rewards per enemy", () => {
+  const s = setup("glove_dual");
+  try {
+    const e = s.other.player;
+    Object.assign(e, { x: 2.5, z: -1 });
+    s.match.entities.push(
+      { ...e, id: "dual-side", x: -2.5 },
+      { ...e, id: "dual-third", x: 0, z: -3 },
+    );
+    assert.equal(resolveSlap(s.g, s.g.player, "glove_default"), 1); // only the central enemy is in the narrow cone
+    for (const target of s.match.entities.slice(1)) {
+      target.health = 150;
+      target.slapGrace = 0;
+      target.ragdollTime = 0;
+    }
+    s.g.matchStats.hits = 0;
+    delete s.g.matchStats.slaps;
+    assert.equal(resolveSlap(s.g, s.g.player, "glove_dual"), 2);
+    assert.equal(s.g.matchStats.hits, 2);
+    assert.equal(s.g.matchStats.slaps, 4);
+    const model = createGloveModel("glove_dual"),
+      left = model.userData.secondGlove;
+    assert.ok(left);
+    assert.equal(left.userData.gloveRig.fingers.length, 5);
+    assert.equal(left.userData.secondGlove, undefined);
+    animateGlove(model, { gloveSwingAge: 0.2 });
+    assert.notEqual(left.position.x, -1.25);
+  } finally {
+    s.service.dispose();
+  }
+});
+
+for (let roll = 1; roll <= 6; roll++)
+  test(`Dice authority produces balanced outcome ${roll}, not client-provided damage`, () => {
+    const s = setup("glove_dice");
+    try {
+      s.g.gloveRandom = () => (roll - 1 + 0.5) / 6;
+      assert.equal(resolveSlap(s.g, s.g.player, "glove_dice"), 1);
+      assert.equal(s.other.player.health, 150 - (12 + roll * 4));
+      assert.ok(Math.abs(s.other.player.vz + (7 + roll * 3.1)) < 0.0001);
+      assert.equal(
+        s.match.events.find((e) => e.type === "gloveHit").roll,
+        roll,
+      );
+      assert.equal(s.g.matchStats.slaps, 1);
+    } finally {
+      s.service.dispose();
+    }
+  });
+
+test("Brick traps are bounded, expire, have no damage/reward, and can be jumped or avoided by allies", () => {
+  const s = setup("glove_brick");
+  try {
+    assert.equal(useGloveAbility(s.g), true);
+    const brick = s.g.gloveBricks[0];
+    assert.ok(brick.z > 0);
+    assert.equal(s.g.player.abilityCooldown, 5);
+    Object.assign(s.other.player, { x: brick.x, z: brick.z, grounded: false });
+    s.g.clock += 0.5;
+    tickGloves(s.g, 0.01);
+    assert.equal(s.other.player.ragdollTime, 0);
+    s.other.player.grounded = true;
+    s.other.player.team = 0;
+    tickGloves(s.g, 0.01);
+    assert.equal(s.g.gloveBricks.length, 1);
+    s.other.player.team = 1;
+    tickGloves(s.g, 0.01);
+    assert.equal(s.g.gloveBricks.length, 0);
+    assert.ok(s.other.player.ragdollTime > 0.7);
+    assert.equal(s.other.player.health, 150);
+    assert.equal(s.g.matchStats.hits, 0);
+    s.other.player.z = -20;
+    for (let i = 0; i < 7; i++) {
+      s.g.player.abilityCooldown = 0;
+      assert.equal(useGloveAbility(s.g), true);
+    }
+    assert.equal(s.g.gloveBricks.length, 4);
+    const zones = s.match.snapshot().zones;
+    assert.equal(zones.length, 4);
+    assert.equal(new Set(zones.map((z) => z.id)).size, 4);
+    assert.ok(zones.every((z) => z.type === "brick" && z.id > 0));
+    tickGloves(s.g, 10);
+    assert.equal(s.g.gloveBricks.length, 0);
+    const model = createBrickModel();
+    assert.equal(model.children.length, 5);
+    model.traverse((o) => o.geometry?.dispose());
+  } finally {
+    s.service.dispose();
+  }
+});
+
+test("Brick cannot be placed in the air or inside world geometry, without wasting a cooldown", () => {
+  const s = setup("glove_brick");
+  try {
+    s.g.player.grounded = false;
+    assert.equal(useGloveAbility(s.g), false);
+    assert.ok(!s.g.player.abilityCooldown);
+    s.g.player.grounded = true;
+    s.g.world.boxes = [
+      { minX: -1, maxX: 1, minY: 0, maxY: 2, minZ: 0.2, maxZ: 1.5 },
+    ];
+    assert.equal(useGloveAbility(s.g), false);
+    assert.equal(s.g.gloveBricks, undefined);
+  } finally {
+    s.service.dispose();
+  }
+});
+
+test("Acrobat commits a forward dodge, clears falling velocity and never rotates the camera", () => {
+  const s = setup("glove_acrobat");
+  try {
+    s.g.yaw = 0.3;
+    s.g.pitch = 0.2;
+    s.g.player.vy = -18;
+    assert.equal(useGloveAbility(s.g), true);
+    assert.equal(s.g.player.boostTime, 0.5);
+    assert.equal(s.g.player.vy, 0);
+    assert.ok(Math.abs(Math.hypot(s.g.player.vx, s.g.player.vz) - 18) < 0.0001);
+    assert.equal(s.g.yaw, 0.3);
+    assert.equal(s.g.pitch, 0.2);
+    const wish = committedWish(s.g.player, GLOVES.glove_acrobat, {
+      x: 1,
+      z: 0,
+    });
+    assert.ok(wish.z < -0.9);
+    tickGloves(s.g, 0.51);
+    assert.deepEqual(
+      committedWish(s.g.player, GLOVES.glove_acrobat, { x: 1, z: 0 }),
+      { x: 1, z: 0 },
+    );
+  } finally {
+    s.service.dispose();
+  }
+});
+
+test("Ghost really hides enemies and names, remains hittable, and breaks invisibility when slapping", () => {
+  const s = setup("glove_ghost");
+  try {
+    assert.equal(useGloveAbility(s.g), true);
+    assert.equal(s.g.player.ghostTime, 3.2);
+    const target = {
+      team: 1,
+      ghostTime: 3.2,
+      model: createCharacter(1, "GHOST"),
+      activeWeapon: "glove_ghost",
+    };
+    const scene = { clock: 1, player: { team: 0 } };
+    presentGloveStates(scene, target);
+    assert.equal(target.model.group.visible, false);
+    target.team = 0;
+    presentGloveStates(scene, target);
+    assert.equal(target.model.group.visible, true);
+    assert.equal(
+      applyImpact(
+        s.other,
+        s.other.player,
+        s.g.player,
+        GLOVES.glove_default,
+        true,
+      ),
+      true,
+    );
+    assert.equal(s.g.player.health, 126);
+    s.g.player.ragdollTime = 0;
+    s.g.player.slapGrace = 0;
+    assert.equal(beginSlap(s.g), true);
+    assert.equal(s.g.player.ghostTime, 0);
+  } finally {
+    s.service.dispose();
+  }
+});
+
+test("Thanos mark/return is authoritative, collision-validated, cooldown-limited and does not heal", () => {
+  const s = setup("glove_thanos");
+  try {
+    s.g.player.health = 78;
+    assert.equal(useGloveAbility(s.g), true);
+    assert.deepEqual(s.g.player.gloveMark, { x: 0, y: 0, z: 0 });
+    assert.equal(s.g.player.markTime, 12);
+    s.g.player.x = 5;
+    assert.equal(useGloveAbility(s.g), false);
+    tickGloves(s.g, 0.41);
+    s.g.world.boxes = [
+      { minX: -1, maxX: 1, minY: 0, maxY: 3, minZ: -1, maxZ: 1 },
+    ];
+    assert.equal(useGloveAbility(s.g), false);
+    assert.equal(s.g.player.x, 5);
+    s.g.world.boxes = [];
+    assert.equal(useGloveAbility(s.g), true);
+    assert.equal(s.g.player.x, 0);
+    assert.equal(s.g.player.health, 78);
+    assert.equal(s.g.player.gloveMark, null);
+    assert.equal(s.g.player.abilityCooldown, 14);
+  } finally {
+    s.service.dispose();
+  }
+});
+
+test("Expired Thanos marks cannot bypass the return cooldown", () => {
+  const s = setup("glove_thanos");
+  try {
+    useGloveAbility(s.g);
+    tickGloves(s.g, 12.1);
+    assert.equal(s.g.player.gloveMark, null);
+    assert.equal(s.g.player.abilityCooldown, 14);
+    assert.equal(useGloveAbility(s.g), false);
+  } finally {
+    s.service.dispose();
+  }
+});
+
+test("Stun EMP only affects grounded visible enemies, without damage or slap rewards", () => {
+  const s = setup("glove_stun");
+  try {
+    s.other.player.grounded = false;
+    useGloveAbility(s.g);
+    assert.equal(s.other.player.ragdollTime, 0);
+    s.other.player.grounded = true;
+    s.g.player.abilityCooldown = 0;
+    s.g.hasLOS = () => false;
+    useGloveAbility(s.g);
+    assert.equal(s.other.player.ragdollTime, 0);
+    s.g.hasLOS = () => true;
+    s.g.player.abilityCooldown = 0;
+    useGloveAbility(s.g);
+    assert.equal(s.other.player.ragdollTime, 1.1);
+    assert.equal(s.other.player.slapGrace, 0);
+    assert.equal(s.other.player.health, 150);
+    assert.equal(s.g.matchStats.hits, 0);
+  } finally {
+    s.service.dispose();
+  }
+});
+
+test("Za Hando pulls nearby enemies, never allies or targets behind walls", () => {
+  const s = setup("glove_za_hando");
+  try {
+    s.g.hasLOS = () => false;
+    useGloveAbility(s.g);
+    assert.equal(s.other.player.vz, 0);
+    s.g.hasLOS = () => true;
+    s.g.player.abilityCooldown = 0;
+    useGloveAbility(s.g);
+    assert.equal(s.other.player.vz, 13);
+    assert.equal(s.other.player.health, 150);
+    assert.equal(s.g.matchStats.hits, 0);
+  } finally {
+    s.service.dispose();
+  }
+});
+
+test("Magnet rushes the user rather than teleporting or pulling the enemy, with no invalid-target cooldown", () => {
+  const s = setup("glove_magnet");
+  try {
+    s.other.player.ragdollTime = 1;
+    assert.equal(useGloveAbility(s.g), false);
+    assert.ok(!s.g.player.abilityCooldown);
+    s.other.player.ragdollTime = 0;
+    s.other.player.ghostTime = 1;
+    assert.equal(useGloveAbility(s.g), false);
+    s.other.player.ghostTime = 0;
+    assert.equal(useGloveAbility(s.g), true);
+    assert.equal(s.g.player.z, 0);
+    assert.equal(s.g.player.vz, -22);
+    assert.equal(s.other.player.vz, 0);
+    assert.equal(s.g.player.boostTime, 0.55);
+  } finally {
+    s.service.dispose();
+  }
+});
+
+test("Anchor redirects confirmed knockback toward the placed dock, not away from the attacker", () => {
+  const s = setup("glove_anchor");
+  try {
+    useGloveAbility(s.g);
+    s.g.player.x = 3;
+    Object.assign(s.other.player, { x: 5, z: 0 });
+    s.g.yaw = -Math.PI / 2;
+    assert.equal(resolveSlap(s.g, s.g.player, "glove_anchor"), 1);
+    assert.equal(s.other.player.vx, -17);
+    assert.equal(s.other.player.vz, 0);
+    assert.equal(s.g.player.markTime, 10);
+    assert.equal(s.g.matchStats.slaps, 1);
+  } finally {
+    s.service.dispose();
+  }
+});
+
+test("Space is a timed low-gravity lift, not flight or a permanent physics mutation", () => {
+  const s = setup("glove_space");
+  try {
+    useGloveAbility(s.g);
+    assert.equal(s.g.player.vy, 7);
+    assert.equal(s.g.player.grounded, false);
+    assert.equal(s.g.player.spaceTime, 2.6);
+    lowGravity(s.g.player, 0.1);
+    assert.ok(Math.abs(s.g.player.vy - 9.16) < 0.00001);
+    tickGloves(s.g, 2.7);
+    const speed = s.g.player.vy;
+    lowGravity(s.g.player, 0.1);
+    assert.equal(s.g.player.vy, speed);
+  } finally {
+    s.service.dispose();
+  }
+});
+
+test("Boomerang has a delayed stronger return impulse and only one damage/reward event", () => {
+  const s = setup("glove_boomerang");
+  try {
+    resolveSlap(s.g, s.g.player, "glove_boomerang");
+    assert.equal(s.other.player.vz, -15);
+    assert.equal(s.other.player.health, 125);
+    s.other.clock = 10.27;
+    tickGloves(s.other, 0.001);
+    assert.equal(s.other.player.vz, -15);
+    s.other.clock = 10.29;
+    tickGloves(s.other, 0.001);
+    assert.equal(s.other.player.vz, 24);
+    assert.equal(s.g.matchStats.hits, 1);
+    assert.equal(s.g.matchStats.slaps, 1);
+    assert.equal(s.other.player.health, 125);
+    assert.equal(s.match.events.filter((e) => e.type === "impulse").length, 2);
+    tickGloves(s.other, 1);
+    assert.equal(s.match.events.filter((e) => e.type === "impulse").length, 2);
+  } finally {
+    s.service.dispose();
+  }
+});
+
+test("Speedrun gains permanent running speed and chill resistance without changing default movement", () => {
+  assert.equal(gloveMoveScale({}, GLOVES.glove_default), 1);
+  assert.equal(gloveMoveScale({}, GLOVES.glove_speedrun), 1.4);
+  assert.equal(gloveMoveScale({ chillTime: 5 }, GLOVES.glove_default), 0.55);
+  assert.ok(gloveMoveScale({ chillTime: 5 }, GLOVES.glove_speedrun) > 1);
+});
+
+test("Golden really protects, enhances outgoing hits and then expires with a long cooldown", () => {
+  const s = setup("glove_golden");
+  try {
+    useGloveAbility(s.g);
+    assert.equal(s.g.player.goldTime, 3);
+    assert.equal(s.g.player.abilityCooldown, 24);
+    assert.equal(
+      applyImpact(
+        s.other,
+        s.other.player,
+        s.g.player,
+        GLOVES.glove_default,
+        true,
+      ),
+      false,
+    );
+    s.match.damage(s.g.player, 50, s.other.player);
+    assert.equal(s.g.player.health, 150);
+    assert.equal(resolveSlap(s.g, s.g.player, "glove_golden"), 1);
+    assert.equal(s.other.player.health, 117.5);
+    tickGloves(s.g, 3.1);
+    assert.equal(s.g.player.goldTime, 0);
+    assert.ok(s.g.player.abilityCooldown > 20);
+    assert.equal(
+      applyImpact(
+        s.other,
+        s.other.player,
+        s.g.player,
+        GLOVES.glove_default,
+        true,
+      ),
+      true,
+    );
+  } finally {
+    s.service.dispose();
+  }
+});
+
+test("Reverse reflects actual damage/launch and credits the defender; double Reverse never recurses", () => {
+  const s = setup("glove_default");
+  try {
+    s.other.player.reverseTime = 2;
+    s.other.loadout = gloveLoadout("glove_reverse");
+    assert.equal(resolveSlap(s.g, s.g.player, "glove_default"), 1);
+    assert.equal(s.other.player.health, 150);
+    assert.equal(s.g.player.health, 126);
+    assert.ok(s.g.player.ragdollTime > 0);
+    assert.equal(s.g.matchStats.hits, 0);
+    assert.equal(s.other.matchStats.hits, 1);
+    assert.equal(s.other.matchStats.slaps, 1);
+    const event = s.match.events.find((e) => e.type === "gloveHit");
+    assert.equal(event.source, s.b);
+    assert.equal(event.victim, s.a);
+    assert.equal(event.reflected, true);
+    Object.assign(s.g.player, { ragdollTime: 0, slapGrace: 0, reverseTime: 2 });
+    assert.equal(resolveSlap(s.g, s.g.player, "glove_default"), 0);
+    assert.equal(s.other.matchStats.hits, 1);
+  } finally {
+    s.service.dispose();
+  }
+});
+
+test("all new status timers, private presentation marks, brick zones and Dual earned counts round-trip over version 4", () => {
+  const s = setup("glove_thanos");
+  try {
+    useGloveAbility(s.g);
+    Object.assign(s.g.player, {
+      ghostTime: 3.2,
+      goldTime: 2.9,
+      reverseTime: 1.7,
+      spaceTime: 2.6,
+      boostTime: 0.5,
+    });
+    s.g.matchStats.hits = 2;
+    s.g.matchStats.slaps = 4;
+    s.g.gloveBricks = [{ x: 1, y: 0, z: 3, life: 8, owner: s.g.player }];
+    const snap = s.match.snapshot(),
+      encoded = encodeSnapshot(snap);
+    assert.equal(encoded[2], 4);
+    assert.equal(encoded.length, 23 + 2 * 113 + 19);
+    const result = decodeSnapshot(
+        encoded,
+        new Map(snap.players.map((p) => [p.index, p])),
+      ),
+      self = result.players.find((p) => p.id === s.a),
+      body = {};
+    receiveGloveState(body, self);
+    assert.equal(body.ghostTime, 3.2);
+    assert.equal(body.goldTime, 2.9);
+    assert.equal(body.reverseTime, 1.7);
+    assert.equal(body.spaceTime, 2.6);
+    assert.equal(body.boostTime, 0.5);
+    assert.equal(body.markTime, 12);
+    assert.deepEqual(body.gloveMark, { x: 0, y: 0, z: 0 });
+    assert.equal(self.stats.slaps, 4);
+    assert.equal(self.stats.hits, 2);
+    assert.equal(result.zones[0].type, "brick");
+    assert.throws(() =>
+      decodeSnapshot(
+        encoded.slice(0, -1),
+        new Map(snap.players.map((p) => [p.index, p])),
+      ),
+    );
+    s.match.newRound();
+    assert.equal(s.match.snapshot().zones.length, 0);
+    assert.ok(
+      s.match
+        .snapshot()
+        .players.every(
+          (p) =>
+            !p.gloveMark && !p.reload && !p.blind && !p.paint && !p.quickMelee,
+        ),
+    );
+  } finally {
+    s.service.dispose();
+  }
+});
+
+for (const glove of GLOVE_ROSTER.filter(
+  (g) => g.cost >= 40 && g.activation === "active",
+))
+  test(`${glove.name} active ability has a real authority branch and cannot execute client-side`, () => {
+    const s = setup(glove.id);
+    try {
+      const before = s.other.player.health;
+      assert.equal(useGloveAbility(s.g), true);
+      assert.ok(s.g.player.abilityCooldown > 0);
+      const event = s.match.events.find((e) => e.type === "gloveAbility");
+      assert.equal(event.glove, glove.id);
+      assert.equal(s.other.player.health, before);
+      assert.equal(s.g.matchStats.hits, 0);
+      assert.equal(useGloveAbility(s.g), false);
+      s.g.player.abilityCooldown = 0;
+      s.g.network = {};
+      assert.equal(useGloveAbility(s.g), false);
+      assert.equal(resolveSlap(s.g, s.g.player, glove.id), 0);
+    } finally {
+      s.service.dispose();
+    }
+  });
+
+test("Space snapshots recover the initial lift without a presentation event or ragdoll", async () => {
+  const { MultiplayerSession } = await import("../src/net/session.js");
+  const self = {
+    id: "space-recovery",
+    weapon: "glove_space",
+    loadout: gloveLoadout("glove_space"),
+    stats: { hits: 0, slaps: 0 },
+    alive: true,
+    health: 150,
+    dash: 0,
+    throw: 0,
+    quickMelee: 2.4,
+    vx: 1,
+    vy: 6,
+    vz: 2,
+    grounded: false,
+  };
+  const snapshot = {
+    matchId: 99,
+    round: 1,
+    time: 20,
+    phase: "finished",
+    score: [5, 0],
+    players: [self],
+    roundTime: 0,
+    countdown: 0,
+  };
+  const g = {
+    state: "playing",
+    loadout: gloveLoadout("glove_space"),
+    player: { alive: true, vy: 0, grounded: true },
+    finish() {
+      this.state = "results";
+    },
+  };
+  const n = {
+    game: g,
+    id: self.id,
+    round: 1,
+    latest: { time: 19 },
+    buffer: { push: noop },
+    entities: new Map(),
+    confirmShot: noop,
+    earnedHits: 0,
+  };
+  MultiplayerSession.prototype.receive.call(n, snapshot);
+  assert.equal(g.player.vy, 6);
+  assert.equal(g.player.grounded, false);
+  assert.equal(g.player.spaceTime, 2.4);
+});
+
+test("network impulse aging respects active Space gravity instead of applying normal gravity", async () => {
+  const { MultiplayerSession } = await import("../src/net/session.js");
+  for (const [space, expected] of [
+    [0, 4],
+    [2.4, 8.32],
+  ]) {
+    const g = { player: { alive: true, spaceTime: space }, clock: 10 };
+    const n = {
+      game: g,
+      id: "space-impulse",
+      round: 1,
+      lastEvent: 0,
+      client: { rtt: 0 },
+      latest: { time: 10.2 },
+    };
+    MultiplayerSession.prototype.processEvents.call(n, [
+      {
+        id: 1,
+        type: "impulse",
+        player: n.id,
+        round: 1,
+        time: 10,
+        velocity: [0, 10, 0],
+      },
+    ]);
+    assert.ok(Math.abs(g.player.vy - expected) < 0.00001);
+    assert.equal(g.player.grounded, false);
   }
 });

@@ -1,5 +1,6 @@
 import {
   GLOVES,
+  GLOVE_ROSTER,
   DEFAULT_GLOVE,
   canUseGlove,
   sanitizeSlaps,
@@ -69,9 +70,7 @@ export class SlapProgression {
     return true;
   }
   next() {
-    return (
-      Object.values(GLOVES).find((g) => g.cost > this.profile.slaps) || null
-    );
+    return GLOVE_ROSTER.find((g) => g.cost > this.profile.slaps) || null;
   }
 }
 export const progression = new SlapProgression();

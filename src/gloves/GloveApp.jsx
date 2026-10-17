@@ -4,9 +4,14 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
-import { ui, hud, game, boot, actions } from "../ui-session.js";
+import { ui, hud, game, boot, actions, toast } from "../ui-session.js";
 import { MAPS } from "../data.js";
-import { GLOVES, gloveLoadout } from "./catalog.js";
+import {
+  GLOVES,
+  GLOVE_ROSTER,
+  gloveCategory,
+  gloveLoadout,
+} from "./catalog.js";
 import { progression } from "./progression.js";
 import { Multiplayer, OnlineButton } from "../net/Multiplayer.jsx";
 import { multiplayer } from "../net/client.js";
@@ -47,6 +52,21 @@ function Hand({ glove, className = "" }) {
           spring: "≋",
           swapper: "⇄",
           bull: "▰",
+          dual: "Ⅱ",
+          brick: "▦",
+          acrobat: "↻",
+          dice: "⚄",
+          ghost: "◉",
+          thanos: "⌛",
+          stun: "ϟ",
+          za_hando: "◎",
+          magnet: "∩",
+          anchor: "⚓",
+          space: "✧",
+          boomerang: "↶",
+          speedrun: "»",
+          golden: "♛",
+          reverse: "⇆",
         }[glove.key] || "✦"}
       </text>
     </svg>
@@ -170,7 +190,11 @@ function MatchHUD({ h, profile }) {
       </div>
       {h.marker && (
         <div className="slap-confirm" key={h.markerPulse}>
-          {h.marker === "elimination" ? "ELIMINATED" : "SLAP!"}
+          {h.marker === "elimination"
+            ? "ELIMINATED"
+            : h.gloveRoll
+              ? `ROLLED ${h.gloveRoll}`
+              : "SLAP!"}
           <small>CONFIRMED HIT</small>
         </div>
       )}
@@ -203,9 +227,30 @@ function MatchHUD({ h, profile }) {
               ? "Recovering · Movement returns automatically"
               : status === "STONE FORM"
                 ? "Protected · Cannot move or slap"
-                : "Movement & jump reduced"}
+                : {
+                    CHILLED: "Movement & jump reduced",
+                    HIDDEN: "Slapping reveals you · Still vulnerable",
+                    POWERUP: "Protected · Enhanced slap power",
+                    REFLECTING: "Incoming slaps return to the attacker",
+                    "ZERO-G": "Low gravity · Air steering active",
+                  }[status] || ""}
           </small>
         </div>
+      )}
+      {h.gloveWaypoint && (
+        <div
+          className="slap-waypoint"
+          style={{ left: h.gloveWaypoint.x, top: h.gloveWaypoint.y }}
+        >
+          ⌖
+          <small>
+            {glove.key === "thanos" ? "RETURN POINT" : "DOCK"} ·{" "}
+            {h.gloveWaypoint.remaining}s
+          </small>
+        </div>
+      )}
+      {glove.key === "thanos" && h.gloveMarked && (
+        <div className="slap-return-hint">POINT MARKED · E TO RETURN</div>
       )}
       <aside className="slap-feed">
         {h.feed?.slice(-4).map((f, i) => (
@@ -271,7 +316,35 @@ export function GloveApp() {
     [inspect, setInspect] = useState(profile.selected),
     [mode, setMode] = useState(1),
     [map, setMap] = useState(0),
-    [difficulty, setDifficulty] = useState("regular");
+    [difficulty, setDifficulty] = useState("regular"),
+    [query, setQuery] = useState(""),
+    [ownership, setOwnership] = useState("all"),
+    [category, setCategory] = useState("all"),
+    [sort, setSort] = useState("cost");
+  const previousSlaps = useRef(profile.slaps);
+  useEffect(() => {
+    const unlocked = GLOVE_ROSTER.filter(
+      (g) => g.cost > previousSlaps.current && g.cost <= profile.slaps,
+    );
+    previousSlaps.current = profile.slaps;
+    if (unlocked.length)
+      toast(
+        `GLOVE UNLOCKED · ${unlocked.map((g) => g.name).join(", ")} · Open Gloves to equip.`,
+      );
+  }, [profile.slaps]);
+  const visibleGloves = GLOVE_ROSTER.filter(
+    (g) =>
+      (ownership === "all" ||
+        (ownership === "unlocked"
+          ? g.cost <= profile.slaps
+          : g.cost > profile.slaps)) &&
+      (category === "all" || gloveCategory(g) === category) &&
+      `${g.name} ${g.ability} ${g.description}`
+        .toLowerCase()
+        .includes(query.toLowerCase().trim()),
+  ).sort((a, b) =>
+    sort === "name" ? a.name.localeCompare(b.name) : a.cost - b.cost,
+  );
   const selected = GLOVES[profile.selected],
     glove = GLOVES[inspect] || selected,
     playing = s.screen === "game",
@@ -330,7 +403,7 @@ export function GloveApp() {
                 className={tab === "gloves" ? "active" : ""}
                 onClick={() => setTab("gloves")}
               >
-                Gloves <small>09</small>
+                Gloves <small>{GLOVE_ROSTER.length}</small>
               </button>
               <button onClick={() => actions.settings()}>Settings</button>
             </nav>
@@ -462,7 +535,7 @@ export function GloveApp() {
                   </div>
                   <p>
                     {next
-                      ? `${next.cost - profile.slaps} confirmed hits to go`
+                      ? `${next.cost - profile.slaps} earned slaps to go`
                       : "Every glove is unlocked."}
                   </p>
                 </div>
@@ -498,7 +571,7 @@ export function GloveApp() {
                     Object.values(GLOVES).filter((g) => g.cost <= profile.slaps)
                       .length
                   }{" "}
-                  / 9 UNLOCKED
+                  / {GLOVE_ROSTER.length} UNLOCKED
                 </b>
               </div>
               <div className="slap-model-stage">
@@ -558,8 +631,67 @@ export function GloveApp() {
                 {tab === "play" ? "VIEW PROGRESSION ↗" : "BACK TO PLAY ↗"}
               </button>
             </header>
+            <div className="slap-collection-tools">
+              <label className="slap-search">
+                ⌕{" "}
+                <input
+                  aria-label="Search gloves"
+                  placeholder="Search gloves, abilities, playstyles…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+              </label>
+              <div
+                className="slap-ownership"
+                role="group"
+                aria-label="Collection availability"
+              >
+                {[
+                  ["all", "All gloves"],
+                  ["unlocked", "Unlocked"],
+                  ["locked", "Locked"],
+                ].map(([id, label]) => (
+                  <button
+                    key={id}
+                    aria-pressed={ownership === id}
+                    className={ownership === id ? "active" : ""}
+                    onClick={() => setOwnership(id)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <select
+                aria-label="Glove playstyle"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+              >
+                <option value="all">Every playstyle</option>
+                {["Power", "Mobility", "Control", "Defense"].map((c) => (
+                  <option key={c}>{c}</option>
+                ))}
+              </select>
+              <select
+                aria-label="Sort gloves"
+                value={sort}
+                onChange={(e) => setSort(e.target.value)}
+              >
+                <option value="cost">Slaps · low to high</option>
+                <option value="name">Name · A–Z</option>
+              </select>
+            </div>
+            <div className="slap-collection-meta">
+              <span>
+                {visibleGloves.length} / {GLOVE_ROSTER.length} GLOVES
+              </span>
+              <span>
+                {next
+                  ? `NEXT UNLOCK: ${next.name.toUpperCase()} · ${next.cost - profile.slaps} SLAPS TO GO`
+                  : "COLLECTION COMPLETE"}
+              </span>
+            </div>
             <div className="slap-glove-grid">
-              {Object.values(GLOVES).map((g) => (
+              {visibleGloves.map((g) => (
                 <button
                   key={g.id}
                   aria-label={`${g.name} glove${profile.slaps < g.cost ? " locked" : ""}`}
@@ -577,10 +709,31 @@ export function GloveApp() {
                   <Hand glove={g} />
                   <strong>{g.name}</strong>
                   <small>{g.cost === 0 ? "FREE" : `${g.cost} SLAPS`}</small>
-                  <i>{g.activation === "active" ? "E ABILITY" : "PASSIVE"}</i>
+                  <i>{g.ability}</i>
+                  <div className="slap-unlock-meter" aria-hidden="true">
+                    <span
+                      style={{
+                        width: `${g.cost ? Math.min(100, (profile.slaps / g.cost) * 100) : 100}%`,
+                      }}
+                    />
+                  </div>
                 </button>
               ))}
             </div>
+            {!visibleGloves.length && (
+              <div className="slap-empty">
+                No gloves match.{" "}
+                <button
+                  onClick={() => {
+                    setQuery("");
+                    setCategory("all");
+                    setOwnership("all");
+                  }}
+                >
+                  Clear filters
+                </button>
+              </div>
+            )}
           </section>
           <footer className="slap-footer">
             <span>
@@ -628,7 +781,7 @@ export function GloveApp() {
             <span className="slap-kicker">NEXT ROUND · CHOOSE ONE GLOVE</span>
             <h2>Switch your style.</h2>
             <div className="slap-round-gloves">
-              {Object.values(GLOVES).map((g) => (
+              {GLOVE_ROSTER.map((g) => (
                 <button
                   disabled={g.cost > profile.slaps}
                   className={inspect === g.id ? "active" : ""}
@@ -669,7 +822,8 @@ export function GloveApp() {
             <strong>{s.result?.score.join(" — ")}</strong>
             <div className="slap-result-stats">
               <span>
-                <b>{s.result?.stats.hits || 0}</b>SLAPS LANDED
+                <b>{s.result?.stats.slaps ?? s.result?.stats.hits ?? 0}</b>SLAPS
+                EARNED
               </span>
               <span>
                 <b>{s.result?.stats.kills || 0}</b>ELIMINATIONS
@@ -678,7 +832,10 @@ export function GloveApp() {
                 <b>{profile.slaps}</b>TOTAL SLAPS
               </span>
             </div>
-            <p>Every landed slap is already saved to your progression.</p>
+            <p>
+              Confirmed hits and Dual bonus slaps are already saved to your
+              progression.
+            </p>
             <button
               id="rematch-button"
               className="slap-primary"

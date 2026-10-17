@@ -3,6 +3,7 @@ export default defineConfig({
   testDir: ".",
   testMatch: [
     "gloves.spec.js",
+    "gloves-expanded.spec.js",
     "gloves-peer.spec.js",
     "controlled-movement.spec.js",
   ],

@@ -308,5 +308,9 @@ function updateGloveWeapon(model, e, clock) {
   p.botRightGrip ||= new THREE.Vector3();
   p.botLeftGrip ||= new THREE.Vector3();
   p.botRightGrip.copy(glove.position).add(new THREE.Vector3(0, 0.15, 0.05));
-  p.botLeftGrip.set(-0.24, -0.15, -0.2);
+  p.botLeftGrip.set(
+    id === "glove_dual" ? -0.4 : -0.24,
+    -0.15,
+    id === "glove_dual" ? -0.45 : -0.2,
+  );
 }

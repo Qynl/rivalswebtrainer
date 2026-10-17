@@ -1,3 +1,4 @@
+import { addGloveDetails } from "./model-details.js";
 import * as THREE from "three";
 import { GLOVES } from "./catalog.js";
 const rounded = (w, h, d, r = 0.04) => new THREE.BoxGeometry(w, h, d); // bevel highlights come from joint caps and layered panels
@@ -139,14 +140,16 @@ export function createGloveModel(id, options = {}) {
       box(palm, 0.085, 0.09, 0.11, (i - 1.5) * 0.1, 0.27, 0.15, dark);
     box(palm, 0.46, 0.12, 0.24, 0, 0.02, 0, dark);
   }
+  addGloveDetails(glove, { palm, wrist, box, main, dark, trim });
   // Palm faces left/front in first person, with visible open fingers.
   root.position.set(0.48, -0.43, -0.85);
   if (options.hands !== false) root.scale.setScalar(0.6);
   root.rotation.set(0.12, -0.55, -0.28);
   root.userData = {
     id,
+    weaponId: id,
     glove: true,
-    gloveRig: { wrist, palm, fingers, trim },
+    gloveRig: { wrist, palm, fingers, trim, main },
     basePosition: root.position.clone(),
     baseRotation: root.rotation.clone(),
     botRightGrip: new THREE.Vector3(0, -0.4, 0),
@@ -155,6 +158,18 @@ export function createGloveModel(id, options = {}) {
   if (options.hands === false) {
     root.position.set(0, 0, 0);
     root.rotation.set(0, 0, 0);
+  }
+  if (glove.key === "dual" && !options.single) {
+    const second = createGloveModel(id, {
+      ...options,
+      single: true,
+      hands: false,
+    });
+    second.position.set(-1.25, -0.04, -0.03);
+    second.rotation.set(0, 0.25, 0.18);
+    second.scale.set(-1, 1, 1);
+    root.add(second);
+    root.userData.secondGlove = second;
   }
   return root;
 }
@@ -199,7 +214,26 @@ export function animateGlove(model, state) {
   for (let i = 0; i < 4; i++)
     rig.fingers[i].rotation.x = -0.08 + p.wind * 0.18 - p.strike * 0.12;
   rig.trim.emissiveIntensity =
-    0.18 + (state.gloveStone > 0 ? 0.6 : 0) + stop * 2;
+    0.18 +
+    (state.gloveStone > 0 ? 0.6 : 0) +
+    (state.gloveGold > 0 ? 0.8 : 0) +
+    (state.gloveReverse > 0 ? 0.55 : 0) +
+    stop * 2;
+  if (rig.main) {
+    rig.main.transparent = glove.key === "ghost" || state.gloveGhost > 0;
+    rig.main.opacity =
+      state.gloveGhost > 0 ? 0.22 : glove.key === "ghost" ? 0.68 : 1;
+  }
+  if (glove.key === "acrobat" && state.gloveBoost > 0) {
+    const roll = Math.sin(Math.min(1, 1 - state.gloveBoost / 0.5) * Math.PI);
+    model.rotation.z -= roll * 0.5;
+    model.position.y -= roll * 0.18;
+  }
+  if (model.userData.secondGlove) {
+    const second = model.userData.secondGlove;
+    second.position.x = -1.25 + p.strike * 0.9;
+    second.rotation.z = 0.18 + p.strike * 0.9;
+  }
   if (glove.key === "spring")
     rig.wrist.scale.y = 1 + Math.sin((state.time || 0) * 5) * 0.025;
 }

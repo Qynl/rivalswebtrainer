@@ -1,3 +1,5 @@
+import { receiveGloveState } from "../gloves/states.js";
+import { createBrickModel } from "../gloves/brick.js";
 import { isGlove } from "../gloves/catalog.js";
 import { progression } from "../gloves/progression.js";
 import { presentImpact } from "../gloves/combat.js";
@@ -172,17 +174,18 @@ export class MultiplayerSession {
     // Settle the final confirmed slap before finish() snapshots match results.
     g.matchStats = { ...self.stats };
     if (isGlove(self.weapon)) {
-      const count = Math.max(0, self.stats?.hits || 0);
+      const count = Math.max(0, self.stats?.slaps ?? self.stats?.hits ?? 0);
       for (let hit = this.earnedHits || 0; hit < count; hit++)
         progression.award(`online:${snapshot.matchId}:${this.id}:${hit}`);
       this.earnedHits = Math.max(this.earnedHits || 0, count);
+      receiveGloveState(g.player, self);
       g.player.ragdollTime = self.dash || 0;
       g.player.stoneTime = self.deflect || 0;
       g.player.chillTime = self.heal || 0;
       g.player.abilityCooldown = self.dashCooldown || 0;
       g.player.boostTime = self.throw || 0;
       // Restore lost impulse state from snapshots as well as the reliable hit event.
-      if (self.dash > 0) {
+      if (self.dash > 0 || self.throw > 0 || self.quickMelee > 0) {
         g.player.vx = self.vx;
         g.player.vy = self.vy;
         g.player.vz = self.vz;
@@ -222,10 +225,10 @@ export class MultiplayerSession {
     const wasAlive = g.player.alive;
     g.player.health = self.health;
     g.player.alive = self.alive;
-    g.blindTime = self.blind;
-    g.paintTintTime = self.paint || 0;
+    g.blindTime = isGlove(self.weapon) ? 0 : self.blind;
+    g.paintTintTime = isGlove(self.weapon) ? 0 : self.paint || 0;
     g.dashCooldown = self.dashCooldown;
-    g.deflectCooldown = self.deflectCooldown;
+    g.deflectCooldown = isGlove(self.weapon) ? 0 : self.deflectCooldown;
     // Ammo follows acknowledged actions; prediction never grants damage or inventory.
     if (
       !this.pendingLoadout &&
@@ -238,7 +241,7 @@ export class MultiplayerSession {
       if (g.slot !== self.slot) {
         g.equip(self.slot);
       }
-      g.reloadTime = self.reload;
+      g.reloadTime = isGlove(self.weapon) ? 0 : self.reload;
       g.reloadTotal = WEAPONS[g.loadout[g.slot]].reload;
       g.healTime = isGlove(self.weapon) ? 0 : self.heal;
       if (self.alive && self.quickUtility > 0) {
@@ -310,25 +313,26 @@ export class MultiplayerSession {
         ragdollTime: isGlove(state.weapon) ? state.dash : 0,
         stoneTime: isGlove(state.weapon) ? state.deflect : 0,
         chillTime: isGlove(state.weapon) ? state.heal : 0,
-        quickMeleeTime: state.quickMelee || 0,
+        quickMeleeTime: isGlove(state.weapon) ? 0 : state.quickMelee || 0,
         quickUtilityTime: state.quickUtility || 0,
         utilityId: state.loadout[3],
         utilityAmmo: state.ammo[3].mag ?? Infinity,
-        throwTime: state.throw,
-        healTime: state.heal,
+        throwTime: isGlove(state.weapon) ? 0 : state.throw,
+        healTime: isGlove(state.weapon) ? 0 : state.heal,
         dashTime: isGlove(state.weapon) ? 0 : state.dash,
         swingTime: state.swing,
         aiming: !!state.aiming,
-        reload: state.reload,
+        reload: isGlove(state.weapon) ? 0 : state.reload,
         knifeStab: !!state.knifeStab,
       });
+      if (isGlove(state.weapon)) receiveGloveState(e, state);
       if (state.shot > 0 && state.shot !== (e.netShot || 0)) {
         e.netShot = state.shot;
         e.netShotAge = Math.max(0, snapshot.time - state.shot);
         e.fireFlash = 0.065;
         const w = WEAPONS[state.weapon];
         g.audio.playAt(
-          w.sound,
+          w.glove ? "slapSwing" : w.sound,
           g.eye(e),
           g.eye(g.player),
           g.yaw,
@@ -395,6 +399,18 @@ export class MultiplayerSession {
         g.audio.play(
           event.glove === "glove_default" ? "slapBlast" : "slapAbility",
         );
+        if (
+          event.player === this.id &&
+          ["glove_acrobat", "glove_magnet", "glove_space"].includes(event.glove)
+        ) {
+          if (event.velocity)
+            [g.player.vx, g.player.vy, g.player.vz] = event.velocity;
+          g.player.boostTime = event.boost || 0;
+          if (event.glove === "glove_space") {
+            g.player.spaceTime = 2.6;
+            g.player.grounded = false;
+          }
+        }
         if (event.player === this.id && event.glove === "glove_default") {
           g.player.boostTime = 1.35;
           g.player.chillTime = 0;
@@ -488,7 +504,7 @@ export class MultiplayerSession {
           ),
         );
         [g.player.vx, g.player.vy, g.player.vz] = event.velocity;
-        g.player.vy -= GRAVITY * age;
+        g.player.vy -= GRAVITY * (g.player.spaceTime > 0 ? 0.28 : 1) * age;
         g.player.grounded = false;
       }
       if (event.type === "forfeit")
@@ -777,6 +793,7 @@ export class MultiplayerSession {
         ragdollTime: isGlove(state.weapon) ? state.dash : 0,
         stoneTime: isGlove(state.weapon) ? state.deflect : 0,
       });
+      if (isGlove(state.weapon)) receiveGloveState(e, state);
       if (e.alive) {
         const model = e.model.group;
         model.position.set(e.x, e.y, e.z);
@@ -820,7 +837,7 @@ export class MultiplayerSession {
     }
     for (const zone of this.zones.values()) {
       if (zone.type === "fire") animateFire(zone.mesh, g.clock, zone.life);
-      else
+      else if (zone.type === "smoke")
         animateSmoke(zone.mesh, g.clock, zone.life, 7, g.settings.performance);
     }
     g.updateEffects(dt);
@@ -865,7 +882,11 @@ export class MultiplayerSession {
       let zone = this.zones.get(state.id);
       if (!zone) {
         const mesh =
-          state.type === "fire" ? createFirePatch() : createSmokeCloud();
+          state.type === "fire"
+            ? createFirePatch()
+            : state.type === "brick"
+              ? createBrickModel()
+              : createSmokeCloud();
         mesh.position.set(state.x, state.y, state.z);
         gAdd(this.game, mesh);
         zone = { mesh, type: state.type, life: state.life };

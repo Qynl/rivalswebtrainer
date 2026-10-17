@@ -220,7 +220,7 @@ test("production cache supports a genuinely disconnected reload and glove practi
     await context.setOffline(true);
     await page.reload();
     await page.waitForFunction(() => window.__arena?.state === "lobby");
-    await expect(page.locator(".slap-glove-grid button")).toHaveCount(9);
+    await expect(page.locator(".slap-glove-grid button")).toHaveCount(24);
     await page.evaluate(() => {
       const g = window.__arena;
       g.frame = () => {};
@@ -252,5 +252,315 @@ test("production cache supports a genuinely disconnected reload and glove practi
     expect(errors).toEqual([]);
   } finally {
     await context.setOffline(false);
+  }
+});
+
+// Tests freeze rendering and use two tabs, so neither page can retain pointer
+// lock/focus. Send genuine unpaused action inputs, exactly like the RTC driver
+// above, rather than asking sendInput() to transmit a deliberately paused tab.
+async function expandedAbility(page) {
+  await page.evaluate(() => {
+    const g = window.__arena,
+      n = g.network;
+    n.seq = Math.max(n.seq, 7000) + 1;
+    n.client.send({
+      type: "input",
+      input: {
+        seq: n.seq,
+        yaw: g.yaw,
+        pitch: g.pitch,
+        keys: 0,
+        fire: false,
+        aim: false,
+        paused: false,
+        actions: [{ id: ++n.actionId, type: "ability" }],
+      },
+    });
+  });
+}
+
+async function expandedRoom(
+  page,
+  guest,
+  hostGlove,
+  guestGlove,
+  requests,
+  errors,
+) {
+  for (const [p, id] of [
+    [page, hostGlove],
+    [guest, guestGlove],
+  ])
+    await p.addInitScript(
+      (id) =>
+        localStorage.setItem(
+          "slap-arena-profile-v1",
+          JSON.stringify({ version: 1, slaps: 5500, selected: id }),
+        ),
+      id,
+    );
+  await prepare(page, requests, errors);
+  await prepare(guest, requests, errors);
+  await page.click("#create-lobby");
+  const code = await page.getByTestId("room-code").textContent();
+  await guest.getByLabel("Lobby code").fill(code);
+  await guest.getByRole("button", { name: "JOIN ↗", exact: true }).click();
+  await expect(page.locator(".mp-player")).toHaveCount(2);
+  for (const [p, id] of [
+    [page, hostGlove],
+    [guest, guestGlove],
+  ]) {
+    await expect(p.getByLabel("Online glove").locator("option")).toHaveCount(
+      24,
+    );
+    await p.getByLabel("Online glove").selectOption(id);
+  }
+  await guest.click("#ready-online");
+  await page.click("#start-online");
+  for (const p of [page, guest])
+    await p.waitForFunction(
+      () => window.__arena?.network?.latest.phase === "playing",
+      null,
+      { timeout: 25000 },
+    );
+}
+
+test("real RTC replicates expanded Golden status and Thanos marks/returns without false reload or flash effects", async ({
+  browser,
+  page,
+}) => {
+  const guest = await browser.newPage({
+      viewport: { width: 800, height: 600 },
+    }),
+    requests = [],
+    errors = [];
+  try {
+    await expandedRoom(
+      page,
+      guest,
+      "glove_thanos",
+      "glove_golden",
+      requests,
+      errors,
+    );
+    await expandedAbility(page);
+    await expect
+      .poll(() => page.evaluate(() => window.__arena.player.gloveMark))
+      .not.toBeNull();
+    const point = await page.evaluate(() => ({
+      ...window.__arena.player.gloveMark,
+    }));
+    await expect
+      .poll(() =>
+        guest.evaluate((point) => {
+          const mark = window.__arena.network.latest.players.find(
+            (p) => p.weapon === "glove_thanos",
+          ).gloveMark;
+          return mark
+            ? Math.hypot(mark.x - point.x, mark.y - point.y, mark.z - point.z)
+            : Infinity;
+        }, point),
+      )
+      .toBeLessThan(0.0001);
+    await expandedAbility(guest);
+    for (const p of [page, guest])
+      await expect
+        .poll(() =>
+          p.evaluate(
+            () =>
+              window.__arena.network.latest.players.find(
+                (p) => p.weapon === "glove_golden",
+              ).blind,
+          ),
+        )
+        .toBeGreaterThan(1);
+    const status = await guest.evaluate(() => ({
+      gold: window.__arena.player.goldTime,
+      flash: window.__arena.blindTime,
+      reload: window.__arena.reloadTime,
+    }));
+    expect(status.gold).toBeGreaterThan(1);
+    expect(status.flash).toBe(0);
+    expect(status.reload).toBe(0);
+    await page.evaluate(() => {
+      const n = window.__arena.network;
+      n.client.send({
+        type: "input",
+        input: {
+          seq: ++n.seq,
+          yaw: 0,
+          pitch: 0,
+          keys: 1,
+          fire: false,
+          aim: false,
+          paused: false,
+          actions: [],
+        },
+      });
+    });
+    await expect
+      .poll(() =>
+        page.evaluate((point) => {
+          const n = window.__arena.network,
+            p = n.latest.players.find((p) => p.id === n.id);
+          return Math.hypot(p.x - point.x, p.z - point.z);
+        }, point),
+      )
+      .toBeGreaterThan(0.5);
+    await page.evaluate(() => {
+      const n = window.__arena.network;
+      n.client.send({
+        type: "input",
+        input: {
+          seq: ++n.seq,
+          yaw: 0,
+          pitch: 0,
+          keys: 0,
+          fire: false,
+          aim: false,
+          paused: false,
+          actions: [],
+        },
+      });
+    });
+    await expect
+      .poll(() => page.evaluate(() => window.__arena.player.abilityCooldown))
+      .toBe(0);
+    await expandedAbility(page);
+    await expect
+      .poll(() => page.evaluate(() => window.__arena.player.gloveMark))
+      .toBeNull();
+    await expect
+      .poll(() =>
+        guest.evaluate((point) => {
+          const p = window.__arena.network.latest.players.find(
+            (p) => p.weapon === "glove_thanos",
+          );
+          return Math.hypot(p.x - point.x, p.y - point.y, p.z - point.z);
+        }, point),
+      )
+      .toBeLessThan(0.08);
+    expect(requests).toEqual([]);
+    expect(errors).toEqual([]);
+  } finally {
+    await guest.close();
+  }
+});
+
+test("real RTC carries visible Brick trap geometry and Ghost invisibility through compact snapshots", async ({
+  browser,
+  page,
+}) => {
+  const guest = await browser.newPage({
+      viewport: { width: 800, height: 600 },
+    }),
+    requests = [],
+    errors = [];
+  try {
+    await expandedRoom(
+      page,
+      guest,
+      "glove_brick",
+      "glove_ghost",
+      requests,
+      errors,
+    );
+    const startZ = await page.evaluate(() => {
+      const n = window.__arena.network,
+        p = n.latest.players.find((p) => p.id === n.id);
+      n.client.send({
+        type: "input",
+        input: {
+          seq: ++n.seq,
+          yaw: 0,
+          pitch: 0,
+          keys: 1,
+          fire: false,
+          aim: false,
+          paused: false,
+          actions: [],
+        },
+      });
+      return p.z;
+    });
+    await expect
+      .poll(() =>
+        page.evaluate((z) => {
+          const n = window.__arena.network;
+          return z - n.latest.players.find((p) => p.id === n.id).z;
+        }, startZ),
+      )
+      .toBeGreaterThan(0.8);
+    await page.evaluate(() => {
+      const n = window.__arena.network;
+      n.client.send({
+        type: "input",
+        input: {
+          seq: ++n.seq,
+          yaw: 0,
+          pitch: 0,
+          keys: 0,
+          fire: false,
+          aim: false,
+          paused: false,
+          actions: [],
+        },
+      });
+    });
+    await expandedAbility(page);
+    await expandedAbility(guest);
+    for (const p of [page, guest])
+      await expect
+        .poll(() =>
+          p.evaluate(
+            () =>
+              window.__arena.network.latest.zones.filter(
+                (z) => z.type === "brick",
+              ).length,
+          ),
+        )
+        .toBe(1);
+    for (const p of [page, guest])
+      expect(
+        await p.evaluate(() => {
+          const b = [...window.__arena.network.zones.values()].find(
+            (z) => z.type === "brick",
+          );
+          return { type: b.type, children: b.mesh.children.length };
+        }),
+      ).toEqual({ type: "brick", children: 5 });
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            window.__arena.network.latest.players.find(
+              (p) => p.weapon === "glove_ghost",
+            ).reload,
+        ),
+      )
+      .toBeGreaterThan(1);
+    // Status rendering follows the same bounded interpolation delay as bodies.
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const g = window.__arena;
+          g.network.present(1 / 120);
+          return !g.entities.find((e) => e.activeWeapon === "glove_ghost").model
+            .group.visible;
+        }),
+      )
+      .toBe(true);
+    const visible = await page.evaluate(() => {
+      const e = window.__arena.entities.find(
+        (e) => e.activeWeapon === "glove_ghost",
+      );
+      return { ghost: e.ghostTime, reload: e.reload };
+    });
+    expect(visible.ghost).toBeGreaterThan(1);
+    expect(visible.reload).toBe(0);
+    expect(requests).toEqual([]);
+    expect(errors).toEqual([]);
+  } finally {
+    await guest.close();
   }
 });

@@ -1,6 +1,6 @@
 import { isGlove, gloveLoadout } from "../gloves/catalog.js";
 import { COMBAT_ITEMS as WEAPONS } from "../data.js";
-export const PROTOCOL = 4,
+export const PROTOCOL = 5,
   MAX_PLAYERS = 6,
   ONLINE_MAPS = ["blockout", "foundry", "courtyard"];
 export const DEFAULT_LOADOUT = ["rifle", "pistol", "fists", "grenade"];

@@ -1,3 +1,4 @@
+import { isGlove } from "../gloves/catalog.js";
 import { COMBAT_ITEMS as WEAPONS } from "../data.js";
 const WEAPON_IDS = Object.keys(WEAPONS),
   PHASES = ["countdown", "playing", "roundend", "finished"];
@@ -28,9 +29,11 @@ export function encodeSnapshot(snapshot) {
   const players = snapshot.players.slice(0, 6),
     projectiles = (snapshot.projectiles || []).slice(0, 192),
     zones = (snapshot.zones || []).slice(0, 48);
+  const expanded = players.some((p) => isGlove(p.weapon || p.loadout?.[0]));
+  const playerSize = PLAYER + (expanded ? 15 : 0);
   const bytes = new Uint8Array(
       HEADER +
-        PLAYER * players.length +
+        playerSize * players.length +
         PROJECTILE * projectiles.length +
         ZONE * zones.length,
     ),
@@ -61,7 +64,7 @@ export function encodeSnapshot(snapshot) {
       offset += 4;
     };
   u16(MAGIC);
-  u8(3);
+  u8(expanded ? 4 : 3);
   u32(snapshot.matchId || 1);
   u16(snapshot.round);
   f32(snapshot.time);
@@ -103,6 +106,11 @@ export function encodeSnapshot(snapshot) {
     for (const key of STATS) u16(p.stats?.[key] || 0);
     u16((p.quickMelee || 0) * 1000);
     u16((p.paint || 0) * 1000);
+    if (expanded) {
+      u8(p.gloveMark ? 1 : 0);
+      for (const key of ["x", "y", "z"]) f32(p.gloveMark?.[key] || 0);
+      u16(p.stats?.slaps ?? p.stats?.hits ?? 0);
+    }
   }
   for (const p of projectiles) {
     u32(p.id);
@@ -114,7 +122,7 @@ export function encodeSnapshot(snapshot) {
   }
   for (const zone of zones) {
     u32(zone.id);
-    u8(zone.type === "fire" ? 1 : 2);
+    u8(zone.type === "fire" ? 1 : zone.type === "brick" ? 3 : 2);
     for (const key of ["x", "y", "z"]) f32(zone[key]);
     u16(zone.life * 1000);
   }
@@ -147,8 +155,11 @@ export function decodeSnapshot(data, metadata) {
       if (!Number.isFinite(n)) throw Error("Nonfinite snapshot");
       return n;
     };
-  if (bytes.length < HEADER || u16() !== MAGIC || u8() !== 3)
+  if (bytes.length < HEADER || u16() !== MAGIC)
     throw Error("Invalid snapshot version");
+  const version = u8();
+  if (version !== 3 && version !== 4) throw Error("Invalid snapshot version");
+  const expanded = version === 4;
   const matchId = u32(),
     round = u16(),
     time = f32(),
@@ -166,7 +177,7 @@ export function decodeSnapshot(data, metadata) {
     zoneCount > 48 ||
     bytes.length !==
       HEADER +
-        playerCount * PLAYER +
+        playerCount * (PLAYER + (expanded ? 15 : 0)) +
         projectileCount * PROJECTILE +
         zoneCount * ZONE
   )
@@ -219,6 +230,13 @@ export function decodeSnapshot(data, metadata) {
     p.quickUtility = flags & 8 ? Math.max(p.throw, p.heal) : 0;
     p.quickMelee = u16() / 1000;
     p.paint = u16() / 1000;
+    if (expanded) {
+      const marked = u8(),
+        point = { x: f32(), y: f32(), z: f32() };
+      if (marked > 1) throw Error("Invalid glove mark");
+      p.gloveMark = marked ? point : null;
+      p.stats.slaps = u16();
+    }
     players.push(p);
   }
   const projectiles = [];
@@ -234,7 +252,13 @@ export function decodeSnapshot(data, metadata) {
   }
   const zones = [];
   for (let i = 0; i < zoneCount; i++) {
-    const zone = { id: u32(), type: u8() === 1 ? "fire" : "smoke" };
+    const id = u32(),
+      kind = u8();
+    if (kind < 1 || kind > 3) throw Error("Invalid zone type");
+    const zone = {
+      id,
+      type: kind === 1 ? "fire" : kind === 3 ? "brick" : "smoke",
+    };
     for (const key of ["x", "y", "z"]) zone[key] = f32();
     zone.life = u16() / 1000;
     zones.push(zone);

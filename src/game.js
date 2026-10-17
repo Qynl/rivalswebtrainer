@@ -1,4 +1,6 @@
-import { GLOVES, isGlove } from "./gloves/catalog.js";
+import { gloveMoveScale, committedWish, lowGravity } from "./gloves/states.js";
+import { presentGloveStates } from "./gloves/visual-effects.js";
+import { GLOVES, GLOVE_ROSTER, isGlove } from "./gloves/catalog.js";
 import {
   gloveMatch,
   blocked,
@@ -546,6 +548,7 @@ export class Game {
     return true;
   }
   cleanEntities() {
+    this.gloveBricks = [];
     this.cancelThrow(false);
     this.disposeQuickModels();
     this.damageNumbers?.clear();
@@ -630,7 +633,7 @@ export class Game {
       e.model.group.position.set(e.x, e.y, e.z);
     }
     if (gloveMatch(this) && !isPlayer) {
-      const ids = Object.keys(GLOVES);
+      const ids = GLOVE_ROSTER.map((g) => g.id);
       // Bots grow with the equipped tier; Default duels do not pit beginners against Bull.
       const tier = Math.max(0, ids.indexOf(this.loadout[0]));
       e.activeWeapon = ids[Math.max(0, tier - ((index + this.round) % 3))];
@@ -1602,7 +1605,14 @@ export class Game {
     backstab = false,
   ) {
     if (this.network) return;
-    if (!e.alive || amount <= 0 || e === source) return;
+    if (
+      !e.alive ||
+      amount <= 0 ||
+      e === source ||
+      e.goldTime > 0 ||
+      e.stoneTime > 0
+    )
+      return;
     const applied = Math.min(e.health, amount);
     if (source?.isPlayer && source !== e && source.team !== e.team)
       this.damageNumbers?.add(e, applied, head, this.clock, backstab);
@@ -2072,12 +2082,11 @@ export class Game {
     this.crouched = this.slideTime > 0 || this.forcedCrouch;
     p.height = this.crouched ? 1.15 : 1.9;
     p.yaw = this.yaw;
-    const dir = this.moveDirection();
+    const dir = w.glove
+      ? committedWish(p, w, this.moveDirection())
+      : this.moveDirection();
     let speed = w.slot === 2 ? MOVEMENT.meleeSpeed : MOVEMENT.runSpeed;
-    speed *=
-      (w.moveSpeed || 1) *
-      (p.chillTime > 0 ? 0.55 : 1) *
-      (p.boostTime > 0 ? 1 + 0.65 * Math.min(1, p.boostTime / 0.35) : 1);
+    speed *= (w.moveSpeed || 1) * (w.glove ? gloveMoveScale(p, w) : 1);
     if (this.healTime > 0) speed *= 0.55;
     if (this.aiming) speed *= 0.75;
 
@@ -2093,6 +2102,7 @@ export class Game {
       wasGrounded = p.grounded;
     moveBody(p, p.vx * dt, p.vz * dt, this.world.boxes);
     const fallingVelocity = p.vy;
+    lowGravity(p, dt);
     verticalStep(p, dt, this.world.boxes);
     const elevationChange = p.y - oldY;
     if (wasGrounded && p.grounded && Math.abs(elevationChange) > 0.025) {
@@ -2648,8 +2658,13 @@ export class Game {
     }
   }
   animateBot(e, dt = 1 / 60) {
-    if (gloveMatch(this) && presentStone(this, e)) return;
-    if (gloveMatch(this) && presentRagdoll(this, e, dt)) return;
+    if (
+      gloveMatch(this) &&
+      (presentStone(this, e) || presentRagdoll(this, e, dt))
+    ) {
+      presentGloveStates(this, e);
+      return;
+    }
     const m = e.model;
     if (!m) return;
     const speed = Math.hypot(e.vx, e.vz),
@@ -2780,6 +2795,7 @@ export class Game {
       aimArm(m.parts.leftArm, m.parts.leftElbow, leftTarget, -1);
       aimArm(m.parts.rightArm, m.parts.rightElbow, rightTarget, 1);
     }
+    if (gloveMatch(this)) presentGloveStates(this, e);
     updateScopeGlint(m, e, this.camera?.position, this.clock);
   }
   updateEffects(dt) {
@@ -3079,6 +3095,10 @@ export class Game {
         gloveImpact: this.slapImpact || 0,
         gloveRagdoll: p.ragdollTime || 0,
         gloveStone: p.stoneTime || 0,
+        gloveBoost: p.boostTime || 0,
+        gloveGhost: p.ghostTime || 0,
+        gloveGold: p.goldTime || 0,
+        gloveReverse: p.reverseTime || 0,
         phase: this.walkPhase,
         speed: Math.hypot(p.vx, p.vz),
         clearance,

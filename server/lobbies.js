@@ -302,7 +302,8 @@ export class LobbyService {
         (room.gloves &&
           !canUseGlove(
             next[0],
-            (member.slaps || 0) + (member.stats?.hits || 0),
+            (member.slaps || 0) +
+              (member.stats?.slaps ?? member.stats?.hits ?? 0),
           )) ||
         !g?.player.alive ||
         !(g.selectingLoadout || room.match.phase === "countdown")
@@ -340,7 +341,8 @@ export class LobbyService {
         (room.gloves &&
           !canUseGlove(
             loadout[0],
-            (member.slaps || 0) + (member.stats?.hits || 0),
+            (member.slaps || 0) +
+              (member.stats?.slaps ?? member.stats?.hits ?? 0),
           ))
       )
         return this.error(id, "Glove is locked or invalid.");
@@ -378,7 +380,9 @@ export class LobbyService {
         return this.error(id, "Every player must be ready.");
       for (const m of members) {
         if (room.gloves)
-          m.slaps = sanitizeSlaps((m.slaps || 0) + (m.stats?.hits || 0));
+          m.slaps = sanitizeSlaps(
+            (m.slaps || 0) + (m.stats?.slaps ?? m.stats?.hits ?? 0),
+          );
         m.stats = { shots: 0, hits: 0, kills: 0, deaths: 0, headshots: 0 };
         m.lastAction = 0;
       }

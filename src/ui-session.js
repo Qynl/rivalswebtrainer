@@ -177,10 +177,40 @@ function snapshot(g, force = false) {
         ? "STONE FORM"
         : p.ragdollTime > 0
           ? "RAGDOLL"
-          : p.chillTime > 0
-            ? "CHILLED"
-            : "",
+          : p.goldTime > 0
+            ? "POWERUP"
+            : p.reverseTime > 0
+              ? "REFLECTING"
+              : p.ghostTime > 0
+                ? "HIDDEN"
+                : p.spaceTime > 0
+                  ? "ZERO-G"
+                  : p.chillTime > 0
+                    ? "CHILLED"
+                    : "",
     gloveCooldown: p.abilityCooldown || 0,
+    gloveMarked: p.markTime > 0,
+    gloveRoll: g.lastDiceRoll || 0,
+    gloveWaypoint: (() => {
+      if (!(p.markTime > 0) || !p.gloveMark) return null;
+      const m = p.gloveMark,
+        point = g
+          .eye(p)
+          .set(m.x, m.y + 0.4, m.z)
+          .project(g.camera);
+      if (
+        point.z < -1 ||
+        point.z > 1 ||
+        Math.abs(point.x) > 0.95 ||
+        Math.abs(point.y) > 0.9
+      )
+        return null;
+      return {
+        x: (point.x * 0.5 + 0.5) * innerWidth,
+        y: (0.5 - point.y * 0.5) * innerHeight,
+        remaining: Math.ceil(p.markTime),
+      };
+    })(),
     health: Math.ceil(p.health),
     healthTrail: trailingHealth,
     magazineFraction: magazineFraction(a.mag, w.mag, w.slot),

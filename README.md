@@ -35,23 +35,40 @@ Settings preserve sensitivity, FOV, volume, vertical mouse inversion, performanc
 
 ## Gloves & progression
 
-**One slap earned per confirmed direct melee hit** against a live enemy, including practice targets. Whiffs, walls, allies, protected/recovering targets, repeated event delivery and ability-only effects do not award slaps. Reaching a milestone permanently makes that glove selectable: unlocking/equipping **does not spend your total**.
+**24 unlockable gloves.** Search by name/ability, filter by availability or playstyle, and sort by cost/name. Unlock notifications and per-glove progress bars make the next milestone visible.
 
-| Glove    | Slaps | This implementation                                                       |
-| -------- | ----: | ------------------------------------------------------------------------- |
-| Default  |     0 | **Fart Blast**: short speed burst; clears chill                           |
-| Diamond  |    15 | **The Stone Age**: temporary immovable, slap-proof rock form              |
-| Extended |    30 | **Reach**: longer handle/reach; lower damage, shorter ragdoll             |
-| Snow     |    85 | **Slow enemies**: five seconds of reduced movement and jumping            |
-| Pull     |   125 | **Haul**: reversed horizontal knockback                                   |
-| Flash    |   175 | **Teleportation**: forward blink, swept against walls                     |
-| Spring   |   250 | **Boing**: higher jumps without replacing normal air steering             |
-| Swapper  |   350 | **Swap Position**: aimed, visible enemy position exchange                 |
-| Bull     |   475 | **Hard Hitter**: slow windup, heavy launch; up to three enemies per swing |
+**One slap earned per confirmed direct melee hit** against a live enemy, including practice targets (**Dual grants two**). Whiffs, walls, allies, protected/recovering targets, repeated event delivery and ability-only effects do not award slaps. Reaching a milestone permanently makes that glove selectable: unlocking/equipping **does not spend your total**.
 
-Progress and selection are stored in `slap-arena-profile-v1` in this browser/origin. They survive reloads, but are not cloud-synced. Clearing site data clears progress. If storage is blocked, progress is session-only. This is a **casual local progression system, not an anti-cheat-secure economy**: joining profiles are self-reported. The match authority validates glove selection against that starting total plus its own confirmed hit count, and exclusively resolves damage, hit tests, abilities and launches.
+| Glove     | Slaps | This implementation                                                              |
+| --------- | ----: | -------------------------------------------------------------------------------- |
+| Default   |     0 | **Fart Blast**: short speed burst; clears chill                                  |
+| Diamond   |    15 | **The Stone Age**: temporary immovable, slap-proof rock form                     |
+| Extended  |    30 | **Reach**: longer handle/reach; lower damage, shorter ragdoll                    |
+| Dual      |    40 | **Double Slaps**: two modeled hands, wider two-target sweep, double earned slaps |
+| Brick     |    65 | **Litter Trap**: visible, jumpable enemy trip hazards; no ability damage/rewards |
+| Snow      |    85 | **Slow enemies**: five seconds of reduced movement and jumping                   |
+| Acrobat   |   110 | **Roll**: committed forward dodge, clears falling velocity; stable camera        |
+| Pull      |   125 | **Haul**: reversed horizontal knockback                                          |
+| Flash     |   175 | **Teleportation**: forward blink, swept against walls                            |
+| Spring    |   250 | **Boing**: higher jumps without replacing normal air steering                    |
+| Swapper   |   350 | **Swap Position**: aimed, visible enemy position exchange                        |
+| Bull      |   475 | **Hard Hitter**: slow windup, heavy launch; up to three enemies per swing        |
+| Dice      |   585 | **Random Power**: authority-rolled damage and launch; six balanced outcomes      |
+| Ghost     |   666 | **Invisibility**: 3.2 seconds hidden from enemies; attacks reveal you            |
+| Thanos    |   795 | **Time Reversal**: mark a point, then return safely; no healing                  |
+| Stun      |   870 | **EMP**: grounded, nearby enemies briefly ragdoll; jumping avoids it             |
+| Za Hando  | 1,000 | **Erasure Pull**: pull visible nearby enemies inward                             |
+| Magnet    | 1,125 | **Massless Magnetism**: rush toward the nearest visible standing enemy           |
+| Anchor    | 1,350 | **Dock**: place a marker that redirects your slap knockback toward it            |
+| Space     | 1,500 | **Zero-G**: timed upward lift and reduced gravity; not permanent flight          |
+| Boomerang | 1,625 | **Schlep**: outward slap, then a delayed stronger return impulse                 |
+| Speedrun  | 1,750 | **Speedrun**: faster running and chill resistance, with lighter hits             |
+| Golden    | 2,500 | **Powerup**: three seconds of protection, speed and enhanced slap power          |
+| Reverse   | 5,500 | **Opposite Day**: reflect incoming slaps; two active reflectors cancel           |
 
-See [implementation, balancing adaptations, research and validation](docs/glove-combat.md). Costs follow the referenced reduced-price roster; Extended uses 30 rather than the stale 25 shown by some index pages. Our damage, world-space reach, cooldowns, rock duration and jump strength are adaptations, not claims of exact Roblox values.
+Progress and selection are stored in `slap-arena-profile-v1` in this browser/origin. They survive reloads, but are not cloud-synced. Clearing site data clears progress. If storage is blocked, progress is session-only. This is a **casual local progression system, not an anti-cheat-secure economy**: joining profiles are self-reported. The match authority validates glove selection against that starting total plus its own confirmed earned-slap count, and exclusively resolves damage, hit tests, abilities and launches.
+
+See [implementation, balancing adaptations, research and validation](docs/glove-combat.md). Costs follow the referenced reduced-price roster; Extended uses 30 rather than the stale 25 shown by some index pages. Acrobat uses a **local 110-slap milestone**, not the source game’s external favorite requirement. Our damage, world-space reach, cooldowns, form durations and jump strength are adaptations, not claims of exact Roblox values.
 
 ## Combat
 
@@ -60,7 +77,7 @@ See [implementation, balancing adaptations, research and validation](docs/glove-
 - Original five-finger glove rigs, differentiated details, first- and third-person slap poses, layered synthesized impact/swish sounds, expanding impact rings, bounded particles, hit confirmation and projected damage numbers.
 - Fifteen-node, constrained articulated **visual ragdolls**, driven by the collision-resolved gameplay body. Limbs do not become separate authoritative damage hitboxes. A separate rock mesh represents Diamond's protected form.
 - Bots navigate the actual arenas, close distance, strafe, slap with windups, use abilities, jump to elevated opponents and get knocked down. They do not fire invisible guns. Their glove tier follows your selected glove rather than giving beginners arbitrary late-game equipment.
-- Both browser-hosted WebRTC and optional dedicated matches share the same combat implementation. Protocol **4**, compact snapshot format **3**; both players must refresh and create a fresh lobby after updating.
+- Both browser-hosted WebRTC and optional dedicated matches share the same combat implementation. Protocol **5**, glove snapshot format **4** (legacy firearm format **3** remains supported); both players must refresh and create a fresh lobby after updating.
 
 ## Production / offline
 
