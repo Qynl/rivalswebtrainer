@@ -644,6 +644,7 @@ export class Game {
           : target
             ? "TARGET"
             : botNames[index % botNames.length]),
+      spawnPoint: { x: position.x, y: 0, z: position.z },
       x: position.x,
       z: position.z,
       y: 0,

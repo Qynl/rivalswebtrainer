@@ -1060,3 +1060,88 @@ test("a real Courtyard opponent navigates around low cover it can see over and l
   expect(result.phase).toBeGreaterThan(10);
   expect(errors).toEqual([]);
 });
+
+test("real Foundry cover breaks live bot tracking; sight reacquisition updates the remembered goal", async ({
+  page,
+}) => {
+  const errors = await prepare(page);
+  await practice(page);
+  const result = await page.evaluate(async () => {
+    const g = window.__arena,
+      { gloveLoadout } = await import("/src/gloves/catalog.js");
+    g.start({
+      mode: 1,
+      map: "foundry",
+      difficulty: "regular",
+      loadout: gloveLoadout("glove_default"),
+      capture: false,
+    });
+    g.state = "playing";
+    const e = g.entities[1],
+      p = g.player;
+    Object.assign(e, {
+      x: -3.5,
+      y: 0,
+      z: -3,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      yaw: 0,
+      grounded: true,
+      abilityCooldown: 99,
+    });
+    Object.assign(p, {
+      x: -3.5,
+      y: 0,
+      z: -4.5,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      grounded: true,
+    });
+    const initialSight = g.hasLOS(g.eye(e), g.eye(p));
+    g.simulate(1 / 120);
+    const remembered = { ...e.gloveAwareness?.goal };
+    Object.assign(p, { x: -5, y: 0, z: -10, vx: 0, vy: 0, vz: 0 });
+    const coveredA = g.hasLOS(g.eye(e), g.eye(p));
+    g.simulate(1 / 120);
+    const hiddenA = { ...e.gloveAwareness?.goal };
+    const yawA = e.yaw;
+    Object.assign(p, { x: -2, y: 0, z: -10, vx: 0, vy: 0, vz: 0 });
+    const coveredB = g.hasLOS(g.eye(e), g.eye(p));
+    g.simulate(1 / 120);
+    const hiddenB = { ...e.gloveAwareness?.goal };
+    const hiddenVisible = e.visible;
+    Object.assign(p, { x: -4.5, y: 0, z: -3, vx: 0, vy: 0, vz: 0 });
+    const regained = g.hasLOS(g.eye(e), g.eye(p));
+    g.simulate(1 / 120);
+    const reacquired = { ...e.gloveAwareness?.goal };
+    return {
+      initialSight,
+      coveredA,
+      coveredB,
+      regained,
+      remembered,
+      hiddenA,
+      hiddenB,
+      hiddenVisible,
+      reacquired,
+      yawA,
+      finite: Number.isFinite(e.yaw),
+    };
+  });
+  expect(result.initialSight).toBe(true);
+  expect(result.coveredA).toBe(false);
+  expect(result.coveredB).toBe(false);
+  expect(result.hiddenVisible).toBe(false);
+  expect(result.hiddenA.x).toBe(result.remembered.x);
+  expect(result.hiddenA.z).toBe(result.remembered.z);
+  expect(result.hiddenB.x).toBe(result.remembered.x);
+  expect(result.hiddenB.z).toBe(result.remembered.z);
+  expect(result.hiddenB.slapPending).toBeNull();
+  expect(result.regained).toBe(true);
+  expect(result.reacquired.x).toBe(-4.5);
+  expect(result.reacquired.z).toBe(-3);
+  expect(result.finite).toBe(true);
+  expect(errors).toEqual([]);
+});

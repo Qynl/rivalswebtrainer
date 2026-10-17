@@ -54,6 +54,14 @@ export function resetPracticeTarget(e) {
     e.boomerangOwner =
     e.gloveDuel =
       null;
+  e.gloveAwareness = e.gloveNavigation = e.targetEntity = null;
+  e.path = [];
+  e.pathTimer = e.gloveRetargetAt = e.steerReadyAt = 0;
+  e.avoidanceSince = null;
+  e.visible = false;
+  e.gloveBlockedFor = 0;
+  e.footDistance = e.nextGloveStep = 0;
+  e.animationPhase = e.seed || 0;
   e.alive = true;
   e.health = e.maxHealth || 150;
   e.height = 1.9;

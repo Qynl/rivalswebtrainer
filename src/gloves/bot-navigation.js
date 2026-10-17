@@ -12,6 +12,7 @@ export function gloveBotWish(
   distance,
   range,
   dt,
+  goal = target,
 ) {
   let nav = actor.gloveNavigation;
   if (!nav || nav.target !== target) {
@@ -34,7 +35,7 @@ export function gloveBotWish(
     actor.pathTimer = (actor.pathTimer || 0) - dt;
     if (actor.pathTimer <= 0) {
       actor.pathTimer = 0.6;
-      actor.path = g.world.nav.path(actor, target);
+      actor.path = g.world.nav.path(actor, goal);
     }
     if (actor.path?.length) wish = followRoute(actor, actor.path);
   }

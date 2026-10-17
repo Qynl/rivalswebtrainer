@@ -16,7 +16,11 @@ import * as THREE from "three";
 import { GLOVES, GLOVE_ROSTER, DEFAULT_GLOVE, isGlove } from "./catalog.js";
 import { MOVEMENT, accelerate } from "../movement.js";
 import { moveBody, verticalStep, canOccupy, clamp } from "../physics.js";
-import { selectOpponent } from "../bot-tactics.js";
+import {
+  selectGloveOpponent,
+  gloveEnemyVisible,
+  glovePerceivedTarget,
+} from "./bot-awareness.js";
 const v = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 export const gloveMatch = (g) => isGlove(g.loadout?.[0]);
 export function blocked(body) {
@@ -542,6 +546,7 @@ export function updateGloveBot(g, e, dt) {
   }
   const glove = GLOVES[e.activeWeapon] || GLOVES[DEFAULT_GLOVE];
   if (blocked(e)) {
+    if (e.gloveDuel) e.gloveDuel.seenAt = g.clock;
     e.slapPending = null;
     ragdollStep(g, e, dt);
     g.animateBot(e, dt);
@@ -555,37 +560,37 @@ export function updateGloveBot(g, e, dt) {
         ? 0
         : Math.sin(g.clock * 1.1 + e.seed) * 2.2;
     e.vz = 0;
+    const startX = e.x,
+      startZ = e.z,
+      requested = Math.abs(e.vx) * dt;
     moveBody(e, e.vx * dt, 0, g.world.boxes);
     verticalStep(e, dt, g.world.boxes);
+    recordGloveBotTravel(g, e, startX, startZ, requested, dt, glove);
     g.animateBot(e, dt);
     return;
   }
   const enemies = g.entities.filter(
-    (other) =>
-      other.alive &&
-      other.team !== e.team &&
-      (!(other.ghostTime > 0) || Math.hypot(other.x - e.x, other.z - e.z) < 2),
+    (other) => other.alive && other.team !== e.team,
   );
   if (
     g.clock >= (e.gloveRetargetAt || 0) ||
     !enemies.includes(e.targetEntity)
   ) {
     e.gloveRetargetAt = g.clock + 0.25;
-    e.targetEntity = selectOpponent(e, enemies, (other) =>
-      g.hasLOS(g.eye(e), g.eye(other)),
-    ).target;
+    e.targetEntity = selectGloveOpponent(g, e, enemies);
   }
   const target = e.targetEntity;
   if (!target) {
+    e.visible = false;
     g.animateBot(e, dt);
     return;
   }
   e.targetEntity = target;
-  const dx = target.x - e.x,
-    dz = target.z - e.z,
-    distance = Math.hypot(dx, dz) || 1;
-  const los = g.hasLOS(g.eye(e), g.eye(target));
-  const intent = duelBotIntent(e, target, glove, {
+  const los = gloveEnemyVisible(g, e, target);
+  e.visible = los;
+  const perceived = glovePerceivedTarget(g, e, target, los);
+  const distance = Math.hypot(perceived.x - e.x, perceived.z - e.z) || 1;
+  const intent = duelBotIntent(e, perceived, glove, {
     now: g.clock,
     dt,
     difficulty: g.config.difficulty,
@@ -594,7 +599,17 @@ export function updateGloveBot(g, e, dt) {
   });
   e.yaw = intent.yaw;
   e.gloveTactic = intent.tactic;
-  let wish = gloveBotWish(g, e, target, intent, los, distance, glove.range, dt);
+  let wish = gloveBotWish(
+    g,
+    e,
+    target,
+    intent,
+    los,
+    distance,
+    glove.range,
+    dt,
+    perceived,
+  );
   const speed = MOVEMENT.runSpeed * intent.speed * gloveMoveScale(e, glove);
   wish = committedWish(e, glove, wish);
   accelerate(e, wish, speed, dt);
@@ -605,7 +620,7 @@ export function updateGloveBot(g, e, dt) {
   recordGloveBotTravel(g, e, startX, startZ, requested, dt, glove);
   lowGravity(e, dt);
   verticalStep(e, dt, g.world.boxes);
-  if (target.y > e.y + 0.65 && e.grounded && distance < 7) {
+  if (perceived.y > e.y + 0.65 && e.grounded && distance < 7) {
     e.vy = glove.key === "spring" ? 13.4 : MOVEMENT.jumpSpeed;
     e.grounded = false;
     e.jumps = 1;
@@ -620,7 +635,7 @@ export function updateGloveBot(g, e, dt) {
     if (
       (glove.key === "default" && distance > 4 && distance < 13) ||
       (glove.key === "flash" && distance > 6 && distance < 15) ||
-      (glove.key === "diamond" && target.slapPending && distance < 4) ||
+      (glove.key === "diamond" && perceived.slapPending && distance < 4) ||
       (glove.key === "swapper" && distance > 9 && distance < 19) ||
       (glove.key === "brick" && distance < 7 && e.grounded) ||
       (glove.key === "ghost" && distance > 4 && distance < 12) ||
@@ -630,7 +645,7 @@ export function updateGloveBot(g, e, dt) {
         distance > glove.range + 0.4 &&
         distance < 14) ||
       (glove.key === "anchor" && !(e.markTime > 0)) ||
-      (glove.key === "space" && (target.y > e.y + 0.5 || distance < 6)) ||
+      (glove.key === "space" && (perceived.y > e.y + 0.5 || distance < 6)) ||
       (glove.key === "acrobat" && distance > 4 && distance < 10) ||
       (glove.key === "thanos" &&
         (!(e.markTime > 0) || (e.health < 60 && distance < 4)))

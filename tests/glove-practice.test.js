@@ -139,3 +139,38 @@ test("respawn removes old ability/boomerang locks, restores the configured spawn
   assert.equal(e.reverseTime, 0);
   assert.equal(e.vx, 0);
 });
+
+test("practice respawn discards stale pursuit, awareness and footstep travel rather than chasing an old life", () => {
+  const target = {
+    health: 0,
+    alive: false,
+    seed: 2,
+    gloveAwareness: { goal: { x: 12, z: 8 } },
+    gloveNavigation: { until: 20 },
+    targetEntity: {},
+    path: [{ x: 8, z: 8 }],
+    pathTimer: 1,
+    gloveRetargetAt: 10,
+    steerReadyAt: 10,
+    avoidanceSince: 2,
+    visible: true,
+    gloveBlockedFor: 1,
+    footDistance: 3.3,
+    nextGloveStep: 10,
+    animationPhase: 30,
+    practiceSpawn: { x: 2, z: -14 },
+  };
+  resetPracticeTarget(target);
+  assert.equal(target.gloveAwareness, null);
+  assert.equal(target.gloveNavigation, null);
+  assert.equal(target.targetEntity, null);
+  assert.equal(target.path.length, 0);
+  assert.equal(target.pathTimer, 0);
+  assert.equal(target.visible, false);
+  assert.equal(target.footDistance, 0);
+  assert.equal(target.gloveBlockedFor, 0);
+  assert.equal(target.animationPhase, 2);
+  assert.equal(target.alive, true);
+  assert.equal(target.x, 2);
+  assert.equal(target.z, -14);
+});

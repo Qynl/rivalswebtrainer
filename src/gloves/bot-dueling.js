@@ -66,7 +66,7 @@ export function duelBotIntent(
     wish = { x: -toward.x, z: -toward.z };
     speed = 0.75;
     tactic = "disengage";
-  } else if (distance < reach * 0.66) {
+  } else if (visible && distance < reach * 0.66) {
     wish = { x: -toward.x, z: -toward.z };
     speed = 0.7;
     tactic = "space";

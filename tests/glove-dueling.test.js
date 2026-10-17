@@ -106,3 +106,12 @@ test("turning away slows the advance instead of perfect full-speed backward trac
   const facing = plan(bot, target, 0.2);
   assert.ok(turning.speed < facing.speed);
 });
+
+test("a remembered empty position does not cause defensive spacing against an unseen imaginary opponent", () => {
+  const { bot, target } = fixture();
+  target.z = -0.5;
+  const intent = plan(bot, target, 1, { visible: false });
+  assert.equal(intent.tactic, "approach");
+  assert.equal(intent.attack, false);
+  assert.ok(intent.wish.z < 0);
+});
