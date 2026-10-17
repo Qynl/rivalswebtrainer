@@ -1463,3 +1463,59 @@
     font-size: 8px;
   }
 }
+.glove-preview {
+  cursor: grab;
+  touch-action: pan-y;
+  outline: none;
+  filter: drop-shadow(0 16px 22px #0007);
+}
+.glove-preview:active {
+  cursor: grabbing;
+}
+.glove-preview:focus-visible {
+  outline: 1px solid #e8b975;
+  outline-offset: -3px;
+  border-radius: 8px;
+}
+.glove-preview-hint {
+  position: absolute;
+  bottom: 18px;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  text-align: center;
+  pointer-events: none;
+  color: #88a4ad;
+  font-size: 7px;
+  letter-spacing: 1.6px;
+}
+.glove-cast-notice {
+  position: absolute;
+  left: 50%;
+  top: 59%;
+  transform: translateX(-50%);
+  padding: 7px 12px;
+  border: 1px solid #d7b67b50;
+  background: #101f29b8;
+  border-radius: 4px;
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  color: #edd1a2;
+  pointer-events: none;
+  animation: glove-notice-in 0.18s ease-out;
+}
+@keyframes glove-notice-in {
+  from {
+    opacity: 0;
+    translate: 0 5px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .glove-cast-notice {
+    animation: none;
+  }
+}

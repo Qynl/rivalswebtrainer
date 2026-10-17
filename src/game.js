@@ -1,3 +1,4 @@
+import { wheelZoom, updateOrbitCamera } from "./gloves/camera.js";
 import { gloveMoveScale, committedWish, lowGravity } from "./gloves/states.js";
 import { presentGloveStates } from "./gloves/visual-effects.js";
 import { GLOVES, GLOVE_ROSTER, isGlove } from "./gloves/catalog.js";
@@ -167,12 +168,12 @@ export class Game {
     this.flameFX = new FlameJet(this.scene);
     this.weaponScene = new THREE.Scene();
     this.weaponScene.environment = this.environmentMap.texture;
-    this.weaponScene.environmentIntensity = 0.8;
-    this.weaponScene.add(new THREE.HemisphereLight(0xe6eff6, 0x424e5b, 1.15));
-    const wl = new THREE.DirectionalLight(0xffebd5, 2.8);
+    this.weaponScene.environmentIntensity = 0.65;
+    this.weaponScene.add(new THREE.HemisphereLight(0xbcd9ee, 0x222d3c, 0.8));
+    const wl = new THREE.DirectionalLight(0xffdda8, 3.2);
     wl.position.set(-2, 3, 1);
     this.weaponScene.add(wl);
-    const rim = new THREE.DirectionalLight(0xbadbf2, 1.4);
+    const rim = new THREE.DirectionalLight(0x77d6e4, 2.2);
     rim.position.set(-3, 2, -3);
     this.weaponScene.add(rim);
     this.weaponFlashLight = new THREE.PointLight(0xffc889, 0, 2.2, 2);
@@ -343,6 +344,8 @@ export class Game {
         e.code.startsWith("Shift")
       )
         this.slide();
+      if (e.code === "KeyV" && gloveMatch(this))
+        this.cameraZoom = (this.cameraZoom || 0) > 0.3 ? 0 : 6;
       if (e.code === "KeyF" || (e.code === "KeyE" && gloveMatch(this))) {
         if (e.code === "KeyE") this.network?.action("ability");
         this.meleeAbility(true);
@@ -400,11 +403,17 @@ export class Game {
       (e) => {
         if (
           document.pointerLockElement !== this.canvas ||
-          this.state !== "playing"
+          !["playing", "countdown", "roundend"].includes(this.state) ||
+          this.selectingLoadout
         )
           return;
         e.preventDefault();
-        this.equip((this.slot + (e.deltaY > 0 ? 1 : 3)) % 4);
+        if (gloveMatch(this)) {
+          this.cameraZoom = wheelZoom(this.cameraZoom, e.deltaY);
+          return;
+        }
+        if (this.state === "playing")
+          this.equip((this.slot + (e.deltaY > 0 ? 1 : 3)) % 4);
       },
       { passive: false },
     );
@@ -549,6 +558,8 @@ export class Game {
   }
   cleanEntities() {
     this.gloveBricks = [];
+    this.gloveFX?.clear();
+    this.gloveNotice = null;
     this.cancelThrow(false);
     this.disposeQuickModels();
     this.damageNumbers?.clear();
@@ -2706,7 +2717,7 @@ export class Game {
       m.parts.rightKnee.rotation.x = pose.rightKnee;
       m.parts.leftLeg.position.y = m.parts.rightLeg.position.y = pose.hipY;
     }
-    let aimPitch = e.netId ? e.pitch || 0 : 0;
+    let aimPitch = e.isPlayer ? this.pitch : e.netId ? e.pitch || 0 : 0;
     if (!e.netId && e.visible && e.targetEntity?.alive) {
       const dy = this.eye(e.targetEntity).y - this.eye(e).y,
         distance = Math.hypot(e.targetEntity.x - e.x, e.targetEntity.z - e.z);
@@ -2799,6 +2810,20 @@ export class Game {
     updateScopeGlint(m, e, this.camera?.position, this.clock);
   }
   updateEffects(dt) {
+    this.gloveFX?.update(dt, this.camera);
+    if (this.gloveFX)
+      for (const body of this.entities) {
+        const id = body === this.player ? this.loadout[0] : body.activeWeapon;
+        if (
+          body.alive &&
+          id === "glove_default" &&
+          body.boostTime > 0 &&
+          this.clock >= (body.gasTrailAt || 0)
+        ) {
+          body.gasTrailAt = this.clock + 0.07;
+          this.gloveFX.gas(v3(body.x, body.y + 0.55, body.z), body.yaw || 0, 2);
+        }
+      }
     for (let i = this.effects.length - 1; i >= 0; i--) {
       const e = this.effects[i];
       e.life -= dt;
@@ -2983,7 +3008,12 @@ export class Game {
     this.world?.atmosphere?.update(t * 0.001, this.settings.performance);
     this.renderer.autoClear = true;
     this.renderWorld();
-    if (this.state !== "lobby" && this.player?.alive && this.viewModel) {
+    if (
+      this.state !== "lobby" &&
+      this.player?.alive &&
+      this.viewModel &&
+      !this.thirdPerson
+    ) {
       this.renderer.autoClear = false;
       this.renderer.clearDepth();
       this.renderer.render(this.weaponScene, this.weaponCamera);
@@ -2994,6 +3024,7 @@ export class Game {
   updateCamera(dt, alpha = 1) {
     const p = this.player;
     if (!p) return;
+    if (!gloveMatch(this)) this.thirdPerson = false;
     if (p.alive) {
       const speed = Math.hypot(p.vx, p.vz);
       const bob =
@@ -3027,6 +3058,8 @@ export class Game {
       if (this.forcedCrouch) eyeY = Math.min(eyeY, p.y + 1.02);
       this.camera.position.set(x, eyeY, z);
       this.camera.rotation.set(this.pitch, this.yaw, 0, "YXZ");
+      if (gloveMatch(this) && !this.headless)
+        updateOrbitCamera(this, this.camera.position.clone(), dt);
     } else {
       const follow =
         this.entities.find((e) => e.alive && e.team === 0) ||
@@ -3037,6 +3070,29 @@ export class Game {
           Math.min(1, dt * 3),
         );
         this.camera.lookAt(follow.x, follow.y + 1, follow.z);
+      }
+    }
+    if (gloveMatch(this) && !this.headless) {
+      if ((this.cameraZoom || 0) > 0.3 && !p.model) {
+        p.model = createCharacter(p.team, p.name);
+        p.model.group.name = "local-third-person-avatar";
+        this.scene.add(p.model.group);
+      }
+      if (p.model) {
+        p.activeWeapon = this.loadout[0];
+        p.meleeId = null;
+        p.yaw = this.yaw;
+        p.pitch = this.pitch;
+        p.sliding = this.slideTime > 0;
+        p.animationPhase = this.walkPhase;
+        p.slapSequence = this.shotSequence || 1;
+        p.netShotAge = this.clock - (this.lastSlapAt ?? -10);
+        this.animateBot(p, dt);
+        p.model.group.visible = !!this.thirdPerson || !p.alive;
+        // The local nameplate is redundant and can obscure the crosshair.
+        p.model.group.traverse((o) => {
+          if (o.isSprite) o.visible = false;
+        });
       }
     }
     const w = WEAPONS[this.loadout[this.slot]],
@@ -3071,9 +3127,9 @@ export class Game {
     this.camera.updateProjectionMatrix();
     const activeModel = this.quickModel || this.viewModel;
     if (activeModel) {
-      activeModel.visible = !(
-        this.aiming && this.loadout[this.slot] === "sniper"
-      );
+      activeModel.visible =
+        !this.thirdPerson &&
+        !(this.aiming && this.loadout[this.slot] === "sniper");
       this.weaponAnimator ||= new WeaponAnimator();
       this.weaponClearance ||= new WeaponClearance();
       const clearance = this.weaponClearance.sample(
@@ -3092,6 +3148,8 @@ export class Game {
       this.weaponAnimator.update(activeModel, {
         dt,
         gloveSwingAge: this.clock - (this.lastSlapAt ?? -10),
+        gloveSequence: this.shotSequence || 1,
+        gloveCastAge: this.clock - (p.gloveCastTime ?? -10),
         gloveImpact: this.slapImpact || 0,
         gloveRagdoll: p.ragdollTime || 0,
         gloveStone: p.stoneTime || 0,

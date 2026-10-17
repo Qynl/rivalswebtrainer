@@ -564,3 +564,130 @@ test("real RTC carries visible Brick trap geometry and Ghost invisibility throug
     await guest.close();
   }
 });
+
+test("real RTC Default launches from rest in third person and both peers see ability cues without earned slaps", async ({
+  browser,
+  page,
+}) => {
+  const guest = await browser.newPage({
+      viewport: { width: 800, height: 600 },
+    }),
+    requests = [],
+    errors = [];
+  try {
+    await expandedRoom(
+      page,
+      guest,
+      "glove_default",
+      "glove_default",
+      requests,
+      errors,
+    );
+    const before = await page.evaluate(() => {
+      const g = window.__arena,
+        n = g.network,
+        self = n.latest.players.find((p) => p.id === n.id);
+      // The real arena contains cover two meters in front of some spawns.
+      // Choose a genuinely clear launch direction, never remove authority walls
+      // or teleport the player to make a displacement assertion pass.
+      const clearance = (yaw) => {
+        for (let d = 0.2; d <= 8; d += 0.2) {
+          const x = self.x - Math.sin(yaw) * d,
+            z = self.z - Math.cos(yaw) * d;
+          const bounds = g.world.bounds;
+          if (
+            bounds &&
+            (x < bounds.minX + 0.3 ||
+              x > bounds.maxX - 0.3 ||
+              z < bounds.minZ + 0.3 ||
+              z > bounds.maxZ - 0.3)
+          )
+            return d - 0.2;
+          if (
+            g.world.boxes.some((b) => {
+              if (self.y >= b.maxY || self.y + 1.9 <= b.minY) return false;
+              let px = x,
+                pz = z,
+                loX = b.minX,
+                hiX = b.maxX,
+                loZ = b.minZ,
+                hiZ = b.maxZ;
+              if (b.angle) {
+                const c = Math.cos(b.angle),
+                  s = Math.sin(b.angle);
+                px = (x - b.cx) * c - (z - b.cz) * s;
+                pz = (x - b.cx) * s + (z - b.cz) * c;
+                loX = -b.halfX;
+                hiX = b.halfX;
+                loZ = -b.halfZ;
+                hiZ = b.halfZ;
+              }
+              const dx = px - Math.max(loX, Math.min(hiX, px)),
+                dz = pz - Math.max(loZ, Math.min(hiZ, pz));
+              return dx * dx + dz * dz < 0.3 * 0.3;
+            })
+          )
+            return d - 0.2;
+        }
+        return 8;
+      };
+      const direction = Array.from({ length: 32 }, (_, i) => ({
+        yaw: (i * Math.PI) / 16,
+        clear: clearance((i * Math.PI) / 16),
+      })).sort((a, b) => b.clear - a.clear)[0];
+      g.yaw = direction.yaw;
+      g.cameraZoom = 6;
+      g.updateCamera(1 / 60);
+      return {
+        x: self.x,
+        z: self.z,
+        count: g.entities.length,
+        model: !!g.player.model,
+        clear: direction.clear,
+      };
+    });
+    expect(before.clear).toBeGreaterThan(4);
+    expect(before.model).toBe(true);
+    expect(before.count).toBe(2);
+    await expandedAbility(page);
+    await expect
+      .poll(
+        () =>
+          page.evaluate(({ x, z }) => {
+            const n = window.__arena.network,
+              p = n.latest.players.find((p) => p.id === n.id);
+            return Math.hypot(p.x - x, p.z - z);
+          }, before),
+        { timeout: 5000 },
+      )
+      .toBeGreaterThan(3);
+    for (const p of [page, guest]) {
+      const observed = await p.evaluate(() => {
+        const g = window.__arena;
+        g.updateCamera(1 / 60);
+        return {
+          fx: !!g.gloveFX,
+          puffs: g.gloveFX?.puffs.cursor || 0,
+          hits: g.network.latest.players.reduce((a, p) => a + p.stats.hits, 0),
+          slaps: g.network.latest.players.reduce(
+            (a, p) => a + (p.stats.slaps || 0),
+            0,
+          ),
+          count: g.entities.length,
+        };
+      });
+      expect(observed.fx).toBe(true);
+      expect(observed.puffs).toBeGreaterThan(0);
+      expect(observed.hits).toBe(0);
+      expect(observed.slaps).toBe(0);
+      expect(observed.count).toBe(2);
+    }
+    expect(
+      await page.evaluate(() => window.__arena.gloveNotice?.text),
+    ).toContain("BOOSTING");
+    expect(requests).toEqual([]);
+    expect(errors).toEqual([]);
+  } finally {
+    await guest.close();
+  }
+});

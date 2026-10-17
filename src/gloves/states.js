@@ -35,7 +35,11 @@ export function gloveMoveScale(body, glove) {
   return chill * passive * gold * boost;
 }
 export function committedWish(body, glove, wish) {
-  if (body.boostTime > 0 && ["magnet", "acrobat"].includes(glove.key)) {
+  if (
+    body.boostTime > 0 &&
+    (["magnet", "acrobat"].includes(glove.key) ||
+      (glove.key === "default" && body.boostTime > 1))
+  ) {
     const length = Math.hypot(body.vx, body.vz);
     if (length > 0.01) return { x: body.vx / length, z: body.vz / length };
   }

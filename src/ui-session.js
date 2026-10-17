@@ -172,6 +172,7 @@ function snapshot(g, force = false) {
   );
   vitalsPlayer = p;
   hud.set({
+    gloveNotice: g.gloveNotice?.until > g.clock ? g.gloveNotice.text : null,
     gloveStatus:
       p.stoneTime > 0
         ? "STONE FORM"

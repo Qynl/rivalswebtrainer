@@ -88,16 +88,7 @@ function Preview({ id }) {
       gone = true;
       const p = preview.current;
       if (p) {
-        p.show = () => {};
-        p.renderer.dispose();
-        p.model?.traverse((o) => {
-          o.geometry?.dispose();
-          if (o.material)
-            for (const m of Array.isArray(o.material)
-              ? o.material
-              : [o.material])
-              m.dispose();
-        });
+        p.dispose();
         preview.current = null;
       }
     };
@@ -109,6 +100,8 @@ function Preview({ id }) {
     <canvas
       ref={ref}
       className="glove-preview"
+      tabIndex={0}
+      aria-description="Drag to rotate the model, or focus it and use the left and right arrow keys."
       aria-label="Original three-dimensional glove model"
     />
   );
@@ -252,6 +245,9 @@ function MatchHUD({ h, profile }) {
       {glove.key === "thanos" && h.gloveMarked && (
         <div className="slap-return-hint">POINT MARKED · E TO RETURN</div>
       )}
+      {h.gloveNotice && (
+        <div className="glove-cast-notice">{h.gloveNotice}</div>
+      )}
       <aside className="slap-feed">
         {h.feed?.slice(-4).map((f, i) => (
           <div key={f.id || i}>
@@ -298,7 +294,8 @@ function MatchHUD({ h, profile }) {
       </footer>
       <div className="slap-game-controls">
         LMB <b>SLAP</b> · E / RMB <b>ABILITY</b> · C / SHIFT <b>SLIDE</b> ·
-        SPACE <b>JUMP</b> · {h.canSelect ? "M GLOVE · " : ""}ESC <b>PAUSE</b>
+        SPACE <b>JUMP</b> · V <b>VIEW</b> · WHEEL <b>ZOOM</b> ·{" "}
+        {h.canSelect ? "M GLOVE · " : ""}ESC <b>PAUSE</b>
       </div>
       {h.hurt > 0 && <div className="slap-hurt" />}
       {h.fps > 0 && game?.settings.showFps && (
@@ -545,6 +542,9 @@ export function GloveApp() {
                   <kbd>W A S D</kbd> Move
                 </span>
                 <span>
+                  <kbd>V / WHEEL</kbd> View / zoom
+                </span>
+                <span>
                   <kbd>LMB</kbd> Slap
                 </span>
                 <span>
@@ -576,6 +576,9 @@ export function GloveApp() {
               </div>
               <div className="slap-model-stage">
                 <div className="slap-orbit" />
+                <span className="glove-preview-hint">
+                  DRAG TO EXPLORE · ORIGINAL 3D MODEL
+                </span>
                 <span className="slap-model-name">{glove.name}</span>
                 <Preview id={inspect} />
                 <span className="slap-model-label">

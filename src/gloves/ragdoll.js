@@ -1,3 +1,4 @@
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import * as THREE from "three";
 // Presentation-only joint physics. Gameplay launch/collision is shared by the
 // offline engine and match authority; no client-authored limb can deal damage.
@@ -61,7 +62,7 @@ function makeRagdoll(e) {
     let mesh = null;
     if (width) {
       mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(width, 1, width * 0.9),
+        new RoundedBoxGeometry(width, 1, width * 0.9, 2, width * 0.18),
         a === 1 && b === 2 ? skin : a >= 9 ? dark : armor,
       );
       mesh.castShadow = true;
@@ -82,19 +83,39 @@ function makeRagdoll(e) {
       length: nodes[a].p.distanceTo(nodes[b].p),
       mesh: null,
     });
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.34, 0.29), skin);
+  const head =
+    e.model.parts?.head?.clone() ||
+    new THREE.Mesh(new RoundedBoxGeometry(0.32, 0.34, 0.29, 2, 0.04), skin);
   head.castShadow = true;
   root.add(head);
   const face = new THREE.Mesh(new THREE.BoxGeometry(0.23, 0.085, 0.02), dark);
   face.position.set(0, 0.04, -0.151);
-  head.add(face);
-  const chest = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.44, 0.27), armor);
+  if (!e.model.parts?.head) head.add(face);
+  else {
+    face.geometry.dispose();
+    face.material = null;
+  }
+  const chest = new THREE.Mesh(
+    new RoundedBoxGeometry(0.5, 0.44, 0.27, 2, 0.06),
+    armor,
+  );
   chest.castShadow = true;
   root.add(chest);
+  const jointCaps = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(0.082, 10, 8),
+    dark,
+    pose.length,
+  );
+  jointCaps.name = "ragdoll-joint-caps";
+  jointCaps.castShadow = true;
+  jointCaps.frustumCulled = false;
+  root.add(jointCaps);
   const originals = [...e.model.group.children];
   e.model.group.add(root);
   return {
     root,
+    jointCaps,
+    dummy: new THREE.Object3D(),
     nodes,
     constraints,
     head,
@@ -173,6 +194,12 @@ export function presentRagdoll(g, e, dt) {
     c.mesh.scale.y = d.length();
     c.mesh.quaternion.setFromUnitVectors(UP, d.normalize());
   }
+  for (let i = 0; i < rig.nodes.length; i++) {
+    rig.dummy.position.copy(rig.nodes[i].p);
+    rig.dummy.updateMatrix();
+    rig.jointCaps.setMatrixAt(i, rig.dummy.matrix);
+  }
+  rig.jointCaps.instanceMatrix.needsUpdate = true;
   rig.head.position.copy(rig.nodes[2].p);
   rig.head.rotation.set(
     0.4,

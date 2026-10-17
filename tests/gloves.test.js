@@ -994,6 +994,7 @@ for (const glove of GLOVE_ROSTER.filter(
       assert.ok(s.g.player.abilityCooldown > 0);
       const event = s.match.events.find((e) => e.type === "gloveAbility");
       assert.equal(event.glove, glove.id);
+      assert.equal(event.round, s.match.round);
       assert.equal(s.other.player.health, before);
       assert.equal(s.g.matchStats.hits, 0);
       assert.equal(useGloveAbility(s.g), false);
@@ -1084,5 +1085,31 @@ test("network impulse aging respects active Space gravity instead of applying no
     ]);
     assert.ok(Math.abs(g.player.vy - expected) < 0.00001);
     assert.equal(g.player.grounded, false);
+  }
+});
+
+test("Default burst commits real movement from rest, releases steering after the launch, and never adds damage/slaps", () => {
+  const t = setup();
+  try {
+    Object.assign(t.g.player, { vx: 0, vz: 0 });
+    assert.equal(useGloveAbility(t.g), true);
+    const wish = committedWish(t.g.player, GLOVES.glove_default, {
+      x: 0,
+      z: 0,
+    });
+    assert.ok(wish.z < -0.99);
+    assert.equal(t.g.player.vz, -14);
+    const event = t.match.events.find((e) => e.type === "gloveAbility");
+    assert.equal(event.round, t.match.round);
+    assert.equal(event.yaw, t.g.yaw);
+    assert.equal(t.other.player.health, 150);
+    assert.equal(t.g.matchStats.hits, 0);
+    t.g.player.boostTime = 0.99;
+    assert.deepEqual(
+      committedWish(t.g.player, GLOVES.glove_default, { x: 1, z: 0 }),
+      { x: 1, z: 0 },
+    );
+  } finally {
+    t.service.dispose();
   }
 });

@@ -101,3 +101,33 @@ Final clean expansion validation:
 - Snapshot-recovery regressions also verify Space’s initial lift and correct low-gravity impulse aging when a presentation event is missing or delayed.
 
 Historical conversion totals above are preserved only as baseline provenance, not added to these totals. No external published-site deployment was verified.
+
+## Sculpted gloves, camera zoom and ability feel
+
+The visual pass replaces box-like glove silhouettes with rounded palms/panels, three-joint fingers, cuffs, seam detail and small owned PBR weave textures. All 24 models keep their individual accessories/colors and existing rig interface. Default uses warmer tan/gold rather than an overexposed white shell. The studio preview supports pointer drag/left-right arrows, suspends drawing offscreen, respects reduced motion and disposes its animation/listeners/GPU resources on unmount.
+
+Shared slap motion reaches peak contact at each glove's **actual authoritative windup**, then recovers. Alternating swings vary the wrist without sending the hand off the opposite edge of the screen. Curved sweep ribbons, rounded ragdoll limbs/joint caps, lit glove finishes and modest HDR grading improve in-game presentation, not only collection cards. First-person, local third-person and remote character models share the articulated glove animation.
+
+### Camera controls and authority
+
+- **Wheel down** zooms out; **wheel up** zooms in, all the way into first person. **V** toggles first person / a six-meter shoulder view. Zoom is eased and bounded to 0–12 meters. Initial view remains first person; the zoom choice survives round transitions within the current game instance.
+- A local full-body presentation hierarchy is created lazily, reuses character/glove locomotion and ragdoll presentation, hides the local nameplate, and is hidden near the first-person camera. It is **not a second gameplay entity, hitbox or network player**. The separate first-person hand pass is disabled while the avatar is visible.
+- A swept boom retracts against expanded gameplay collision solids, including rotated cover and floors. Extremely restricted space falls back to first-person presentation without discarding requested zoom; moving away restores the distance. Ramp bounding volumes are intentionally conservative.
+- Mouse yaw/pitch and saved inversion remain untouched. Combat still originates from the player's eyes/body and uses the existing authority-approved aiming/range/LOS rules, not an unrestricted third-person camera position. There are no camera fields or new trust in the network protocol.
+
+### Meaningful Default burst and clearer abilities
+
+Default previously added a small impulse which normal no-input ground braking erased almost immediately. Fart Blast now launches forward at **14 m/s**, commits its current horizontal direction for the first **0.35 seconds**, then releases normal steering/braking while retaining the existing **1.35-second speed boost**, chill clear and seven-second cooldown. This uses shared movement code in offline play, prediction and authority. It is still a movement ability, **not an invented damaging fart AoE**, and awards no slaps.
+
+The presentation layer adds 16 initial gas puffs and a short, rate-limited drifting trail; ice mist on Snow hits; contracting pull/anchor/boomerang impacts; heavy Bull impacts; teleport departure/arrival rings; expanding EMP/inward Erasure waves; and animated protected/reflecting/zero-G auras. Ability sounds use distinct gas, blink, EMP, pull, stone, ghost, power and roll families instead of a universal generic chirp. Brief caster notices identify the activation; EMP/Erasure affected counts come from successful authority impacts, including zero when nobody was hit. Other abilities retain their documented eligibility, cooldowns, protection and reward rules rather than receiving indiscriminate damage buffs.
+
+FX use three fixed-size instanced pools: **32 rings, 128 streaks and 64 mist puffs**. They expire, clear between rounds and have explicit disposal; there is no per-hit geometry growth. Presentation events are shared by offline and real-RTC clients. A missing authority-context round ID was also fixed: previously clients could discard glove slap/ability feedback as out-of-round even while snapshots correctly replicated damage and status. Authority regressions now require current-round ability events; the real-RTC launch check requires both peers to create the actual gas FX without awarding hits/slaps. New event origin/yaw/affected fields are optional cosmetics/feedback, not snapshot-layout changes.
+
+### Validation of this pass
+
+- Full unit suite: **608/608 passed**. The focused glove/visual suite has **68 passing tests**, covering contact alignment, material/texture ownership, finite/restorable transforms, bounded FX lifecycle, wheel limits, wall/floor/rotated-cover camera collision, exact return to eyes, preserved aim, retained requested zoom and the committed Default launch without extra damage/rewards.
+- Actual Chromium GPU checks passed for the rotating studio, rendered contact/ribbons/impacts, and real wheel/V input with a local avatar plus a Default burst of more than four meters from rest. They check page/shader errors and capture screenshots; they are not screenshot-only mockups.
+- **18/18 focused browser scenarios passed together** in the final clean `npm run test:gloves` run (**8.3 minutes**), including all glove rigs, movement, genuine combat, ability eligibility, preparation/unlocks, production offline reload, and four static-only real-RTC scenarios. The new RTC case verifies an authority-resolved Default launch from rest, two—not three—gameplay entities after local-avatar creation, both peers' real FX pools, and zero fabricated earned hits/slaps.
+- **Production build passed**, including the browser authority worker; `git diff --check` was clean. The full **608-test unit suite was rerun successfully after the round-ID fix**.
+- Intermediate browser runs exposed two issues: a displacement fixture initially aimed into real spawn cover (fixed by selecting a collision-clear heading, without deleting authority walls), and the actual missing authority-context round tag which suppressed remote presentation events (fixed in `server/match.js` and covered by authority assertions plus both-peer RTC checks). The totals above refer to the subsequent clean complete run, not those failed iterations.
+- Browser checks used Chromium/SwiftShader and test-local RTC signaling. Frozen/manual-frame screenshot fixtures are not frame-rate benchmarks. No external published-site deployment or public-network latency/connectivity guarantee was verified.

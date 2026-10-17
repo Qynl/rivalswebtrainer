@@ -67,7 +67,9 @@ export class ArenaRenderer {
             color=max(vec3(0),color+(color-blur)*.1);
           }
           // Keep the concrete neutral, not glowing white or heavily blue-tinted.
-          color=max(vec3(0.),(color-.18)*1.025+.18);
+          float luminance=dot(color,vec3(.2126,.7152,.0722));
+          color=mix(vec3(luminance),color,1.065);
+          color=max(vec3(0.),(color-.18)*1.055+.18);
           color*=vec3(1.015,1.005,.99);
           color+=texture2D(bloomMap,screenUv).rgb*bloomStrength;
           gl_FragColor=vec4(color,1.);

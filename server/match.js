@@ -83,6 +83,7 @@ export class Match {
       range: false,
       state: "playing",
       clock: this.time,
+      round: this.round,
       keys: new Set(),
       yaw: team === 0 ? 0 : Math.PI,
       pitch: 0,

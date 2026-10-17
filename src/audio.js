@@ -161,6 +161,35 @@ export class GameAudio {
   }
   play(name, level = 1) {
     switch (name) {
+      case "gloveBlink":
+        this.tone(580, 0.18, "sine", 0.16 * level, 1500);
+        this.noiseHit(0.09, 0.13 * level, 4200);
+        return;
+      case "gloveEMP":
+        this.tone(170, 0.38, "triangle", 0.24 * level, 42);
+        this.tone(1900, 0.09, "sawtooth", 0.07 * level, 380);
+        this.noiseHit(0.15, 0.25 * level, 1800);
+        return;
+      case "glovePull":
+        this.tone(1050, 0.3, "sine", 0.2 * level, 90);
+        this.noiseHit(0.2, 0.11 * level, 1100);
+        return;
+      case "gloveStone":
+        this.tone(88, 0.28, "triangle", 0.26 * level, 34);
+        this.noiseHit(0.2, 0.3 * level, 450);
+        return;
+      case "gloveGhost":
+        this.tone(440, 0.4, "sine", 0.1 * level, 100);
+        this.noiseHit(0.3, 0.1 * level, 1700);
+        return;
+      case "glovePower":
+        for (const hz of [220, 330, 440])
+          this.tone(hz, 0.4, "sine", 0.08 * level, hz * 2);
+        return;
+      case "gloveRoll":
+        this.noiseHit(0.18, 0.18 * level, 950);
+        this.tone(140, 0.13, "triangle", 0.12 * level, 65);
+        return;
       case "slapSwing":
         this.noiseHit(0.1, 0.1 * level, 1800);
         break;
@@ -170,7 +199,7 @@ export class GameAudio {
         this.tone(1000, 0.035, "triangle", 0.14 * level, 350);
         break;
       case "slapBlast":
-        this.tone(80, 0.23, "sawtooth", 0.13 * level, 26);
+        this.tone(80, 0.32, "sawtooth", 0.2 * level, 26);
         this.noiseHit(0.16, 0.2 * level, 550);
         break;
       case "slapAbility":

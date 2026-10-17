@@ -1,5 +1,6 @@
+import { gloveMotion } from "./gloves/motion.js";
 import { isGlove, GLOVES } from "./gloves/catalog.js";
-import { slapPose } from "./gloves/model.js";
+import { animateGlove } from "./gloves/model.js";
 import { reloadHandling, animateMuzzle } from "./weapon-handling.js";
 import { THROW_DURATION, THROW_RELEASE } from "./throwables.js";
 import { knifeStabPose, sniperBoltPose } from "./weapon-actions.js";
@@ -293,8 +294,24 @@ function updateGloveWeapon(model, e, clock) {
   }
   socket.visible = true;
   const age = e.netId ? (e.netShotAge ?? 10) : clock - (e.lastSlapAt ?? -10),
-    pose = slapPose(age, GLOVES[id].windup),
+    pose = gloveMotion(
+      GLOVES[id].key,
+      age,
+      GLOVES[id].windup,
+      e.slapSequence || 1,
+    ),
     glove = socket.userData.weapon;
+  animateGlove(glove, {
+    gloveSwingAge: age,
+    gloveSequence: e.slapSequence || 1,
+    time: clock,
+    gloveGhost: e.ghostTime || 0,
+    gloveGold: e.goldTime || 0,
+    gloveReverse: e.reverseTime || 0,
+  });
+  if (p.upperBody)
+    p.upperBody.rotation.y =
+      pose.side * (pose.wind * 0.22 - pose.strike * 0.35);
   glove.position.set(
     0.15 + pose.wind * 0.26 - pose.strike * 0.55,
     -0.14 + pose.wind * 0.14,
@@ -307,10 +324,12 @@ function updateGloveWeapon(model, e, clock) {
   );
   p.botRightGrip ||= new THREE.Vector3();
   p.botLeftGrip ||= new THREE.Vector3();
-  p.botRightGrip.copy(glove.position).add(new THREE.Vector3(0, 0.15, 0.05));
+  p.botRightGrip.copy(glove.position);
+  p.botRightGrip.y += 0.15;
+  p.botRightGrip.z += 0.05;
   p.botLeftGrip.set(
     id === "glove_dual" ? -0.4 : -0.24,
-    -0.15,
-    id === "glove_dual" ? -0.45 : -0.2,
+    -0.15 + pose.wind * 0.08 + pose.strike * 0.05,
+    id === "glove_dual" ? -0.45 : -0.2 - pose.wind * 0.12,
   );
 }

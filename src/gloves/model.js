@@ -1,7 +1,12 @@
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { gloveFinish, createSweep } from "./finishes.js";
+import { gloveMotion, slapPose } from "./motion.js";
+export { slapPose } from "./motion.js";
 import { addGloveDetails } from "./model-details.js";
 import * as THREE from "three";
 import { GLOVES } from "./catalog.js";
-const rounded = (w, h, d, r = 0.04) => new THREE.BoxGeometry(w, h, d); // bevel highlights come from joint caps and layered panels
+const rounded = (w, h, d, r = 0.035) =>
+  new RoundedBoxGeometry(w, h, d, 2, Math.min(r, w * 0.22, h * 0.22, d * 0.22));
 export function createGloveModel(id, options = {}) {
   const glove = GLOVES[id];
   const root = new THREE.Group();
@@ -10,11 +15,10 @@ export function createGloveModel(id, options = {}) {
     wrist = new THREE.Group();
   root.add(wrist);
   wrist.add(palm);
-  const main = new THREE.MeshStandardMaterial({
-    color: glove.color,
-    roughness: glove.key === "diamond" ? 0.19 : 0.48,
-    metalness: glove.key === "diamond" ? 0.55 : 0.16,
-  });
+  const main = gloveFinish(
+    glove.key === "default" ? "#bca98b" : glove.color,
+    glove.key,
+  );
   const dark = new THREE.MeshStandardMaterial({
     color: "#202d39",
     roughness: 0.58,
@@ -27,6 +31,10 @@ export function createGloveModel(id, options = {}) {
     roughness: 0.25,
     metalness: 0.45,
   });
+  if (glove.key === "default") {
+    trim.color.set("#d7ac69");
+    trim.emissive.set("#b98b42");
+  }
   const skin = new THREE.MeshStandardMaterial({
     color: "#d9a27d",
     roughness: 0.75,
@@ -45,7 +53,36 @@ export function createGloveModel(id, options = {}) {
     box(wrist, 0.215, 0.1, 0.205, 0, -0.46, 0.01, dark);
   }
   box(palm, 0.39, 0.36, 0.16, 0, 0.13, 0);
-  box(palm, 0.3, 0.23, 0.022, 0, 0.13, 0.096, dark);
+  box(palm, 0.31, 0.245, 0.025, 0, 0.13, 0.089, dark);
+  const panel = box(palm, 0.265, 0.208, 0.027, 0, 0.13, 0.106, main);
+  panel.name = "raised-backhand-panel";
+  // Raised saddle seams and wrist stitching catch the grazing key light.
+  for (const sign of [-1, 1]) {
+    box(palm, 0.012, 0.265, 0.012, sign * 0.171, 0.12, 0.082, trim);
+    for (let i = 0; i < 5; i++)
+      box(
+        wrist,
+        0.017,
+        0.006,
+        0.012,
+        sign * 0.101,
+        -0.18 - i * 0.039,
+        0.119,
+        trim,
+      );
+  }
+  box(wrist, 0.285, 0.065, 0.26, 0, -0.31, 0.015, main);
+  box(wrist, 0.075, 0.079, 0.027, 0.047, -0.31, 0.157, trim);
+  for (let i = 0; i < 3; i++)
+    box(palm, 0.056, 0.09, 0.018, (i - 1) * 0.069, 0.015, -0.09, dark);
+  if (glove.key === "default" || glove.key === "dual") {
+    box(palm, 0.18, 0.15, 0.018, 0, 0.13, 0.128, dark);
+    for (const x of [-0.038, 0.038]) {
+      const crest = box(palm, 0.025, 0.095, 0.015, x, 0.14, 0.145, trim);
+      crest.rotation.z = x < 0 ? -0.4 : 0.4;
+    }
+    box(palm, 0.1, 0.018, 0.014, 0, 0.088, 0.145, trim);
+  }
   // Four individually articulated fingers and an opposable thumb, not a mitten silhouette.
   const fingers = [];
   for (let i = 0; i < 4; i++) {
@@ -53,12 +90,23 @@ export function createGloveModel(id, options = {}) {
     joint.position.set((i - 1.5) * 0.103, 0.29, 0);
     palm.add(joint);
     const length = [0.25, 0.32, 0.3, 0.23][i];
-    box(joint, 0.087, length, 0.14, 0, length * 0.5, 0);
-    box(joint, 0.092, 0.065, 0.16, 0, 0.09, 0.003, trim);
-    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.046, 8, 6), main);
-    tip.scale.set(1, 1, 1.5);
-    tip.position.y = length;
-    joint.add(tip);
+    joint.name = `finger-${i}-proximal`;
+    joint.rotation.z = (i - 1.5) * -0.055;
+    box(joint, 0.086, length * 0.4, 0.145, 0, length * 0.2, 0);
+    box(joint, 0.09, 0.045, 0.153, 0, 0.045, 0.004, trim);
+    const mid = new THREE.Group();
+    mid.name = `finger-${i}-middle`;
+    mid.position.y = length * 0.4;
+    joint.add(mid);
+    box(mid, 0.081, length * 0.34, 0.137, 0, length * 0.17, 0);
+    const distal = new THREE.Group();
+    distal.name = `finger-${i}-tip`;
+    distal.position.y = length * 0.34;
+    mid.add(distal);
+    box(distal, 0.076, length * 0.27, 0.13, 0, length * 0.135, 0);
+    box(mid, 0.065, 0.022, 0.012, 0, length * 0.14, 0.073, dark);
+    box(distal, 0.058, 0.025, 0.012, 0, length * 0.11, 0.069, trim);
+    joint.userData.phalanges = [mid, distal];
     fingers.push(joint);
   }
   const thumb = new THREE.Group();
@@ -67,6 +115,11 @@ export function createGloveModel(id, options = {}) {
   palm.add(thumb);
   box(thumb, 0.12, 0.22, 0.15, 0, 0.08, 0);
   box(thumb, 0.125, 0.055, 0.16, 0, 0.13, 0, trim);
+  const thumbTip = new THREE.Group();
+  thumbTip.position.y = 0.18;
+  thumb.add(thumbTip);
+  box(thumbTip, 0.105, 0.075, 0.135, 0, 0.035, 0);
+  thumb.userData.phalanges = [thumbTip];
   fingers.push(thumb);
   // Readable, modelled ability identities; no imported Roblox geometry/textures.
   if (glove.key === "diamond") {
@@ -141,15 +194,17 @@ export function createGloveModel(id, options = {}) {
     box(palm, 0.46, 0.12, 0.24, 0, 0.02, 0, dark);
   }
   addGloveDetails(glove, { palm, wrist, box, main, dark, trim });
+  const sweep = createSweep(glove.color);
+  root.add(sweep);
   // Palm faces left/front in first person, with visible open fingers.
-  root.position.set(0.48, -0.43, -0.85);
-  if (options.hands !== false) root.scale.setScalar(0.6);
+  root.position.set(0.35, -0.39, -0.9);
+  if (options.hands !== false) root.scale.setScalar(0.54);
   root.rotation.set(0.12, -0.55, -0.28);
   root.userData = {
     id,
     weaponId: id,
     glove: true,
-    gloveRig: { wrist, palm, fingers, trim, main },
+    gloveRig: { wrist, palm, fingers, trim, main, sweep },
     basePosition: root.position.clone(),
     baseRotation: root.rotation.clone(),
     botRightGrip: new THREE.Vector3(0, -0.4, 0),
@@ -173,17 +228,6 @@ export function createGloveModel(id, options = {}) {
   }
   return root;
 }
-const ease = (x) => {
-  x = Math.max(0, Math.min(1, x));
-  return x * x * (3 - 2 * x);
-};
-export function slapPose(age, windup = 0.095) {
-  if (age < 0 || age > 0.52 + windup) return { wind: 0, strike: 0, recover: 0 };
-  const wind = ease(age / windup),
-    strike = ease((age - windup) / 0.065),
-    recover = ease((age - windup - 0.065) / 0.38);
-  return { wind: wind * (1 - strike), strike: strike * (1 - recover), recover };
-}
 export function animateGlove(model, state) {
   const glove = GLOVES[model.userData.id],
     rig = model.userData.gloveRig;
@@ -191,28 +235,47 @@ export function animateGlove(model, state) {
   // Brief presentation-only contact hold. Simulation, input and mouse aim never pause.
   const age =
     state.shake !== false && state.gloveImpact > 0.1
-      ? Math.min(rawAge, glove.windup + 0.02)
+      ? Math.min(rawAge, glove.windup + 0.008)
       : rawAge;
-  const p = slapPose(age, glove.windup);
+  const p = gloveMotion(glove.key, age, glove.windup, state.gloveSequence ?? 1);
   const bob =
     state.shake === false
       ? 0
       : Math.sin(state.phase || 0) *
         Math.min(0.012, (state.speed || 0) * 0.0015);
   model.position.copy(model.userData.basePosition);
-  model.position.x += p.wind * 0.18 - p.strike * 0.66;
-  model.position.y +=
-    p.wind * 0.16 + p.strike * 0.08 + bob - (state.gloveRagdoll > 0 ? 0.24 : 0);
-  model.position.z +=
-    p.wind * 0.15 - p.strike * 0.35 + (state.slide ? 0.06 : 0);
+  model.position.x += p.x;
+  model.position.y += p.y + bob - (state.gloveRagdoll > 0 ? 0.24 : 0);
+  model.position.z += p.z + (state.slide ? 0.09 : 0);
   model.rotation.copy(model.userData.baseRotation);
-  model.rotation.y += p.wind * 0.8 - p.strike * 1.3;
-  model.rotation.z += p.wind * 0.65 - p.strike * 1.45;
-  model.rotation.x += p.wind * 0.2 - p.strike * 0.16;
+  model.rotation.y += p.ry;
+  model.rotation.z += p.rz;
+  model.rotation.x += p.rx;
   const stop = state.shake === false ? 0 : Math.max(0, state.gloveImpact || 0);
   model.position.z += Math.sin(stop * 100) * stop * 0.18;
-  for (let i = 0; i < 4; i++)
-    rig.fingers[i].rotation.x = -0.08 + p.wind * 0.18 - p.strike * 0.12;
+  for (let i = 0; i < 5; i++) {
+    const digit = rig.fingers[i],
+      curl = p.curl * (i === 4 ? 0.55 : 1 + i * 0.07);
+    digit.rotation.x = curl;
+    for (const [j, bone] of (digit.userData.phalanges || []).entries())
+      bone.rotation.x = curl * (j === 0 ? 1.25 : 0.8);
+  }
+  rig.sweep.visible =
+    p.trail > 0.01 && state.shake !== false && !(state.gloveRagdoll > 0);
+  rig.sweep.material.uniforms.alpha.value = p.trail * 0.42;
+  rig.sweep.rotation.z = p.side * (0.3 - p.strike * 1.4);
+  rig.sweep.scale.x = p.side;
+  rig.wrist.rotation.x =
+    (state.gloveRagdoll > 0 ? -0.3 : 0) +
+    Math.sin((state.time || 0) * 1.7) * 0.008;
+  const castAge = state.gloveCastAge ?? 10,
+    cast =
+      castAge >= 0 && castAge < 0.55 ? Math.sin((castAge / 0.55) * Math.PI) : 0;
+  if (cast) {
+    model.position.y += cast * 0.09;
+    model.rotation.x -= cast * 0.28;
+    rig.wrist.rotation.z = cast * 0.2;
+  } else rig.wrist.rotation.z = 0;
   rig.trim.emissiveIntensity =
     0.18 +
     (state.gloveStone > 0 ? 0.6 : 0) +
@@ -232,7 +295,12 @@ export function animateGlove(model, state) {
   if (model.userData.secondGlove) {
     const second = model.userData.secondGlove;
     second.position.x = -1.25 + p.strike * 0.9;
-    second.rotation.z = 0.18 + p.strike * 0.9;
+    second.rotation.z = 0.18 + p.strike * 1.2 + p.follow * 0.2;
+    for (const digit of second.userData.gloveRig.fingers) {
+      digit.rotation.x = p.curl;
+      for (const bone of digit.userData.phalanges || [])
+        bone.rotation.x = p.curl;
+    }
   }
   if (glove.key === "spring")
     rig.wrist.scale.y = 1 + Math.sin((state.time || 0) * 5) * 0.025;

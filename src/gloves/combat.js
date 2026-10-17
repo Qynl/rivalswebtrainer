@@ -1,3 +1,4 @@
+import { GloveFX, presentGloveAbility, gloveAbilitySound } from "./fx.js";
 import { gloveMoveScale, committedWish, lowGravity } from "./states.js";
 import { createBrickModel } from "./brick.js";
 import * as THREE from "three";
@@ -81,6 +82,7 @@ export function beginSlap(g, body = g.player, id = g.loadout?.[0]) {
   body.gloveCooldown = glove.interval;
   body.slapPending = g.network ? null : { id, remaining: glove.windup };
   body.lastSlapAt = g.clock;
+  body.slapSequence = (body.slapSequence || 0) + 1;
   if (body === g.player) {
     g.shotSequence = (g.shotSequence || 0) + 1;
     g.lastSlapAt = g.clock;
@@ -268,7 +270,7 @@ export function applyImpact(
     velocity,
     ragdoll: glove.ragdoll,
     chill: glove.key === "snow" ? 5 : 0,
-    position: [target.x, target.y + 0.8, target.z],
+    position: [target.x, target.y + 1.1, target.z],
     round: g.round,
     time: g.clock,
     earned: earn,
@@ -286,21 +288,9 @@ export function presentImpact(g, event, source, target) {
     color = new THREE.Color(glove.color).getHex();
   g.combatFX?.burst(position, color, glove.key === "bull" ? 16 : 10);
   g.audio?.play("slapImpact", source === g.player ? 1 : 0.6);
-  if (g.scene && g.effects && g.effects.length < 40) {
-    const ring = new THREE.Mesh(
-      new THREE.RingGeometry(0.17, 0.23, 28),
-      new THREE.MeshBasicMaterial({
-        color,
-        transparent: true,
-        opacity: 0.8,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-      }),
-    );
-    ring.position.copy(position);
-    if (g.camera) ring.lookAt(g.camera.position);
-    g.scene.add(ring);
-    g.effects.push({ mesh: ring, life: 0.2, max: 0.2, expand: true });
+  if (g.scene?.add && !g.headless) {
+    g.gloveFX ||= new GloveFX(g.scene);
+    g.gloveFX.hit(position, color, glove.key === "bull", glove.key);
   }
   if (source === g.player && event.earned) {
     g.lastDiceRoll = event.roll || 0;
@@ -326,7 +316,10 @@ export function useGloveAbility(g, body = g.player, id = g.loadout?.[0]) {
     return false;
   // Clients request abilities, but never move other players or invent effects locally.
   if (g.network) return false;
-  let target, destination;
+  const origin = [body.x, body.y + 0.6, body.z];
+  let target,
+    destination,
+    affected = 0;
   const yaw = body.context?.yaw ?? (body === g.player ? g.yaw : body.yaw);
   if (glove.key === "brick") {
     if (!body.grounded) return false;
@@ -422,20 +415,23 @@ export function useGloveAbility(g, body = g.player, id = g.loadout?.[0]) {
       glove.key === "stun" ? 5.8 : 9,
     )) {
       if (glove.key === "stun" && !enemy.grounded) continue;
-      applyImpact(
-        g,
-        body,
-        enemy,
-        {
-          ...glove,
-          key: glove.key === "za_hando" ? "pull" : "stun",
-          power: glove.key === "stun" ? 0 : 13,
-          lift: glove.key === "stun" ? 1.4 : 3.5,
-          ragdoll: glove.key === "stun" ? 1.1 : 0.5,
-          grace: 0,
-        },
-        false,
-      );
+      if (
+        applyImpact(
+          g,
+          body,
+          enemy,
+          {
+            ...glove,
+            key: glove.key === "za_hando" ? "pull" : "stun",
+            power: glove.key === "stun" ? 0 : 13,
+            lift: glove.key === "stun" ? 1.4 : 3.5,
+            ragdoll: glove.key === "stun" ? 1.1 : 0.5,
+            grace: 0,
+          },
+          false,
+        )
+      )
+        affected++;
     }
   } else if (glove.key === "diamond") {
     body.stoneTime = 2.5;
@@ -444,8 +440,8 @@ export function useGloveAbility(g, body = g.player, id = g.loadout?.[0]) {
   } else if (glove.key === "default") {
     body.boostTime = 1.35;
     body.chillTime = 0;
-    body.vx += -Math.sin(yaw) * 7;
-    body.vz += -Math.cos(yaw) * 7;
+    body.vx = -Math.sin(yaw) * 14;
+    body.vz = -Math.cos(yaw) * 14;
   } else if (glove.key === "flash") {
     const start = { x: body.x, y: body.y, z: body.z },
       dx = -Math.sin(yaw),
@@ -483,6 +479,9 @@ export function useGloveAbility(g, body = g.player, id = g.loadout?.[0]) {
     target: target?.id,
     glove: id,
     position: [body.x, body.y + 0.6, body.z],
+    origin,
+    yaw,
+    affected,
     destination,
     targetDestination: target ? [target.x, target.y, target.z] : null,
     velocity: [body.vx, body.vy, body.vz],
@@ -493,13 +492,14 @@ export function useGloveAbility(g, body = g.player, id = g.loadout?.[0]) {
   };
   if (g.emitGlove) g.emitGlove(event);
   else {
-    g.audio?.play(glove.key === "default" ? "slapBlast" : "slapAbility");
+    g.audio?.play(gloveAbilitySound(glove.key));
     g.combatFX?.burst(
       v(...event.position),
       new THREE.Color(glove.color).getHex(),
       16,
     );
   }
+  presentGloveAbility(g, event);
   g.events.update?.(g);
   return true;
 }

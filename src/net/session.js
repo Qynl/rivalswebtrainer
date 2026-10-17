@@ -1,3 +1,4 @@
+import { presentGloveAbility, gloveAbilitySound } from "../gloves/fx.js";
 import { receiveGloveState } from "../gloves/states.js";
 import { createBrickModel } from "../gloves/brick.js";
 import { isGlove } from "../gloves/catalog.js";
@@ -308,6 +309,7 @@ export class MultiplayerSession {
         health: state.health,
         alive: state.alive,
         activeWeapon: state.weapon,
+        slapSequence: state.stats?.shots || 1,
         shotSide: state.shotSide || 0,
         deflectTime: isGlove(state.weapon) ? 0 : state.deflect,
         ragdollTime: isGlove(state.weapon) ? state.dash : 0,
@@ -396,9 +398,8 @@ export class MultiplayerSession {
         );
       }
       if (event.type === "gloveAbility" && event.round === this.round) {
-        g.audio.play(
-          event.glove === "glove_default" ? "slapBlast" : "slapAbility",
-        );
+        presentGloveAbility(g, event);
+        g.audio.play(gloveAbilitySound(WEAPONS[event.glove]?.key));
         if (
           event.player === this.id &&
           ["glove_acrobat", "glove_magnet", "glove_space"].includes(event.glove)

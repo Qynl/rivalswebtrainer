@@ -8,7 +8,7 @@ const definitions = [
     0,
     "Fart Blast",
     "active",
-    "A short burst of speed that clears chill. Close the gap or escape a bad trade.",
+    "Kick forward with a punchy gas-powered burst, even from rest, then sprint faster. Clears chill; no ability damage or free slaps.",
     "#f4eadd",
     24,
     14,
