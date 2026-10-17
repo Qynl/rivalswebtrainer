@@ -965,3 +965,98 @@ test("real Web Audio renders a non-silent Default blast and a spatial EMP, then 
   expect(result.every((r) => r.sources >= 2 && r.released)).toBe(true);
   expect(errors).toEqual([]);
 });
+
+test("a real Courtyard opponent navigates around low cover it can see over and lands real damage without walking through it", async ({
+  page,
+}) => {
+  const errors = await prepare(page);
+  await practice(page);
+  const result = await page.evaluate(async () => {
+    const g = window.__arena,
+      { gloveLoadout } = await import("/src/gloves/catalog.js"),
+      { canOccupy } = await import("/src/physics.js");
+    g.start({
+      mode: 1,
+      map: "courtyard",
+      difficulty: "regular",
+      loadout: gloveLoadout("glove_default"),
+      capture: false,
+    });
+    g.state = "playing";
+    const e = g.entities[1],
+      p = g.player;
+    let cover,
+      visible = false;
+    for (const b of g.world.boxes.filter(
+      (b) => Math.abs(b.maxY - 1.3) < 0.01,
+    )) {
+      const x = (b.minX + b.maxX) / 2;
+      Object.assign(e, {
+        x,
+        y: 0,
+        z: b.maxZ + 2,
+        vx: 0,
+        vy: 0,
+        vz: 0,
+        grounded: true,
+        abilityCooldown: 99,
+      });
+      Object.assign(p, {
+        x,
+        y: 0,
+        z: b.minZ - 3,
+        vx: 0,
+        vy: 0,
+        vz: 0,
+        grounded: true,
+      });
+      if (
+        canOccupy(e, e.x, e.y, e.z, g.world.boxes) &&
+        canOccupy(p, p.x, p.y, p.z, g.world.boxes) &&
+        g.hasLOS(g.eye(e), g.eye(p))
+      ) {
+        cover = b;
+        visible = true;
+        break;
+      }
+    }
+    if (!cover) return { visible: false };
+    let side = 0,
+      hitAt = null,
+      physical = true;
+    const center = (cover.minX + cover.maxX) / 2;
+    for (let i = 0; i < 960; i++) {
+      g.simulate(1 / 120);
+      side = Math.max(side, Math.abs(e.x - center));
+      physical &&= canOccupy(e, e.x, e.y, e.z, g.world.boxes);
+      if (p.health < 150) {
+        hitAt = i / 120;
+        break;
+      }
+    }
+    g.updateCamera(1 / 60);
+    g.events.update(g);
+    g.renderWorld();
+    return {
+      visible,
+      side,
+      width: cover.maxX - cover.minX,
+      hitAt,
+      physical,
+      health: p.health,
+      avoids: e.actionCounts?.obstacleAvoids || 0,
+      phase: e.animationPhase,
+      navigated: !!e.gloveNavigation,
+    };
+  });
+  expect(result.visible).toBe(true);
+  expect(result.hitAt).not.toBeNull();
+  expect(result.hitAt).toBeLessThan(8);
+  expect(result.health).toBeLessThan(150);
+  expect(result.physical).toBe(true);
+  expect(result.side).toBeGreaterThan(result.width / 2);
+  expect(result.avoids).toBeGreaterThan(0);
+  expect(result.navigated).toBe(true);
+  expect(result.phase).toBeGreaterThan(10);
+  expect(errors).toEqual([]);
+});

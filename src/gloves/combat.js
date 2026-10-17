@@ -1,3 +1,4 @@
+import { gloveBotWish, recordGloveBotTravel } from "./bot-navigation.js";
 import { recordIncomingImpact } from "./impact-history.js";
 import { recordRosterSlap } from "./scoreboard.js";
 import { recordPracticeImpact, resetPracticeTarget } from "./practice.js";
@@ -15,7 +16,7 @@ import * as THREE from "three";
 import { GLOVES, GLOVE_ROSTER, DEFAULT_GLOVE, isGlove } from "./catalog.js";
 import { MOVEMENT, accelerate } from "../movement.js";
 import { moveBody, verticalStep, canOccupy, clamp } from "../physics.js";
-import { selectOpponent, followRoute } from "../bot-tactics.js";
+import { selectOpponent } from "../bot-tactics.js";
 const v = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 export const gloveMatch = (g) => isGlove(g.loadout?.[0]);
 export function blocked(body) {
@@ -593,19 +594,15 @@ export function updateGloveBot(g, e, dt) {
   });
   e.yaw = intent.yaw;
   e.gloveTactic = intent.tactic;
-  let wish = intent.wish;
-  if (!los) {
-    e.pathTimer = (e.pathTimer || 0) - dt;
-    if (e.pathTimer <= 0) {
-      e.pathTimer = 0.6;
-      e.path = g.world.nav.path(e, target);
-    }
-    wish = followRoute(e, e.path || []);
-  }
+  let wish = gloveBotWish(g, e, target, intent, los, distance, glove.range, dt);
   const speed = MOVEMENT.runSpeed * intent.speed * gloveMoveScale(e, glove);
   wish = committedWish(e, glove, wish);
   accelerate(e, wish, speed, dt);
+  const startX = e.x,
+    startZ = e.z,
+    requested = Math.hypot(e.vx, e.vz) * dt;
   moveBody(e, e.vx * dt, e.vz * dt, g.world.boxes);
+  recordGloveBotTravel(g, e, startX, startZ, requested, dt, glove);
   lowGravity(e, dt);
   verticalStep(e, dt, g.world.boxes);
   if (target.y > e.y + 0.65 && e.grounded && distance < 7) {

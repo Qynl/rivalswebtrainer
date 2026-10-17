@@ -72,3 +72,8 @@ export function playGloveSwingAudio(g, body) {
   if (body === g.player && g.player.alive) g.audio.play?.("slapSwing", 0.85);
   else spatial(g, "slapSwing", [body.x, body.y + 1.45, body.z], 0.45);
 }
+
+export function playGloveStepAudio(g, body) {
+  if (!audible(g) || !body) return;
+  spatial(g, "step", [body.x, body.y + 0.08, body.z], 0.55);
+}
