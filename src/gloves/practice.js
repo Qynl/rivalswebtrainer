@@ -69,7 +69,11 @@ export function resetPracticeTarget(e) {
     e.boomerangOwner =
     e.gloveDuel =
       null;
-  e.gloveAwareness = e.gloveNavigation = e.targetEntity = null;
+  e.gloveAwareness =
+    e.gloveNavigation =
+    e.targetEntity =
+    e.gloveTrapNotice =
+      null;
   e.path = [];
   e.pathTimer = e.gloveRetargetAt = e.steerReadyAt = 0;
   e.avoidanceSince = null;

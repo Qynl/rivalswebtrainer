@@ -1584,3 +1584,109 @@ test("Boomerang return creates its own real second-phase inward cue and records 
   expect(result.profileUnchanged).toBe(true);
   expect(errors).toEqual([]);
 });
+
+test("real offline opponents jump a noticed armed Brick using normal physics, but a late surprise still trips without damage or rewards", async ({
+  page,
+}) => {
+  const errors = await prepare(page);
+  await practice(page);
+  const results = await page.evaluate(async () => {
+    const g = window.__arena,
+      { configurePractice } = await import("/src/gloves/practice.js"),
+      { useGloveAbility, tickGloves } = await import("/src/gloves/combat.js");
+    const before = localStorage.getItem("slap-arena-profile-v1"),
+      results = [];
+    for (const surprise of [false, true]) {
+      configurePractice(g, {
+        glove: "glove_brick",
+        mode: "sparring",
+        count: 1,
+        opponent: "glove_default",
+      });
+      const p = g.player,
+        e = g.entities[1];
+      Object.assign(p, {
+        x: 0,
+        y: 0,
+        z: -3.9,
+        vx: 0,
+        vy: 0,
+        vz: 0,
+        grounded: true,
+        abilityCooldown: 0,
+      });
+      g.yaw = g.pitch = 0;
+      const placed = useGloveAbility(g),
+        brick = g.gloveBricks[0];
+      g.clock += 0.5;
+      tickGloves(g, 0.5);
+      Object.assign(p, { z: -9 });
+      g.yaw = Math.PI;
+      Object.assign(e, {
+        x: 0,
+        y: 0,
+        z: surprise ? brick.z + 0.9 : 0,
+        yaw: 0,
+        vx: 0,
+        vy: 0,
+        vz: -10,
+        grounded: true,
+        abilityCooldown: 99,
+        gloveCooldown: 99,
+      });
+      let maxY = 0,
+        jumped = false;
+      for (let i = 0; i < 240; i++) {
+        g.simulate(1 / 120);
+        maxY = Math.max(maxY, e.y);
+        if (!e.grounded && e.ragdollTime <= 0 && e.vy > 5) jumped = true;
+        if (brick.life <= 0 || e.z < brick.z - 1) break;
+      }
+      g.updateCamera(1 / 60);
+      g.renderWorld();
+      results.push({
+        surprise,
+        placed,
+        jumped,
+        maxY,
+        passed: e.z < brick.z - 1,
+        tripped: brick.life <= 0,
+        ragdoll: e.ragdollTime,
+        hp: e.health,
+        hits: g.matchStats.hits,
+        slaps: g.matchStats.slaps || 0,
+        aim: [g.yaw, g.pitch],
+      });
+    }
+    return {
+      results,
+      profileUnchanged:
+        before === localStorage.getItem("slap-arena-profile-v1"),
+    };
+  });
+  expect(results.results[0]).toMatchObject({
+    surprise: false,
+    placed: true,
+    jumped: true,
+    passed: true,
+    tripped: false,
+    hp: 150,
+    hits: 0,
+    slaps: 0,
+    aim: [Math.PI, 0],
+  });
+  expect(results.results[0].maxY).toBeGreaterThan(1);
+  expect(results.results[1]).toMatchObject({
+    surprise: true,
+    placed: true,
+    jumped: false,
+    passed: false,
+    tripped: true,
+    hp: 150,
+    hits: 0,
+    slaps: 0,
+  });
+  expect(results.results[1].ragdoll).toBeGreaterThan(0);
+  expect(results.profileUnchanged).toBe(true);
+  expect(errors).toEqual([]);
+});

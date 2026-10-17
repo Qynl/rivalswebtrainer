@@ -197,3 +197,7 @@ Accepted glove impacts now select authored heavy/stone/frost/warp/phase/spark/Di
 ### Boomerang's second impulse
 
 The real delayed return has its own short inward rings, retracting link and quiet pull timbre. Metadata on the existing accepted impulse drives both RTC viewers; it does not create a second hit, damage event, marker, earned slap or predicted force. Unknown/stale-round/malformed metadata and hidden remote actors cannot create a tracker. Pooled effects retain bounded lifetimes and normal disposal. Practice peak launch speed includes the actual second impulse, while contact/damage/launch counts and trial progression remain unchanged.
+
+### Fair offline trap reactions
+
+Fighting opponents can notice an armed hostile Brick in front of them, on their floor and directly in their travel path, using actual world LOS. After their existing difficulty reaction delay they may attempt an ordinary jump near the trap, provided there is headroom. The normal physics/collision/arming/trip rules still decide the outcome. Late surprises still work; covered, allied, unarmed, expired, behind/off-path and other-storey traps do not grant automatic dodges. Stationary training targets remain targets. No hidden owner state, trap immunity, special force or network/player auto-jump is introduced.

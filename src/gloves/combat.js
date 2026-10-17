@@ -1,3 +1,4 @@
+import { considerGloveTrapJump } from "./bot-traps.js";
 import { presentBoomerangReturn } from "./boomerang-return.js";
 import { recordDiceOutcome } from "./dice-outcome.js";
 import { gloveBotWish, recordGloveBotTravel } from "./bot-navigation.js";
@@ -553,6 +554,7 @@ export function updateGloveBot(g, e, dt) {
   }
   const glove = GLOVES[e.activeWeapon] || GLOVES[DEFAULT_GLOVE];
   if (blocked(e)) {
+    e.gloveTrapNotice = null;
     if (e.gloveDuel) e.gloveDuel.seenAt = g.clock;
     e.slapPending = null;
     ragdollStep(g, e, dt);
@@ -620,6 +622,7 @@ export function updateGloveBot(g, e, dt) {
   const speed = MOVEMENT.runSpeed * intent.speed * gloveMoveScale(e, glove);
   wish = committedWish(e, glove, wish);
   accelerate(e, wish, speed, dt);
+  considerGloveTrapJump(g, e, glove);
   const startX = e.x,
     startZ = e.z,
     requested = Math.hypot(e.vx, e.vz) * dt;
