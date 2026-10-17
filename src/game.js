@@ -1,3 +1,4 @@
+import { ensureWorldMap } from "./world-lifecycle.js";
 import { acceptsGameplayKeys } from "./gameplay-keys.js";
 import { animateBrick } from "./gloves/brick.js";
 import { cycleSpectator, updateSpectatorCamera } from "./gloves/spectating.js";
@@ -482,7 +483,7 @@ export class Game {
     this.presentation?.resize();
   }
   preview(id) {
-    this.world.build(id);
+    ensureWorldMap(this.world, id);
   }
   requestLock() {
     this.audio.init();
@@ -542,7 +543,7 @@ export class Game {
     this.practiceOptions = this.range
       ? practiceOptions(config.practiceOptions)
       : null;
-    this.world.build(this.range ? "range" : config.map);
+    ensureWorldMap(this.world, this.range ? "range" : config.map);
     this.round = 0;
     this.clock = 0;
     this.events.start();

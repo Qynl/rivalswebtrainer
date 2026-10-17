@@ -1,7 +1,16 @@
-import metadata from "./assets/studio-environment.json";
+import metadata from "./assets/studio-environment.json" with { type: "json" };
 // A losslessly encoded copy of our own procedural RoomEnvironment PMREM.
 // This removes the startup cube capture/convolution, not its lighting quality.
-export async function loadEnvironment() {
+let environmentPromise;
+// Two WebGL contexts need separate GPU textures, not separate CPU decodes of
+// identical immutable pixels. Failed loads remain retryable on the next call.
+export function loadEnvironment() {
+  return (environmentPromise ||= decodeEnvironment().then((data) => {
+    if (!data) environmentPromise = null;
+    return data;
+  }));
+}
+async function decodeEnvironment() {
   if (!("DecompressionStream" in globalThis)) return null;
   try {
     const response = await fetch(

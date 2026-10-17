@@ -1205,3 +1205,86 @@ test("exact overlapping real glove opponents separate through ordinary movement 
   expect(result.player).toEqual([0, 0]);
   expect(errors).toEqual([]);
 });
+
+test("starting on the ready map retains actual GPU geometry, collision and navigation; switching maps still rebuilds", async ({
+  page,
+}) => {
+  const errors = await prepare(page);
+  const result = await page.evaluate(async () => {
+    const g = window.__arena,
+      { gloveLoadout } = await import("/src/gloves/catalog.js");
+    let builds = 0;
+    const original = g.world.build.bind(g.world);
+    g.world.build = (...args) => {
+      builds++;
+      return original(...args);
+    };
+    const config = {
+      mode: 1,
+      map: g.world.mapId,
+      difficulty: "regular",
+      loadout: gloveLoadout("glove_default"),
+      capture: false,
+    };
+    const initialMap = config.map;
+    g.start(config);
+    g.renderWorld();
+    const firstBuilds = builds,
+      boxes = g.world.boxes,
+      nav = g.world.nav,
+      ray = g.world.solidMeshes,
+      geometry = [];
+    g.world.group.traverse((o) => {
+      if (o.geometry) geometry.push(o.geometry.uuid);
+    });
+    g.start(config);
+    g.renderWorld();
+    const after = [];
+    g.world.group.traverse((o) => {
+      if (o.geometry) after.push(o.geometry.uuid);
+    });
+    const retained = {
+      boxes: boxes === g.world.boxes,
+      nav: nav === g.world.nav,
+      ray: ray === g.world.solidMeshes,
+      geometry: JSON.stringify(geometry) === JSON.stringify(after),
+      count: geometry.length,
+      builds: builds - firstBuilds,
+      health: g.player.health,
+      countdown: g.countdown,
+    };
+    const next = initialMap === "foundry" ? "courtyard" : "foundry";
+    g.start({ ...config, map: next });
+    g.renderWorld();
+    const switched = {
+      id: g.world.mapId,
+      nav: nav !== g.world.nav,
+      boxes: boxes !== g.world.boxes,
+      builds,
+      entities: g.entities.length,
+    };
+    g.preview(next);
+    const noRedundantPreview = builds === switched.builds;
+    return { firstBuilds, retained, switched, next, noRedundantPreview };
+  });
+  expect(result.firstBuilds).toBe(0);
+  expect(result.retained).toMatchObject({
+    boxes: true,
+    nav: true,
+    ray: true,
+    geometry: true,
+    builds: 0,
+    health: 150,
+    countdown: 5,
+  });
+  expect(result.retained.count).toBeGreaterThan(10);
+  expect(result.switched).toMatchObject({
+    id: result.next,
+    nav: true,
+    boxes: true,
+    builds: 1,
+    entities: 2,
+  });
+  expect(result.noRedundantPreview).toBe(true);
+  expect(errors).toEqual([]);
+});
