@@ -1,6 +1,23 @@
+import { GLOVE_IMPACT_PROFILES } from "./gloves/impact-sounds.js";
 import { releaseEndedNodes } from "./audio-node-lifetime.js";
 import { spatialMix } from "./combat-feedback.js";
 const SPATIAL_LIFETIME = Object.freeze({
+  ...Object.fromEntries(
+    Object.entries(GLOVE_IMPACT_PROFILES).map(([name, profile]) => [
+      name,
+      profile.duration,
+    ]),
+  ),
+  slapImpact: 0.13,
+  slapSwing: 0.1,
+  slapBlast: 0.32,
+  gloveBlink: 0.18,
+  gloveEMP: 0.38,
+  glovePull: 0.3,
+  gloveStone: 0.28,
+  gloveGhost: 0.4,
+  glovePower: 0.4,
+  gloveRoll: 0.18,
   rifle: 0.16,
   smg: 0.12,
   pistol: 0.18,
@@ -163,6 +180,20 @@ export class GameAudio {
     }
   }
   play(name, level = 1) {
+    const profile =
+      typeof name === "string" && Object.hasOwn(GLOVE_IMPACT_PROFILES, name)
+        ? GLOVE_IMPACT_PROFILES[name]
+        : null;
+    if (profile) {
+      this.noiseHit(
+        profile.noise.duration,
+        profile.noise.level * level,
+        profile.noise.cutoff,
+      );
+      for (const t of profile.tones)
+        this.tone(t.frequency, t.duration, t.type, t.level * level, t.end);
+      return;
+    }
     switch (name) {
       case "gloveBlink":
         this.tone(580, 0.18, "sine", 0.16 * level, 1500);

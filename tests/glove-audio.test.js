@@ -109,3 +109,27 @@ test("real swing starts are local for the player and positional for offline bots
   assert.equal(g.calls[1][1], "slapSwing");
   assert.equal(g.matchStats, undefined);
 });
+
+test("accepted glove contacts use their own family for local, victim, remote and spectator playback", () => {
+  for (const [glove, roll, sound] of [
+    ["glove_bull", 0, "slapHeavy"],
+    ["glove_snow", 0, "slapFrost"],
+    ["glove_dice", 6, "slapDiceHigh"],
+    ["glove_default", 0, "slapImpact"],
+  ]) {
+    const g = fixture(),
+      event = { glove, roll, position: [3, 1, 0] };
+    playGloveImpactAudio(g, event, g.player, {});
+    assert.deepEqual(g.calls[0], ["local", sound, 1]);
+    playGloveImpactAudio(g, event, {}, g.player);
+    assert.deepEqual(g.calls[1], ["local", sound, 0.85]);
+    playGloveImpactAudio(g, event, {}, {});
+    assert.equal(g.calls[2][1], sound);
+    assert.equal(g.calls[2][0], "spatial");
+    g.player.alive = false;
+    playGloveImpactAudio(g, event, {}, g.player);
+    assert.equal(g.calls[3][0], "spatial");
+    assert.equal(g.calls[3][1], sound);
+    assert.equal(g.yaw, 0.7);
+  }
+});

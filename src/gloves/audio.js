@@ -1,3 +1,4 @@
+import { gloveImpactSound } from "./impact-sounds.js";
 import * as THREE from "three";
 import { GLOVES } from "./catalog.js";
 export function gloveAbilitySound(key) {
@@ -62,9 +63,10 @@ export function playGloveAbilityAudio(g, event) {
 }
 export function playGloveImpactAudio(g, event, source, target) {
   if (!audible(g)) return;
+  const sound = gloveImpactSound(GLOVES[event.glove]?.key, event.roll);
   if (g.player.alive && (source === g.player || target === g.player))
-    g.audio.play?.("slapImpact", source === g.player ? 1 : 0.85);
-  else spatial(g, "slapImpact", event.position, 0.65);
+    g.audio.play?.(sound, source === g.player ? 1 : 0.85);
+  else spatial(g, sound, event.position, 0.65);
 }
 
 export function playGloveSwingAudio(g, body) {

@@ -189,3 +189,7 @@ Offline sensors establish sight using the real world meshes. Aim/movement planne
 ### Dice confirmed-result panel
 
 The original Dice palm now shows its last confirmed authority roll with canonical 3D pip patterns, alongside the existing hit HUD. A single owned index buffer changes draw range/pip indices; it does not rebuild geometry per roll. Whiffs do not roll, blocked contacts do not gain outcomes, and stale/invalid metadata cannot set it. The existing reliable roll field drives both peers' models without a wire-format change. High-roll glow has no camera effect and respects disabled first-person impact motion. Round/practice respawn clears the old result; trial borrowing does not earn profile slaps. RNG, damage, launch and award rules are unchanged.
+
+### Accepted-contact sound families
+
+Accepted glove impacts now select authored heavy/stone/frost/warp/phase/spark/Dice profiles; a six uses its own Dice accent. Classic palm contact remains unchanged. The existing centered-own / positional-remote / spectator-camera rules apply, including wall muffling and mute/pause/headless suppression. Profiles have bounded gain, real source-ended cleanup and spatial-bus lifetimes covering their longest source plus a tail. No sound selection performs hit prediction, RNG or reward mutation.

@@ -1406,3 +1406,96 @@ test("Dice pips reveal only accepted rolls on the first- and third-person hand, 
   expect(result.profileUnchanged).toBe(true);
   expect(errors).toEqual([]);
 });
+
+test("every contact sound family actually renders non-silent non-clipping Web Audio and releases its sources, with remote sound still panned", async ({
+  page,
+}) => {
+  const errors = await prepare(page);
+  const results = await page.evaluate(async () => {
+    const { GameAudio } = await import("/src/audio.js"),
+      { GLOVE_IMPACT_PROFILES } = await import("/src/gloves/impact-sounds.js"),
+      { playGloveImpactAudio } = await import("/src/gloves/audio.js");
+    const results = [];
+    for (const name of Object.keys(GLOVE_IMPACT_PROFILES)) {
+      const ctx = new OfflineAudioContext(2, 22050, 44100),
+        audio = new GameAudio(),
+        sources = [];
+      audio.ctx = ctx;
+      audio.volume = 0.85;
+      audio.noise = ctx.createBuffer(1, 44100, 44100);
+      let seed = 7;
+      const noise = audio.noise.getChannelData(0);
+      for (let i = 0; i < noise.length; i++) {
+        seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+        noise[i] = seed / 2147483648 - 1;
+      }
+      for (const method of ["createOscillator", "createBufferSource"]) {
+        const create = ctx[method].bind(ctx);
+        ctx[method] = () => {
+          const node = create(),
+            disconnect = node.disconnect.bind(node),
+            entry = { node, released: false };
+          node.disconnect = () => {
+            entry.released = true;
+            disconnect();
+          };
+          sources.push(entry);
+          return node;
+        };
+      }
+      audio.play(name, 0.9);
+      const buffer = await ctx.startRendering(),
+        left = buffer.getChannelData(0);
+      let sum = 0,
+        peak = 0;
+      for (const x of left) {
+        sum += x * x;
+        peak = Math.max(peak, Math.abs(x));
+      }
+      results.push({
+        name,
+        rms: Math.sqrt(sum / left.length),
+        peak,
+        ended: sources.every((e) => e.released && e.node.onended === null),
+        sources: sources.length,
+      });
+      audio.clearSpatial();
+    }
+    const ctx = new OfflineAudioContext(2, 22050, 44100),
+      audio = new GameAudio();
+    audio.ctx = ctx;
+    audio.noise = ctx.createBuffer(1, 44100, 44100);
+    audio.noise.getChannelData(0).fill(0.2);
+    const p = { alive: true, x: 0, y: 0, z: 0 },
+      g = {
+        audio,
+        player: p,
+        state: "playing",
+        yaw: 0,
+        eye: () => ({ x: 0, y: 1.6, z: 0 }),
+        hasLOS: () => true,
+      };
+    playGloveImpactAudio(
+      g,
+      { glove: "glove_bull", position: [3, 1.6, -2] },
+      {},
+      {},
+    );
+    const buffer = await ctx.startRendering(),
+      power = [0, 1].map((ch) =>
+        buffer.getChannelData(ch).reduce((a, x) => a + x * x, 0),
+      );
+    results.push({ name: "remote-heavy", power });
+    audio.clearSpatial();
+    return results;
+  });
+  for (const r of results.filter((r) => r.name !== "remote-heavy")) {
+    expect(r.rms).toBeGreaterThan(0.001);
+    expect(r.peak).toBeLessThan(1);
+    expect(r.sources).toBeGreaterThanOrEqual(3);
+    expect(r.ended).toBe(true);
+  }
+  const remote = results.find((r) => r.name === "remote-heavy");
+  expect(remote.power[1]).toBeGreaterThan(remote.power[0] * 1.5);
+  expect(errors).toEqual([]);
+});
