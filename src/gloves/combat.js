@@ -1,8 +1,13 @@
+import { presentBoomerangReturn } from "./boomerang-return.js";
 import { recordDiceOutcome } from "./dice-outcome.js";
 import { gloveBotWish, recordGloveBotTravel } from "./bot-navigation.js";
 import { recordIncomingImpact } from "./impact-history.js";
 import { recordRosterSlap } from "./scoreboard.js";
-import { recordPracticeImpact, resetPracticeTarget } from "./practice.js";
+import {
+  recordPracticeImpact,
+  recordPracticeImpulse,
+  resetPracticeTarget,
+} from "./practice.js";
 import { duelBotIntent } from "./bot-dueling.js";
 import { denyGloveAbility } from "./readability.js";
 import { GloveFX, presentGloveAbility } from "./fx.js";
@@ -688,13 +693,20 @@ function tickSpecial(g, e) {
       e.vz = (dz / d) * 24;
       e.vy = Math.max(3, e.vy);
       e.grounded = false;
-      g.emitGlove?.({
+      const event = {
         type: "impulse",
         player: e.id,
+        source: owner.id,
+        glove: "glove_boomerang",
+        phase: "return",
+        position: [e.x, e.y + 0.9, e.z],
         velocity: [e.vx, e.vy, e.vz],
         round: g.round,
         time: g.clock,
-      });
+      };
+      recordPracticeImpulse(g, owner, event.velocity);
+      if (g.emitGlove) g.emitGlove(event);
+      else presentBoomerangReturn(g, event, owner, e);
     }
   }
   if (!(e.markTime > 0) && e.gloveMark) {

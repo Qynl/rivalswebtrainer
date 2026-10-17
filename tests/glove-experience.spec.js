@@ -1499,3 +1499,88 @@ test("every contact sound family actually renders non-silent non-clipping Web Au
   expect(remote.power[1]).toBeGreaterThan(remote.power[0] * 1.5);
   expect(errors).toEqual([]);
 });
+
+test("Boomerang return creates its own real second-phase inward cue and records peak impulse without a second hit or trial reward", async ({
+  page,
+}) => {
+  const errors = await prepare(page);
+  await practice(page);
+  const result = await page.evaluate(async () => {
+    const g = window.__arena,
+      { configurePractice } = await import("/src/gloves/practice.js");
+    const before = localStorage.getItem("slap-arena-profile-v1");
+    configurePractice(g, {
+      glove: "glove_boomerang",
+      mode: "stationary",
+      count: 1,
+      opponent: "glove_default",
+    });
+    const p = g.player,
+      t = g.entities[1];
+    g.yaw = g.pitch = 0;
+    Object.assign(p, { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, grounded: true });
+    Object.assign(t, {
+      x: 0,
+      y: 0,
+      z: -2.2,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      grounded: true,
+    });
+    let markers = 0;
+    const hit = g.events.hit;
+    g.events.hit = (...args) => {
+      markers++;
+      hit(...args);
+    };
+    g.firePlayer();
+    for (let i = 0; i < 60 && t.health === 150; i++) g.simulate(1 / 120);
+    const first = { hp: t.health, vz: t.vz, peak: g.practiceStats.peak };
+    let returns = 0;
+    const fx = g.gloveFX,
+      show = fx.returnPull.bind(fx);
+    fx.returnPull = (...args) => {
+      returns++;
+      show(...args);
+    };
+    for (let i = 0; i < 60 && returns === 0; i++) g.simulate(1 / 120);
+    g.updateCamera(1 / 60);
+    g.renderWorld();
+    const second = {
+      hp: t.health,
+      vz: t.vz,
+      peak: g.practiceStats.peak,
+      contacts: g.practiceStats.contacts,
+      damage: g.practiceStats.damage,
+      markers,
+      returns,
+      impact: g.slapImpact,
+      rings: fx.rings.states.filter((s) => s.life > 0 && s.inward).length,
+    };
+    return {
+      first,
+      second,
+      aim: [g.yaw, g.pitch],
+      profileUnchanged:
+        before === localStorage.getItem("slap-arena-profile-v1"),
+    };
+  });
+  expect(result.first.hp).toBe(125);
+  expect(result.first.vz).toBeLessThan(0);
+  expect(result.second.hp).toBe(125);
+  expect(result.second.vz).toBeGreaterThan(20);
+  expect(result.second.peak).toBeGreaterThan(result.first.peak);
+  expect(result.second.peak).toBeGreaterThan(24);
+  expect(result.second).toMatchObject({
+    contacts: 1,
+    damage: 25,
+    markers: 1,
+    returns: 1,
+    impact: 0,
+  });
+  expect(result.second.rings).toBeGreaterThanOrEqual(2);
+  expect(result.aim).toEqual([0, 0]);
+  expect(result.profileUnchanged).toBe(true);
+  expect(errors).toEqual([]);
+});

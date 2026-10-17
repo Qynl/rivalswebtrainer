@@ -79,3 +79,10 @@ export function playGloveStepAudio(g, body) {
   if (!audible(g) || !body) return;
   spatial(g, "step", [body.x, body.y + 0.08, body.z], 0.55);
 }
+
+export function playGloveReturnAudio(g, event, source, target) {
+  if (!audible(g)) return;
+  if (g.player.alive && (source === g.player || target === g.player))
+    g.audio.play?.("glovePull", 0.45);
+  else spatial(g, "glovePull", event.position, 0.35);
+}

@@ -174,3 +174,27 @@ test("practice respawn discards stale pursuit, awareness and footstep travel rat
   assert.equal(target.x, 2);
   assert.equal(target.z, -14);
 });
+
+test("a later genuine impulse raises practice peak without adding contact, damage, launch count or currency", async () => {
+  const { recordPracticeImpulse } = await import("../src/gloves/practice.js");
+  const g = game();
+  g.practiceStats = { damage: 25, contacts: 1, launches: 1, peak: 15 };
+  recordPracticeImpulse(g, g.player, [0, 3, 24]);
+  assert.deepEqual(g.practiceStats, {
+    damage: 25,
+    contacts: 1,
+    launches: 1,
+    peak: Math.hypot(3, 24),
+  });
+  const before = { ...g.practiceStats };
+  for (const [patch, source, velocity] of [
+    [{}, g.player, [NaN, 3, 24]],
+    [{ network: {} }, g.player, [0, 3, 40]],
+    [{ range: false }, g.player, [0, 3, 40]],
+    [{}, {}, [0, 3, 40]],
+  ]) {
+    const copy = { ...g, ...patch };
+    recordPracticeImpulse(copy, source, velocity);
+    assert.deepEqual(g.practiceStats, before);
+  }
+});

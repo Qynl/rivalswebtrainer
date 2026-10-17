@@ -193,3 +193,7 @@ The original Dice palm now shows its last confirmed authority roll with canonica
 ### Accepted-contact sound families
 
 Accepted glove impacts now select authored heavy/stone/frost/warp/phase/spark/Dice profiles; a six uses its own Dice accent. Classic palm contact remains unchanged. The existing centered-own / positional-remote / spectator-camera rules apply, including wall muffling and mute/pause/headless suppression. Profiles have bounded gain, real source-ended cleanup and spatial-bus lifetimes covering their longest source plus a tail. No sound selection performs hit prediction, RNG or reward mutation.
+
+### Boomerang's second impulse
+
+The real delayed return has its own short inward rings, retracting link and quiet pull timbre. Metadata on the existing accepted impulse drives both RTC viewers; it does not create a second hit, damage event, marker, earned slap or predicted force. Unknown/stale-round/malformed metadata and hidden remote actors cannot create a tracker. Pooled effects retain bounded lifetimes and normal disposal. Practice peak launch speed includes the actual second impulse, while contact/damage/launch counts and trial progression remain unchanged.

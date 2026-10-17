@@ -852,6 +852,13 @@ test("Boomerang has a delayed stronger return impulse and only one damage/reward
     assert.equal(s.g.matchStats.slaps, 1);
     assert.equal(s.other.player.health, 125);
     assert.equal(s.match.events.filter((e) => e.type === "impulse").length, 2);
+    const returns = s.match.events.filter(
+      (e) => e.type === "impulse" && e.phase === "return",
+    );
+    assert.equal(returns.length, 1);
+    assert.equal(returns[0].glove, "glove_boomerang");
+    assert.equal(returns[0].source, s.g.player.id);
+    assert.equal(returns[0].player, s.other.player.id);
     tickGloves(s.other, 1);
     assert.equal(s.match.events.filter((e) => e.type === "impulse").length, 2);
   } finally {

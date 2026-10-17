@@ -145,6 +145,20 @@ export class GloveFX {
         life: 0.26 + (i % 3) * 0.03,
       });
   }
+  returnPull(position, color) {
+    this.emit(this.rings, position, color, {
+      start: 0.08,
+      end: 1.35,
+      inward: true,
+      life: 0.24,
+    });
+    this.emit(this.rings, position, "#fff0d1", {
+      start: 0.05,
+      end: 0.8,
+      inward: true,
+      life: 0.18,
+    });
+  }
   gas(position, yaw = 0, count = 3) {
     for (let i = 0; i < count; i++) {
       const a = i * 2.39996,

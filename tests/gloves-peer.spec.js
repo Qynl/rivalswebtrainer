@@ -995,3 +995,143 @@ test("real RTC authority Dice outcome reaches the owning and remote pip models o
     await guest.close();
   }
 });
+
+test("real RTC Boomerang return cues reach both viewers from the second authority impulse without a second contact award", async ({
+  browser,
+  page,
+}) => {
+  test.setTimeout(120000);
+  const guest = await browser.newPage({
+      viewport: { width: 800, height: 600 },
+    }),
+    requests = [],
+    errors = [];
+  try {
+    await expandedRoom(
+      page,
+      guest,
+      "glove_boomerang",
+      "glove_default",
+      requests,
+      errors,
+    );
+    for (const p of [page, guest])
+      await p.evaluate(() => {
+        const g = window.__arena,
+          n = g.network;
+        g.audio.volume = 0;
+        window.__returnCues = 0;
+        let value = g.gloveFX;
+        const wrap = (fx) => {
+          if (!fx || fx.__returnObserved) return fx;
+          fx.__returnObserved = true;
+          const show = fx.returnPull.bind(fx);
+          fx.returnPull = (...args) => {
+            window.__returnCues++;
+            return show(...args);
+          };
+          return fx;
+        };
+        value = wrap(value);
+        Object.defineProperty(g, "gloveFX", {
+          configurable: true,
+          get: () => value,
+          set: (v) => {
+            value = wrap(v);
+          },
+        });
+        window.__boomerangDriver = setInterval(() => {
+          const s = n.latest,
+            self = s?.players.find((e) => e.id === n.id),
+            other = s?.players.find((e) => e.id !== n.id && e.alive),
+            attacker = s?.players.find((e) => e.weapon === "glove_boomerang");
+          if (!self?.alive || !other || s.phase !== "playing") return;
+          const hit = attacker?.stats.hits > 0,
+            distance = Math.hypot(other.x - self.x, other.z - self.z),
+            path = g.world.nav.path(self, other),
+            goal =
+              distance < 3.1
+                ? other
+                : path.find(
+                    (p) => Math.hypot(p.x - self.x, p.z - self.z) > 0.4,
+                  ) || other,
+            yaw = Math.atan2(-(goal.x - self.x), -(goal.z - self.z));
+          n.seq = Math.max(n.seq, 19000) + 1;
+          n.client.send({
+            type: "input",
+            input: {
+              seq: n.seq,
+              yaw,
+              pitch: 0,
+              keys: !hit && distance > 2.2 ? 1 : 0,
+              fire: !hit && self.weapon === "glove_boomerang" && distance < 3.1,
+              aim: false,
+              paused: false,
+              actions: [],
+            },
+          });
+        }, 16);
+      });
+    for (const p of [page, guest])
+      await p.waitForFunction(() => window.__returnCues > 0, null, {
+        timeout: 35000,
+      });
+    const views = await Promise.all(
+      [page, guest].map((p) =>
+        p.evaluate(() => {
+          clearInterval(window.__boomerangDriver);
+          const g = window.__arena,
+            n = g.network;
+          n.client.send({
+            type: "input",
+            input: {
+              seq: ++n.seq,
+              yaw: g.yaw,
+              pitch: g.pitch,
+              keys: 0,
+              fire: false,
+              aim: false,
+              paused: false,
+              actions: [],
+            },
+          });
+          n.present(1 / 60);
+          g.updateCamera(1 / 60);
+          g.renderWorld();
+          const self = n.latest.players.find((e) => e.id === n.id),
+            attacker = n.latest.players.find(
+              (e) => e.weapon === "glove_boomerang",
+            ),
+            victim = n.latest.players.find((e) => e.id !== attacker.id);
+          return {
+            cues: window.__returnCues,
+            hits: attacker.stats.hits,
+            health: victim.health,
+            slaps: JSON.parse(localStorage.getItem("slap-arena-profile-v1"))
+              .slaps,
+            selfHits: self.stats.hits,
+            finite: g.gloveFX.rings.mesh.instanceMatrix.array.every(
+              Number.isFinite,
+            ),
+          };
+        }),
+      ),
+    );
+    for (const v of views) {
+      expect(v.cues).toBe(1);
+      expect(v.hits).toBe(1);
+      expect(v.health).toBe(125);
+      expect(v.slaps).toBe(5500 + v.selfHits);
+      expect(v.finite).toBe(true);
+    }
+    expect(requests).toEqual([]);
+    expect(errors).toEqual([]);
+    console.log("RTC ACTUAL BOOMERANG RETURN", JSON.stringify(views));
+  } finally {
+    for (const p of [page, guest])
+      await p
+        .evaluate(() => clearInterval(window.__boomerangDriver))
+        .catch(() => {});
+    await guest.close();
+  }
+});

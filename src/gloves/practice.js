@@ -15,6 +15,21 @@ export function practiceOptions(value = {}) {
 export function freshPracticeStats() {
   return { damage: 0, contacts: 0, launches: 0, peak: 0 };
 }
+// Later accepted impulses (for example Boomerang's return) can raise the real
+// peak without inventing another contact, damage value or earned slap.
+export function recordPracticeImpulse(g, source, velocity) {
+  if (
+    !g.range ||
+    g.network ||
+    source !== g.player ||
+    !Array.isArray(velocity) ||
+    velocity.length !== 3 ||
+    !velocity.every(Number.isFinite)
+  )
+    return;
+  const stats = (g.practiceStats ||= freshPracticeStats());
+  stats.peak = Math.max(stats.peak, Math.hypot(...velocity));
+}
 export function recordPracticeImpact(
   g,
   source,

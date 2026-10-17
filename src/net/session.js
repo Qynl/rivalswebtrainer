@@ -1,3 +1,4 @@
+import { presentBoomerangReturn } from "../gloves/boomerang-return.js";
 import { presentGloveAbility } from "../gloves/fx.js";
 import { playGloveAbilityAudio, playGloveSwingAudio } from "../gloves/audio.js";
 import { receiveGloveState } from "../gloves/states.js";
@@ -509,6 +510,18 @@ export class MultiplayerSession {
           );
         }
       }
+      if (
+        event.type === "impulse" &&
+        event.round === this.round &&
+        event.glove === "glove_boomerang" &&
+        event.phase === "return"
+      )
+        presentBoomerangReturn(
+          g,
+          event,
+          this.entities?.get?.(event.source),
+          this.entities?.get?.(event.player),
+        );
       if (
         event.type === "impulse" &&
         event.player === this.id &&
