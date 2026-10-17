@@ -79,13 +79,13 @@ test("real C/Shift slides start instantly from rest, glide longer, and cancel wi
   });
   await page.keyboard.down("KeyD");
   await page.evaluate(() => window.__arena.__motionStep(15));
-  expect(await page.evaluate(() => window.__arena.player.vx)).toBeCloseTo(9.6);
+  expect(await page.evaluate(() => window.__arena.player.vx)).toBeCloseTo(10.6);
   await page.keyboard.down("KeyC");
   const entry = await page.evaluate(() => {
     const g = window.__arena;
     return { x: g.player.x, speed: g.player.vx, slide: g.slideTime };
   });
-  expect(entry.speed).toBeCloseTo(11.2);
+  expect(entry.speed).toBeCloseTo(13);
   expect(entry.slide).toBeCloseTo(1.5);
   await page.keyboard.up("KeyC");
   await page.keyboard.up("KeyD");
@@ -101,8 +101,8 @@ test("real C/Shift slides start instantly from rest, glide longer, and cancel wi
       pitch: g.pitch,
     };
   });
-  expect(burst.x - entry.x).toBeGreaterThan(1.97);
-  expect(burst.x - entry.x).toBeLessThan(2.01);
+  expect(burst.x - entry.x).toBeGreaterThan(2.29);
+  expect(burst.x - entry.x).toBeLessThan(2.31);
   expect(burst.slide).toBeGreaterThan(1.29);
   expect(burst.fov - burst.base).toBeLessThan(0.9);
   expect(burst.yaw).toBe(0);
@@ -112,8 +112,8 @@ test("real C/Shift slides start instantly from rest, glide longer, and cancel wi
     g.__motionStep(169);
     return { x: g.player.x, speed: g.player.vx, slide: g.slideTime };
   });
-  expect(coast.x - entry.x).toBeGreaterThan(7.6);
-  expect(coast.x - entry.x).toBeLessThan(7.9);
+  expect(coast.x - entry.x).toBeGreaterThan(9);
+  expect(coast.x - entry.x).toBeLessThan(9.2);
   expect(coast.slide).toBe(0);
   expect(coast.speed).toBe(0);
   await page.evaluate(() => window.__arena.__motionStep(30));
@@ -128,8 +128,8 @@ test("real C/Shift slides start instantly from rest, glide longer, and cancel wi
     speed: window.__arena.player.vx,
   }));
   expect(jump.slide).toBe(0);
-  expect(jump.vy).toBeCloseTo(7.8);
-  expect(jump.speed).toBeCloseTo(11.2);
+  expect(jump.vy).toBeCloseTo(9.7);
+  expect(jump.speed).toBeCloseTo(13);
   await page.keyboard.up("ShiftLeft");
   await page.keyboard.up("KeyD");
   const flight = await page.evaluate(() => {
@@ -147,15 +147,15 @@ test("real C/Shift slides start instantly from rest, glide longer, and cancel wi
       vx: g.player.vx,
     };
   });
-  expect(flight.apex).toBeGreaterThan(1.0);
-  expect(flight.apex).toBeLessThan(1.03);
+  expect(flight.apex).toBeGreaterThan(1.56);
+  expect(flight.apex).toBeLessThan(1.58);
   expect(flight.holding).toBe(true);
   expect(flight.grounded).toBe(true);
   expect(flight.jumps).toBe(0);
   expect(flight.vx).toBe(0);
   await page.keyboard.up("Space");
   await page.keyboard.down("Space");
-  expect(await page.evaluate(() => window.__arena.player.vy)).toBeCloseTo(7.8);
+  expect(await page.evaluate(() => window.__arena.player.vy)).toBeCloseTo(9.7);
   await page.keyboard.up("Space");
   await page.evaluate(() => {
     const g = window.__arena;
@@ -168,7 +168,7 @@ test("real C/Shift slides start instantly from rest, glide longer, and cancel wi
   await page.keyboard.down("KeyA");
   const brake = await page.evaluate(() => {
     const g = window.__arena;
-    g.__motionStep(24);
+    g.__motionStep(30);
     return { slide: g.slideTime, vx: g.player.vx, vz: g.player.vz };
   });
   expect(brake.slide).toBe(0);

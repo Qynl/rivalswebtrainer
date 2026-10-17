@@ -35,7 +35,7 @@ test("responsive run reaches speed in 110ms and releasing input stops in under 9
   flat((g) => {
     g.keys.add("KeyD");
     for (let i = 0; i < 14; i++) g.updatePlayer(dt);
-    assert.equal(g.player.vx, 9.6);
+    assert.equal(g.player.vx, 10.6);
     const start = g.player.x;
     g.keys.clear();
     for (let i = 0; i < 11; i++) g.updatePlayer(dt);
@@ -47,12 +47,12 @@ test("running slide lasts 1.5 seconds and can restart as soon as it finishes", (
     g.keys.add("KeyD");
     g.player.vx = MOVEMENT.runSpeed;
     g.slide();
-    assert.equal(g.player.vx, 11.2);
+    assert.equal(g.player.vx, 13);
     for (let i = 0; i < 120; i++) g.updatePlayer(dt);
     assert.ok(g.slideTime > 0.49 && g.player.vx > 9);
     for (let i = 0; i < 61; i++) g.updatePlayer(dt);
     assert.equal(g.slideTime, 0);
-    assert.ok(g.player.x > 14.2 && g.player.x < 14.6);
+    assert.ok(g.player.x > 15.6 && g.player.x < 15.9);
     assert.equal(g.slideCooldown, 0);
     g.slide();
     assert.equal(g.slideTime, MOVEMENT.slideDuration);
@@ -89,7 +89,7 @@ test("repeated slide jumps preserve their launch speed without stacking extra ju
       assert.equal(g.slideTime, 0);
     }
   }));
-test("flat jump peaks at 1.01m and holding Space cannot trigger unattended bunny hopping", () =>
+test("restored flat jump peaks at 1.57m and holding Space cannot trigger unattended bunny hopping", () =>
   flat((g) => {
     g.keys.add("Space");
     g.jump();
@@ -100,8 +100,8 @@ test("flat jump peaks at 1.01m and holding Space cannot trigger unattended bunny
       apex = Math.max(apex, g.player.y);
       if (!g.player.grounded) airtime += dt;
     }
-    assert.ok(apex > 1.0 && apex < 1.03);
-    assert.ok(airtime > 0.5 && airtime < 0.54);
+    assert.ok(apex > 1.56 && apex < 1.58);
+    assert.ok(airtime > 0.63 && airtime < 0.67);
     assert.equal(g.player.y, 0);
     assert.equal(g.player.jumps, 0);
     g.jump();
@@ -112,14 +112,14 @@ test("air strafing bends momentum progressively, not a near-instant right-angle 
   for (let i = 0; i < 6; i++)
     accelerate(p, { x: 0, z: 1 }, MOVEMENT.runSpeed, dt);
   const angle = Math.atan2(p.vz, p.vx);
-  assert.ok(angle > 0.29 && angle < 0.31);
+  assert.ok(angle > 0.37 && angle < 0.38);
   assert.ok(Math.abs(Math.hypot(p.vx, p.vz) - MOVEMENT.runSpeed) < 1e-8);
 });
 test("reversing in air first brakes and eventually reverses, without sideways drift", () => {
   const p = { grounded: false, vx: 21, vz: 0 };
   for (let i = 0; i < 12; i++)
     accelerate(p, { x: -1, z: 0 }, MOVEMENT.runSpeed, dt);
-  assert.ok(p.vx > 14.9 && p.vx < 15.1);
+  assert.ok(p.vx > 13.4 && p.vx < 13.6);
   for (let i = 0; i < 180; i++)
     accelerate(p, { x: -1, z: 0 }, MOVEMENT.runSpeed, dt);
   assert.ok(p.vx < -20);
@@ -156,11 +156,11 @@ test("ramp assistance is capped and shared by human and bot jump code", () =>
         groundSlope: { x: 1, z: 0 },
         jumpCooldown: 0,
       });
-    assert.equal(rampJumpBoost(g.player), 0.8);
+    assert.equal(rampJumpBoost(g.player), 1.5);
     g.jump();
     assert.equal(botJump(bot, g.world), true);
     assert.equal(g.player.vy, bot.vy);
-    assert.equal(bot.vy, 8.6);
+    assert.equal(bot.vy, 11.2);
     assert.equal(
       rampJumpBoost({ vx: -25, vz: 0, groundSlope: { x: 1, z: 0 } }),
       0,
@@ -193,16 +193,16 @@ test("authoritative network input uses the new speed and does not auto-jump from
     }
     assert.equal(g.player.vx, MOVEMENT.runSpeed);
     m.input("p0", packet(++seq, [{ id: 1, type: "slide" }], { keys: 8 }));
-    assert.equal(g.player.vx, 11.2);
+    assert.equal(g.player.vx, 13);
     m.input("p0", packet(++seq, [{ id: 2, type: "jump" }], { keys: 16 }));
-    assert.equal(g.player.vy, 7.8);
+    assert.equal(g.player.vy, 9.7);
     let apex = 0;
     for (let i = 0; i < 180; i++) {
       m.input("p0", packet(++seq, [{ id: 2, type: "jump" }], { keys: 16 }));
       m.step(dt);
       apex = Math.max(apex, g.player.y);
     }
-    assert.ok(apex > 1.0 && apex < 1.03);
+    assert.ok(apex > 1.56 && apex < 1.58);
     assert.equal(g.player.grounded, true);
     assert.equal(g.player.jumps, 0);
     assert.equal(g.lastAction, 2);
@@ -211,20 +211,20 @@ test("authoritative network input uses the new speed and does not auto-jump from
   }
 });
 
-test("a no-input slide coasts more than seven metres instead of stopping at 800ms", () =>
+test("a no-input running slide coasts nine metres instead of stopping at 800ms", () =>
   flat((g) => {
     g.player.vx = MOVEMENT.runSpeed;
     g.slide();
     for (let i = 0; i < 24; i++) g.updatePlayer(dt);
     assert.ok(g.slideTime > 0.59);
-    assert.ok(g.player.vx > 8.8 && g.player.vx < 8.9);
+    assert.ok(g.player.vx > 10.2 && g.player.vx < 10.3);
     for (let i = 0; i < 72; i++) g.updatePlayer(dt);
     assert.ok(g.slideTime > 0.69);
     assert.ok(g.player.vx > 4.2);
     for (let i = 0; i < 96; i++) g.updatePlayer(dt);
     assert.equal(g.slideTime, 0);
     assert.equal(g.player.vx, 0);
-    assert.ok(g.player.x > 7.6 && g.player.x < 7.9);
+    assert.ok(g.player.x > 9 && g.player.x < 9.2);
   }));
 test("jump cancels a coasting slide halfway through without stopping its horizontal momentum", () =>
   flat((g) => {
@@ -246,7 +246,7 @@ test("counter-steering exits a slide quickly and returns control to ordinary mov
     g.player.vx = MOVEMENT.runSpeed;
     g.slide();
     g.keys.add("KeyA");
-    for (let i = 0; i < 24; i++) g.updatePlayer(dt);
+    for (let i = 0; i < 30; i++) g.updatePlayer(dt);
     assert.equal(g.slideTime, 0);
     assert.ok(g.player.vx < 0);
     assert.ok(Math.abs(g.player.vz) < 1e-8);

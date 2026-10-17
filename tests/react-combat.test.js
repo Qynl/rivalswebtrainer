@@ -19,10 +19,10 @@ test("round rules use 150 health and a five-second preparation window", () => {
   assert.equal(MAX_HEALTH, 150);
   assert.equal(ROUND_COUNTDOWN, 5);
 });
-test("flat jump apex is controlled at about 1.01 units; double jump is retained", () => {
-  assert.ok(MOVEMENT.jumpSpeed ** 2 / (2 * GRAVITY) > 1.0);
-  assert.ok(MOVEMENT.jumpSpeed ** 2 / (2 * GRAVITY) < 1.03);
-  assert.equal(MOVEMENT.doubleJumpSpeed, 7.6);
+test("original flat jump apex is restored at about 1.57 units; double jump is retained", () => {
+  assert.ok(MOVEMENT.jumpSpeed ** 2 / (2 * GRAVITY) > 1.56);
+  assert.ok(MOVEMENT.jumpSpeed ** 2 / (2 * GRAVITY) < 1.58);
+  assert.equal(MOVEMENT.doubleJumpSpeed, 9.4);
 });
 test("knife front and side hits are 40; behind-facing hits are lethal at full health", () => {
   const e = { x: 0, z: 0, yaw: 0 };

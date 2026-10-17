@@ -122,13 +122,14 @@ test("live slide buffering, slide-jump aim, descending stairs and optional speed
       fixedFov: g.camera.fov,
     };
   });
-  expect(report.runDistance).toBeGreaterThan(7.29);
-  expect(report.runDistance).toBeLessThan(7.31);
+  // 48 updates at 60 Hz: six acceleration ticks (1.75..10.5), then
+  // 42 ticks at the historical 10.6 run speed.
+  expect(report.runDistance).toBeCloseTo(8.0325, 5);
   expect(report.sliding).toBe(true);
   expect(report.jump.slide).toBe(0);
-  expect(report.jump.vy).toBeCloseTo(7.3);
-  expect(report.jump.speed).toBeGreaterThan(11.1);
-  expect(report.jump.speed).toBeLessThan(11.2);
+  expect(report.jump.vy).toBeCloseTo(9.2);
+  expect(report.jump.speed).toBeGreaterThan(12.8);
+  expect(report.jump.speed).toBeLessThan(13);
   expect(report.originError).toBeLessThan(1e-10);
   expect(report.buffered).toBe(true);
   expect(report.stairs.airborne).toBe(0);

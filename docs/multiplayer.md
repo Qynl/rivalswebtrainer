@@ -25,7 +25,7 @@ After joining a match, click **Back to the arena** to capture the mouse: a netwo
 
 ### Simulation, prediction and limits
 
-Current movement is shared across local prediction and authority: [immediate slides and quicker movement](responsive-movement.md). Older movement figures in validation reports describe those earlier builds. Both peers should refresh and start a new lobby after a movement update.
+Current movement is shared across local prediction and authority: [restored earlier movement with instant long slides](movement-restoration.md). Older movement figures in validation reports describe those earlier builds. Both peers should refresh and start a new lobby after a movement update.
 
 The host targets **120 fixed simulation steps/second**, **30 Hz snapshots**, and **up to 60 Hz client input** (one fresh held-state packet per rendered frame), with immediate discrete action edges. Match authority now runs in a **Web Worker**, away from WebGL/shader compilation and the React UI. Worker-restricted browsers retain a main-thread compatibility path; no backend setup is introduced. Browser scheduling and device performance still apply.
 

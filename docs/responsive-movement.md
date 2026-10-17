@@ -1,4 +1,6 @@
-# Immediate slides and quicker movement
+# Earlier compromise: immediate slides and quicker movement
+
+> **Superseded:** the user explicitly chose to restore the earlier movement, not keep this compromise. See [current movement restoration](movement-restoration.md).
 
 This revision supersedes the previous controlled/flowing-slide settings. The user found the movement too slow, slides still too short, and the run-up/cooldown prevented an immediate slide. The goal is to restore a faster, fluid feel while staying slightly below the earlier high-speed running/air-control tuning—not to restore oversized jumps or camera snaps.
 

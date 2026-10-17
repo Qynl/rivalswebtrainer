@@ -269,7 +269,7 @@ node scripts/movement-audit.mjs             # defaults to d40fdb1
 node scripts/movement-audit.mjs <revision>  # requires that revision's local Git history
 ```
 
-This samples both controllers and their own physics constants at 600 Hz without checking out another branch. It reports acceleration, stopping, reversal drift and flat slide travel in trainer units—not measured Roblox values or hardware FPS. Historical measurements are in [the implementation report](docs/hour-pass.md); current settings are in [responsive movement](docs/responsive-movement.md).
+This samples both controllers and their own physics constants at 600 Hz without checking out another branch. It reports acceleration, stopping, reversal drift and flat slide travel in trainer units—not measured Roblox values or hardware FPS. Historical measurements are in [the implementation report](docs/hour-pass.md); current settings are in [restored movement](docs/movement-restoration.md).
 
 Bow direction regression notes: [Bow body-plane correction](docs/bow-direction.md).
 
@@ -282,13 +282,13 @@ Bow direction regression notes: [Bow body-plane correction](docs/bow-direction.m
 
 See [the player/gun feedback report](docs/player-gun-feedback.md) and [multiplayer architecture and limits](docs/multiplayer.md).
 
-## Responsive movement and long slides
+## Restored movement with instant long slides
 
-Movement is faster and more fluid again, slightly below the earlier high-speed version: run/melee speed **9.6/10.8**, quicker ground acceleration and snappier directional air control. Jumps stay at the controlled **1.01-unit** height rather than returning to oversized launches.
+The earlier movement baseline is restored from repository history: run/melee speed **10.6/12**, original ground acceleration and counter-strafing, stronger air steering and the earlier **9.7 jump / 9.4 extra-jump** profile (about **1.57 units** high on flat ground). This replaces the unsuccessful slower compromise presets, rather than introducing another approximation.
 
-**C / Shift / Ctrl slides immediately—even standing still—with no run-up or post-slide cooldown.** Slides last up to **1.5 seconds**. Release movement to coast; hold forward to sustain the glide; counter-steer to brake; jump to cancel instantly while retaining horizontal momentum. A new slide is available as soon as the previous one ends or you land after cancelling. Pressing the other slide binding during an active slide cannot refresh its timer or stack boosts. At rest without WASD, slide direction follows your look; moving slides preserve their momentum.
+**C / Shift / Ctrl still slides immediately—even standing still—with no run-up or post-slide cooldown.** Slides last up to **1.5 seconds**. Release movement to coast; hold forward to sustain the glide; counter-steer to brake; jump to cancel instantly while retaining horizontal momentum. A new slide is available as soon as the previous one ends or you land after cancelling. Pressing the other slide binding during an active slide cannot refresh its timer or stack boosts. At rest without WASD, slide direction follows your look; moving slides preserve their momentum. Original running slide entry **13**, **16.5** cap and ramp assistance return, while newer long-slide/coasting behavior is preserved.
 
-Camera bob, landing dip, restrained 0.8-degree slide FOV and stable yaw/pitch remain intact. Slide-jumps do not multiply speed or add another upward kick; held Space does not auto-hop. Entry speed is capped at 13 (below the earlier 16.5), and collisions, rocket/launcher trickshot launches, shared 120 Hz physics, and backend-free multiplayer remain. See [current tuning and validation](docs/responsive-movement.md); it supersedes the [earlier controlled-movement reports](docs/controlled-movement.md).
+Mouse inversion, stable yaw/pitch, restrained camera bob/FOV, weapon handling, collision, rocket/launcher trickshots, shared 120 Hz physics and backend-free multiplayer fixes are retained. Held Space does not auto-hop. See [restoration details and historical replay tests](docs/movement-restoration.md); these supersede the [previous compromise](docs/responsive-movement.md) and [controlled-movement reports](docs/controlled-movement.md).
 
 ## Larger, clearer weapon models
 
