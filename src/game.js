@@ -51,6 +51,18 @@ import {
 import { clamp, moveBody, verticalStep, canOccupy } from "./physics.js";
 import { MouseLook } from "./input.js";
 import { GameAudio } from "./audio.js";
+import {
+  CONTROL_DEFINITIONS,
+  DEFAULT_CONTROLS,
+  getControlCodes,
+  sanitizeControls,
+} from "./controls.js";
+import { getTrainingDrill } from "./training.js";
+import {
+  createTrainingAnalytics,
+  recordTrainingAction as addTrainingAction,
+  recordTrainingContact as addTrainingContact,
+} from "./training-analytics.js";
 const v3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const botNames = ["VEX", "NOVA", "GHOST", "ACE", "ECHO", "BLITZ"];
 const botActionSounds = {
@@ -62,10 +74,11 @@ const botActionSounds = {
   jump: "jump",
 };
 export class Game {
-  constructor(canvas, settings, events) {
+  constructor(canvas, settings, events, controls = DEFAULT_CONTROLS) {
     this.warming = !!events.deferWarmup;
     this.canvas = canvas;
     this.settings = settings;
+    this.controls = sanitizeControls(controls);
     this.events = events;
     this.damageNumbers = new DamageNumbers();
     this.audio = new GameAudio();
@@ -185,6 +198,10 @@ export class Game {
     this.player = null;
     this.score = [0, 0];
     this.matchStats = { shots: 0, hits: 0, kills: 0, deaths: 0, headshots: 0 };
+    this.activeDrill = null;
+    this.drillElapsed = 0;
+    this.trainingAnalytics = null;
+    this.trainingEventSequence = 0;
     this.presentation = new ArenaRenderer(this.renderer);
     this.mouseLook = new MouseLook();
     this.weaponAnimator = new WeaponAnimator();
@@ -273,23 +290,8 @@ export class Game {
     });
     window.addEventListener("keydown", (e) => {
       if (this.state === "lobby" || this.state === "results") return;
-      if (
-        [
-          "Space",
-          "Tab",
-          "ControlLeft",
-          "ControlRight",
-          "ShiftLeft",
-          "ShiftRight",
-          "KeyF",
-          "KeyG",
-          "KeyW",
-          "KeyA",
-          "KeyS",
-          "KeyD",
-        ].includes(e.code)
-      )
-        e.preventDefault();
+      const action = this.controlForCode(e.code);
+      if (e.code === "Tab" || action) e.preventDefault();
       if (
         e.code === "KeyM" &&
         !e.repeat &&
@@ -307,20 +309,15 @@ export class Game {
       }
       this.keys.add(e.code);
       if (!e.repeat && this.state === "playing")
-        this.network?.keyAction(e.code);
-      if (e.repeat || this.state !== "playing") return;
-      if (e.code === "Space") this.jump();
-      if (
-        e.code === "KeyC" ||
-        e.code.startsWith("Control") ||
-        e.code.startsWith("Shift")
-      )
-        this.slide();
-      if (e.code === "KeyF") this.meleeAbility(true);
-      if (e.code === "KeyG") this.quickUtility();
-      if (e.code === "KeyR") this.reload();
-      if (e.code === "KeyT" && !this.reloadTime) this.inspectTime = 1.8;
-      if (/^Digit[1-4]$/.test(e.code)) this.equip(+e.code.slice(-1) - 1);
+        this.network?.keyAction(action);
+      if (e.repeat || this.state !== "playing" || !action) return;
+      if (action === "jump") this.jump();
+      if (action === "slide") this.slide();
+      if (action === "quickMelee") this.meleeAbility(true);
+      if (action === "quickUtility") this.quickUtility();
+      if (action === "reload") this.reload();
+      if (action === "inspect" && !this.reloadTime) this.inspectTime = 1.8;
+      if (action.startsWith("slot")) this.equip(+action.slice(-1) - 1);
     });
     window.addEventListener("keyup", (e) => this.keys.delete(e.code));
     window.addEventListener("mousedown", (e) => {
@@ -404,6 +401,23 @@ export class Game {
     this.renderer.shadowMap.enabled = !settings.performance;
     this.presentation?.resize();
   }
+  setControls(controls) {
+    this.controls = sanitizeControls(controls);
+    this.keys.clear();
+  }
+  controlDown(action) {
+    return getControlCodes(this.controls || DEFAULT_CONTROLS, action).some((code) =>
+      this.keys.has(code),
+    );
+  }
+  controlForCode(code) {
+    const controls = this.controls || DEFAULT_CONTROLS;
+    return (
+      CONTROL_DEFINITIONS.find(([action]) =>
+        getControlCodes(controls, action).includes(code),
+      )?.[0] || null
+    );
+  }
   preview(id) {
     this.world.build(id);
   }
@@ -458,7 +472,13 @@ export class Game {
     this.loadout = [...config.loadout];
     this.score = [0, 0];
     this.matchStats = { shots: 0, hits: 0, kills: 0, deaths: 0, headshots: 0 };
-    this.range = config.range || false;
+    this.activeDrill = getTrainingDrill(config.drill);
+    this.drillElapsed = 0;
+    this.trainingAnalytics = this.activeDrill
+      ? createTrainingAnalytics(this.loadout)
+      : null;
+    this.trainingEventSequence = 0;
+    this.range = !!config.range || !!this.activeDrill;
     this.world.build(this.range ? "range" : config.map);
     this.round = 0;
     this.clock = 0;
@@ -649,21 +669,34 @@ export class Game {
     this.roundTime = 90;
     this.eyeHeight = 1.66;
     if (this.range) {
-      for (let i = 0; i < 5; i++)
+      const targetCount = this.activeDrill?.targetCount || 5;
+      for (let i = 0; i < targetCount; i++) {
+        const x =
+          targetCount === 1 ? 0 : -14 + (28 * i) / (targetCount - 1);
         this.createEntity(
           1,
-          { x: -14 + i * 7, z: -14 + (i % 2) * 5 },
+          { x, z: -14 + (i % 2) * 5 },
           i,
           false,
           true,
         );
+      }
       this.state = "playing";
-      this.events.banner(
-        "PRACTICE RANGE",
-        "GET DIALED IN.",
-        "Moving targets · Infinite reserves · ESC to leave",
-        2.7,
-      );
+      if (this.activeDrill) {
+        this.events.banner(
+          "60-SECOND TRAINING DRILL",
+          this.activeDrill.title.toUpperCase() + ".",
+          `Score ${this.activeDrill.scoreLabel.toLowerCase()} · ESC to pause`,
+          2.7,
+        );
+      } else {
+        this.events.banner(
+          "PRACTICE RANGE",
+          "GET DIALED IN.",
+          "Moving targets · Infinite reserves · ESC to leave",
+          2.7,
+        );
+      }
     } else {
       for (let i = 1; i < this.config.mode; i++)
         this.createEntity(0, this.world.spawns[0][i], i + 2);
@@ -845,6 +878,7 @@ export class Game {
         this.deflectTime > 0
       )
         return false;
+      const trainingEvent = this.recordTrainingAction(id);
       // Separate recovery permits a rocket/launcher -> F combo, not a gun timer wait.
       this.knifeQuickCooldown = weapon.interval;
       (this.weaponReadyAt ||= [0, 0, 0, 0])[2] =
@@ -862,6 +896,7 @@ export class Game {
         remaining: 0.105,
         quick: true,
         slot: this.slot,
+        trainingEvent,
       };
       duration = 0.42;
       this.audio.play("melee");
@@ -920,6 +955,7 @@ export class Game {
     } else {
       if (!THROWN_UTILITIES.has(id)) return false;
       if (!this.range) a.mag--;
+      const trainingEvent = this.recordTrainingAction(id);
       this.pendingThrow = {
         owner: this.player,
         id,
@@ -927,6 +963,7 @@ export class Game {
         ammo: a,
         slot: 3,
         quick: true,
+        trainingEvent,
       };
       this.throwTime = THROW_DURATION;
       this.throwReleased = false;
@@ -998,8 +1035,10 @@ export class Game {
   }
   moveDirection() {
     const dx =
-        (this.keys.has("KeyD") ? 1 : 0) - (this.keys.has("KeyA") ? 1 : 0),
-      dz = (this.keys.has("KeyS") ? 1 : 0) - (this.keys.has("KeyW") ? 1 : 0);
+        (this.controlDown("moveRight") ? 1 : 0) - (this.controlDown("moveLeft") ? 1 : 0),
+      dz =
+        (this.controlDown("moveBackward") ? 1 : 0) -
+        (this.controlDown("moveForward") ? 1 : 0);
     return v3(
       dx * Math.cos(this.yaw) + dz * Math.sin(this.yaw),
       0,
@@ -1084,6 +1123,7 @@ export class Game {
     }
     if (Number.isFinite(a.mag)) a.mag--;
     if (this.range && w.slot === 3) a.mag = w.mag;
+    const trainingEvent = this.recordTrainingAction(id);
     this.cooldown = w.interval;
     (this.weaponReadyAt ||= [0, 0, 0, 0])[this.slot] =
       (this.clock || 0) + w.interval;
@@ -1117,7 +1157,7 @@ export class Game {
         new THREE.Euler(this.pitch, this.yaw, 0, "YXZ"),
       );
     if (w.type === "bow") {
-      this.spawnProjectile(p, origin, forward, id, this.bowCharge || 0);
+      this.spawnProjectile(p, origin, forward, id, this.bowCharge || 0, trainingEvent);
       this.matchStats.shots++;
       this.bowCharge = 0;
       this.reload();
@@ -1126,15 +1166,23 @@ export class Game {
       let hit = false;
       for (const enemy of this.entities) {
         if (!enemy.alive || enemy.team === p.team) continue;
-        const delta = this.eye(enemy).sub(origin);
+        const delta = this.eye(enemy).sub(origin),
+          distance = delta.length();
         if (
-          delta.length() < w.range &&
+          distance < w.range &&
           delta.normalize().dot(forward) > 0.98 &&
           this.hasLOS(origin, this.eye(enemy))
         ) {
-          this.damage(enemy, w.damage, p);
+          const applied = this.damage(enemy, w.damage, p);
+          this.recordTrainingContact(id, {
+            kind: "direct",
+            distance,
+            damage: applied ?? w.damage,
+            action: trainingEvent,
+          });
           enemy.burnUntil = this.clock + 1.5;
           enemy.burnOwner = p;
+          enemy.burnTrainingEvent = trainingEvent;
           hit = true;
         }
       }
@@ -1159,10 +1207,16 @@ export class Game {
       );
     } else if (w.type === "rocket" || w.type === "launcher" || w.slot === 3) {
       if (THROWN_UTILITIES.has(id)) {
-        this.pendingThrow = { owner: p, id, remaining: THROW_RELEASE, ammo: a };
+        this.pendingThrow = {
+          owner: p,
+          id,
+          remaining: THROW_RELEASE,
+          ammo: a,
+          trainingEvent,
+        };
         this.throwTime = THROW_DURATION;
         this.throwReleased = false;
-      } else this.spawnProjectile(p, origin, forward, id);
+      } else this.spawnProjectile(p, origin, forward, id, 0, trainingEvent);
       this.matchStats.shots++;
     } else if (w.type === "melee") {
       this.swingTime = 0.36;
@@ -1179,7 +1233,7 @@ export class Game {
             this.eye(e).sub(origin).normalize().dot(forward) > 0.45 &&
             this.hasLOS(origin, this.eye(e)),
         );
-      this.playerMeleePending = { id, remaining: 0.105 };
+      this.playerMeleePending = { id, remaining: 0.105, trainingEvent };
     } else {
       this.matchStats.shots++;
       let hit = false;
@@ -1196,7 +1250,18 @@ export class Game {
             ),
           )
           .normalize();
-        if (this.bullet(p, origin, dir, w)) hit = true;
+        if (
+          this.bullet(
+            p,
+            origin,
+            dir,
+            w,
+            false,
+            this.activeDrill ? id : null,
+            trainingEvent,
+          )
+        )
+          hit = true;
       }
       if (hit) this.matchStats.hits++;
       // Recoil animates the weapon. Never rewrite the mouse's pitch; that caused
@@ -1232,9 +1297,10 @@ export class Game {
           Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z),
       );
     for (const e of targets) {
-      const delta = this.eye(e).sub(origin);
+      const delta = this.eye(e).sub(origin),
+        distance = delta.length();
       if (
-        delta.length() >= w.range ||
+        distance >= w.range ||
         delta.normalize().dot(forward) <= 0.45 ||
         !this.hasLOS(origin, this.eye(e))
       )
@@ -1244,14 +1310,14 @@ export class Game {
         this.backstabTime = 0.26;
         this.knifeStabAttack = true;
       }
-      this.damage(
-        e,
-        attack.id === "knife" ? knifeDamage(p, e) : w.damage,
-        p,
-        false,
-        p,
-        backstab,
-      );
+      const damageAmount = attack.id === "knife" ? knifeDamage(p, e) : w.damage,
+        applied = this.damage(e, damageAmount, p, false, p, backstab);
+      this.recordTrainingContact(attack.id, {
+        kind: "direct",
+        distance,
+        damage: applied ?? damageAmount,
+        action: attack.trainingEvent,
+      });
       if (!this.network) {
         this.events.hit(false);
         this.audio.play("hit");
@@ -1259,7 +1325,15 @@ export class Game {
       break;
     }
   }
-  bullet(shooter, origin, dir, w, reflected = false) {
+  bullet(
+    shooter,
+    origin,
+    dir,
+    w,
+    reflected = false,
+    trainingWeaponId = null,
+    trainingEvent = null,
+  ) {
     this.ray.set(origin, dir);
     this.ray.far = w.range;
     const walls = this.ray.intersectObjects(this.world.solidMeshes, false);
@@ -1346,13 +1420,17 @@ export class Game {
         }
         return false;
       }
-      const falloff = w.pellets ? clamp(1 - nearest / w.range, 0.2, 1) : 1;
-      this.damage(
-        victim,
-        w.damage * (head ? w.head : 1) * falloff,
-        shooter,
-        head,
-      );
+      const falloff = w.pellets ? clamp(1 - nearest / w.range, 0.2, 1) : 1,
+        damageAmount = w.damage * (head ? w.head : 1) * falloff,
+        applied = this.damage(victim, damageAmount, shooter, head);
+      if (trainingWeaponId && shooter.isPlayer)
+        this.recordTrainingContact(trainingWeaponId, {
+          kind: "direct",
+          head,
+          distance: nearest,
+          damage: applied ?? damageAmount,
+          action: trainingEvent,
+        });
       if (shooter.isPlayer && !this.network) {
         this.events.hit(head);
         this.audio.play(head ? "head" : "hit");
@@ -1414,6 +1492,7 @@ export class Game {
     const a = this.ammunition[slot];
     if (a.mag <= 0) return false;
     if (!this.range) a.mag--;
+    this.recordTrainingAction(this.loadout[slot]);
     this.healTime = this.healTotal = quick ? 0.8 : 2.2;
     this.healAmount = quick ? 25 : 70;
     this.mouseDown = false;
@@ -1571,10 +1650,11 @@ export class Game {
       }
       this.events.kill(source?.name || "ARENA", e.name, head);
       if (this.range) {
-        e.respawnAt = this.clock + 1.4;
+        e.respawnAt = this.clock + (this.activeDrill?.respawnDelay ?? 1.4);
       } else this.checkRound();
     }
     this.events.update(this);
+    return applied;
   }
   checkRound() {
     if (this.state !== "playing" || this.range) return;
@@ -1605,6 +1685,57 @@ export class Game {
     document.exitPointerLock?.();
     this.events.results(this);
   }
+  recordTrainingAction(weaponId) {
+    if (!this.activeDrill || !this.trainingAnalytics) return null;
+    const id = (Number.isSafeInteger(this.trainingEventSequence)
+        ? this.trainingEventSequence
+        : 0) + 1,
+      speed = Math.hypot(this.player?.vx || 0, this.player?.vz || 0);
+    if (
+      !addTrainingAction(this.trainingAnalytics, weaponId, {
+        aiming: !!this.aiming,
+        moving: speed > 0.5,
+      })
+    ) {
+      return null;
+    }
+    this.trainingEventSequence = id;
+    return { id, weaponId, hit: false, head: false };
+  }
+  recordTrainingContact(weaponId, outcome) {
+    if (!this.activeDrill || !this.trainingAnalytics) return false;
+    return addTrainingContact(this.trainingAnalytics, weaponId, outcome);
+  }
+  finishDrill() {
+    if (!this.activeDrill || this.state !== "playing") return false;
+    this.drillElapsed = this.activeDrill.duration;
+    this.state = "drillend";
+    this.keys.clear();
+    this.mouseDown = this.trigger = this.aiming = false;
+    this.fireBufferedUntil = this.burstCount = 0;
+    this.bowCharge = 0;
+    this.bowRelease = false;
+    this.cancelThrow(false);
+    this.clearQuickMelee();
+    for (const projectile of this.projectiles) {
+      this.scene.remove(projectile.mesh);
+      this.disposeVisual(projectile.mesh);
+    }
+    for (const effect of this.effects) {
+      this.scene.remove(effect.mesh);
+      this.disposeVisual(effect.mesh);
+    }
+    this.effects = [];
+    this.projectiles = [];
+    this.smokes = [];
+    this.fires = [];
+    this.combatFX?.clear();
+    this.flameFX?.clear();
+    document.exitPointerLock?.();
+    this.events.drillComplete?.(this);
+    this.events.update(this);
+    return true;
+  }
   pause() {
     if (!["playing", "countdown", "roundend"].includes(this.state)) return;
     this.previousState = this.state;
@@ -1632,9 +1763,13 @@ export class Game {
     this.cleanEntities();
     this.player = null;
     if (this.range) this.world.build(this.config.map);
+    this.range = false;
+    this.activeDrill = null;
+    this.drillElapsed = 0;
+    this.trainingAnalytics = null;
     this.events.lobby();
   }
-  spawnProjectile(owner, origin, dir, id, charge = 0) {
+  spawnProjectile(owner, origin, dir, id, charge = 0, trainingEvent = null) {
     if (this.network) return;
     const w = WEAPONS[id],
       rocket = w.type === "rocket",
@@ -1659,6 +1794,7 @@ export class Game {
     this.projectiles.push({
       mesh,
       pos,
+      startPos: pos.clone(),
       vel: dir
         .clone()
         .multiplyScalar(
@@ -1673,6 +1809,7 @@ export class Game {
         .add(v3(0, rocket || arrow ? 0 : 4, 0)),
       owner,
       id,
+      trainingEvent,
       fuse: arrow
         ? 3
         : rocket
@@ -1746,11 +1883,11 @@ export class Game {
           wall.face.normal.clone().transformDirection(wall.object.matrixWorld),
           0.18,
         );
-    this.spawnProjectile(p.owner, hand, dir, p.id);
+    this.spawnProjectile(p.owner, hand, dir, p.id, 0, p.trainingEvent);
     this.pendingThrow = null;
     this.throwReleased = true;
   }
-  explosion(pos, owner, id) {
+  explosion(pos, owner, id, trainingEvent = null) {
     const w = WEAPONS[id];
     if (id === "flashbang") {
       this.audio.play("flash");
@@ -1795,7 +1932,13 @@ export class Game {
       this.scene.add(mesh);
       const effect = { mesh, life: 5, max: 5, fire: true };
       this.effects.push(effect);
-      this.fires.push({ pos: grounded, effect, owner, tick: 0 });
+      this.fires.push({
+        pos: grounded,
+        effect,
+        owner,
+        tick: 0,
+        trainingEvent,
+      });
       this.particles(grounded, 0xffa44c, 16);
       return;
     }
@@ -1826,7 +1969,9 @@ export class Game {
       ) {
         let dmg = w.damage * (1 - distance / radius);
         if (distance < 1.6) dmg = w.damage;
-        if (e !== owner) this.damage(e, dmg, owner, false, pos);
+        const applied = e !== owner
+          ? this.damage(e, dmg, owner, false, pos)
+          : 0;
         if (e === owner) {
           e.vy = 15;
           e.grounded = false;
@@ -1835,6 +1980,12 @@ export class Game {
         }
         if (owner.isPlayer && e !== owner) {
           this.matchStats.hits++;
+          this.recordTrainingContact(id, {
+            kind: "splash",
+            distance,
+            damage: applied ?? dmg,
+            action: trainingEvent,
+          });
           this.events.hit(false);
         }
       }
@@ -1927,19 +2078,28 @@ export class Game {
       if (p.fuse <= 0) {
         if (p.arrow) {
           if (p.victim) {
-            this.damage(
-              p.victim,
-              p.damage * (p.headshot ? 2 : 1),
-              p.owner,
-              p.headshot,
-            );
+            const damageAmount = p.damage * (p.headshot ? 2 : 1),
+              applied = this.damage(
+                p.victim,
+                damageAmount,
+                p.owner,
+                p.headshot,
+              );
             if (p.owner.isPlayer) {
               this.matchStats.hits++;
+              if (p.headshot) this.matchStats.headshots++;
+              this.recordTrainingContact(p.id, {
+                kind: "direct",
+                head: p.headshot,
+                distance: p.startPos?.distanceTo(p.pos),
+                damage: applied ?? damageAmount,
+                action: p.trainingEvent,
+              });
               this.events.hit(p.headshot);
               this.audio.play(p.headshot ? "head" : "hit");
             }
           }
-        } else this.explosion(p.pos, p.owner, p.id);
+        } else this.explosion(p.pos, p.owner, p.id, p.trainingEvent);
         this.scene.remove(p.mesh);
         this.disposeVisual(p.mesh);
         this.projectiles.splice(i, 1);
@@ -1949,15 +2109,25 @@ export class Game {
       fire.tick -= dt;
       if (fire.tick <= 0) {
         fire.tick = 0.3;
-        for (const e of this.entities)
+        for (const e of this.entities) {
+          const distance = Math.hypot(e.x - fire.pos.x, e.z - fire.pos.z);
           if (
             e.alive &&
             e.team !== fire.owner.team &&
-            Math.hypot(e.x - fire.pos.x, e.z - fire.pos.z) < 3.2 &&
+            distance < 3.2 &&
             Math.abs(e.y - fire.pos.y) < 1.5 &&
             this.hasLOS(fire.pos.clone().add(v3(0, 0.2, 0)), this.eye(e))
-          )
-            this.damage(e, 8, fire.owner, false, fire.pos);
+          ) {
+            const applied = this.damage(e, 8, fire.owner, false, fire.pos);
+            if (fire.owner.isPlayer)
+              this.recordTrainingContact("molotov", {
+                kind: "area",
+                distance,
+                damage: applied ?? 8,
+                action: fire.trainingEvent,
+              });
+          }
+        }
       }
     }
     this.fires = this.fires.filter((f) => f.effect.life > 0);
@@ -2020,7 +2190,7 @@ export class Game {
           this.combatFX?.burst(v3(p.x, p.y + 0.07, p.z), 0xb3afa5, 4);
       }
     }
-    if (p.grounded && (this.jumpBuffer > 0 || this.keys.has("Space")))
+    if (p.grounded && (this.jumpBuffer > 0 || this.controlDown("jump")))
       this.tryJump();
     else if (p.grounded && this.slideBuffer > 0) this.slide();
     if (this.slideTime > 0 && Math.hypot(p.vx, p.vz) < 2) this.slideTime = 0;
@@ -2170,11 +2340,18 @@ export class Game {
     }
     if (e.burnUntil > this.clock && (e.burnTick || 0) < this.clock) {
       e.burnTick = this.clock + 0.25;
-      this.damage(e, 2, e.burnOwner);
+      const applied = this.damage(e, 2, e.burnOwner);
+      if (e.burnOwner?.isPlayer)
+        this.recordTrainingContact("flame", {
+          kind: "area",
+          damage: applied ?? 2,
+          action: e.burnTrainingEvent,
+        });
       if (!e.alive) return;
     }
     if (e.target) {
-      e.vx = Math.sin(this.clock * 1.1 + e.seed) * 2.2;
+      const speed = this.activeDrill?.targetSpeed ?? 1;
+      e.vx = Math.sin(this.clock * 1.1 + e.seed) * 2.2 * speed;
       moveBody(e, e.vx * dt, 0, this.world.boxes);
       e.yaw = Math.PI;
       this.animateBot(e, dt);
@@ -2712,7 +2889,7 @@ export class Game {
       this.network.step(dt);
       return;
     }
-    if (["lobby", "paused", "results"].includes(this.state)) return;
+    if (["lobby", "paused", "results", "drillend"].includes(this.state)) return;
     if (this.player)
       this.renderPrevious = {
         x: this.player.x,
@@ -2779,6 +2956,14 @@ export class Game {
           } else this.endRound(health[0] > health[1] ? 0 : 1);
         }
       }
+      if (this.activeDrill && this.state === "playing") {
+        this.drillElapsed = Math.min(
+          this.activeDrill.duration,
+          this.drillElapsed + dt,
+        );
+        if (this.drillElapsed >= this.activeDrill.duration - 1e-9)
+          this.finishDrill();
+      }
     } else if (this.state === "roundend") {
       for (const e of this.entities) if (!e.alive) this.animateDeath(e, dt);
       this.roundEndTime -= dt;
@@ -2837,7 +3022,7 @@ export class Game {
       while (this.accumulator + 1e-9 >= step) {
         this.accumulator = Math.max(0, this.accumulator - step);
         this.simulate(step);
-        if (["paused", "results", "lobby"].includes(this.state)) {
+        if (["paused", "results", "lobby", "drillend"].includes(this.state)) {
           this.accumulator = 0;
           break;
         }

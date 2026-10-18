@@ -69,7 +69,9 @@ export function Hud() {
             <div className="round-info">
               <span id="round-label">{h.round || "ROUND 1"}</span>
               <strong id="timer">{h.timer || "1:30"}</strong>
-              <small>{h.range ? "FREE PRACTICE" : "FIRST TO 5"}</small>
+              <small>
+                {h.drill ? "TIMED TRAINING" : h.range ? "FREE PRACTICE" : "FIRST TO 5"}
+              </small>
             </div>
             <div className="team-score enemy">
               <small>RIVALS</small>
@@ -261,16 +263,48 @@ export function Hud() {
           <kbd>M</kbd> CHANGE WEAPONS · {h.countdown}s
         </div>
         <div id="range-stats" className={h.range ? "" : "hidden"}>
-          {[
-            ["SHOTS", stats.shots || 0],
-            ["ACCURACY", accuracy + "%"],
-            ["ELIMINATIONS", stats.kills || 0],
-          ].map(([k, v]) => (
+          {(h.drill
+            ? [
+                [h.drill.scoreLabel, h.drill.score],
+                ["ACCURACY", accuracy + "%"],
+                [h.drill.secondaryLabel, h.drill.secondaryScore],
+              ]
+            : [
+                ["SHOTS", stats.shots || 0],
+                ["ACCURACY", accuracy + "%"],
+                ["ELIMINATIONS", stats.kills || 0],
+              ]
+          ).map(([k, v]) => (
             <div key={k}>
               <strong>{v}</strong>
               <span>{k}</span>
             </div>
           ))}
+        </div>
+        <div
+          id="drill-status"
+          className={h.drill ? "" : "hidden"}
+          role="group"
+          aria-label="Timed training drill progress"
+        >
+          <strong>{h.drill?.title}</strong>
+          <span>
+            {h.drill?.score} {h.drill?.scoreLabel}
+          </span>
+          <div
+            className="drill-progress"
+            role="progressbar"
+            aria-label="Drill time elapsed"
+            aria-valuemin={0}
+            aria-valuemax={h.drill?.duration || 60}
+            aria-valuenow={Math.floor(h.drill?.elapsed || 0)}
+          >
+            <i
+              style={{
+                transform: `scaleX(${Math.max(0, Math.min(1, (h.drill?.elapsed || 0) / (h.drill?.duration || 60)))})`,
+              }}
+            />
+          </div>
         </div>
         <div id="scope" className={h.scoped ? "" : "hidden"} />
         <div className="quick-actions">

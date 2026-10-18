@@ -422,16 +422,14 @@ export class MultiplayerSession {
       this.client.send({ type: "loadout", loadout });
     } else this.client.send({ type: "selection", selecting: false });
   }
-  keyAction(key) {
+  keyAction(control) {
     const action = {
-      Space: "jump",
-      ShiftLeft: "slide",
-      ShiftRight: "slide",
-      KeyC: "slide",
-      KeyF: "ability",
-      KeyG: "utility",
-      KeyR: "reload",
-    }[key];
+      jump: "jump",
+      slide: "slide",
+      quickMelee: "ability",
+      quickUtility: "utility",
+      reload: "reload",
+    }[control];
     if (action) this.action(action);
   }
   secondary() {
@@ -440,8 +438,15 @@ export class MultiplayerSession {
   sendInput() {
     const g = this.game;
     if (!g.player) return;
+    const controls = [
+      "moveForward",
+      "moveLeft",
+      "moveBackward",
+      "moveRight",
+      "jump",
+    ];
     const keys = KEYS.reduce(
-      (bits, key, i) => bits | (g.keys.has(key) ? 1 << i : 0),
+      (bits, _key, i) => bits | (g.controlDown(controls[i]) ? 1 << i : 0),
       0,
     );
     this.client.send({

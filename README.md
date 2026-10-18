@@ -11,7 +11,7 @@ npm ci
 npm run dev
 ```
 
-Open the address printed by Vite. Select an arena, team size, difficulty, then **Enter Arena**. Choose **Primary → Secondary → Melee → Utility** in the compact pre-match picker and click **Deploy**. Rematches use the same picker; cancelling it leaves your saved loadout unchanged. Click **Warm Up in the Range** for moving targets and unlimited ammunition reserves. In offline modes, every teammate and opponent other than you is a local bot. Choose **Multiplayer** for human-only online lobbies: create/join by code, pick teams and weapons, ready up, then let the host start 1v1–3v3. The default multiplayer runs in the host browser with automatic PeerJS discovery: **no backend deployment, accounts, API configuration or manual WebRTC exchange**. Share the invite link/code and keep the host tab open and active. See [multiplayer and its network limits](docs/multiplayer.md).
+Open the address printed by Vite. Select an arena, team size, difficulty, then **Enter Arena**. Choose **Primary → Secondary → Melee → Utility** in the compact pre-match picker and click **Deploy**. Rematches use the same picker; cancelling it leaves your saved loadout unchanged. Click **Warm Up in the Range** for open-ended practice, or open **TRAIN** for three timed aim drills with local personal-best tracking. In offline modes, every teammate and opponent other than you is a local bot. Choose **Multiplayer** for human-only online lobbies: create/join by code, pick teams and weapons, ready up, then let the host start 1v1–3v3. The default multiplayer runs in the host browser with automatic PeerJS discovery: **no backend deployment, accounts, API configuration or manual WebRTC exchange**. Share the invite link/code and keep the host tab open and active. See [multiplayer and its network limits](docs/multiplayer.md).
 
 ### Production / disconnected use
 
@@ -40,8 +40,10 @@ Mobile layouts support browsing/configuration, but combat requires desktop point
   - Utility: Grenade, Molotov, Smoke, Flashbang, Medkit.
 - Charged ballistic arrows, minigun spin-up with animated barrels, paint splats, arcing impact grenades, close-range flame/afterburn, LOS-aware flashbang blindness, and interruptible 70-HP / quick 25-HP medkit heals. Medkits are one use per round (unlimited in the range).
 - Headshots, pellet falloff, reloads, recoil, scope/ADS, ballistic explosives, fire pools, smoke blocking bot perception, tracers, and hit/kill feedback.
-- Dedicated open-lane practice range with moving/respawning targets, unlimited reserves/utilities, and accuracy/elimination metrics.
-- Procedural Web Audio sounds; locally persisted sensitivity, FOV, volume, performance mode, loadout, and the last 20 match results.
+- Dedicated open-lane free-practice range with moving/respawning targets and unlimited reserves/utilities, plus three 60-second drills: fast target tracking, headshot discipline, and elimination speed.
+- Drill results show the selected score, match stats, and a per-weapon event breakdown: emitted fire/attack actions, unique actions with any/head contact, ADS and movement context, direct/head contacts, splash/area contacts, applied damage, and average direct-hit range in trainer units. These counters keep pellets and damage-over-time ticks distinct; they are not normalized aim accuracy.
+- Up to 50 runs stay on this device. Personal bests and recent-score trends are compared only within the same drill rules version and exact loadout; trends wait for three runs. Records can be cleared or manually exported/imported as a validated, versioned JSON file. Nothing is uploaded.
+- Procedural Web Audio sounds; locally persisted sensitivity, FOV, volume, performance mode, keyboard bindings, loadout, last 20 match results, and recent training runs. Bindings are configurable in Settings, duplicate keys swap safely, and browser shortcuts remain reserved.
 
 ## Controls
 
@@ -61,7 +63,23 @@ Mobile layouts support browsing/configuration, but combat requires desktop point
 | R                 | Reload                                                                                      |
 | Escape            | Pause / release mouse                                                                       |
 
+Movement, jump, slide, quick abilities, reload, inspect, and slot keys are rebindable in **Settings → Key Bindings**; defaults are shown above. Duplicate bindings swap, Escape cancels capture, and common browser/game shortcuts stay reserved. Changes are stored locally. Multiplayer translates your chosen movement/actions to the same existing network inputs.
+
 Scythe dash recharges in **3 seconds**. Katana's frontal guard lasts **1.1 seconds** and has a **3.5-second cooldown**. It reflects bullets back along a real collision-tested ray; rear attacks, melee, and explosives are not blocked. Shooting is disabled during the guard. With Knife in your melee slot, **F** performs a quick stab after a **105 ms windup**, without switching away from your gun. It deals **40 front/side / 150 rear** damage, checks range/cone/cover at impact, and has a separate **0.55-second recovery**, so an RPG firing cooldown does not block an aerial follow-up. Fists still do not automatically punch with F.
+
+## Focused training drills
+
+Choose **TRAIN** in the lobby, then start a drill with your current four-slot loadout. Each session lasts 60 simulation seconds; **Escape** pauses it, and leaving early is available from the pause screen.
+
+- **Track the strafe:** five faster targets; score confirmed hits.
+- **Headshot discipline:** three slower targets; score head tags.
+- **Target clear sprint:** five targets with faster respawns; score eliminations.
+
+The result screen includes shots, hits, accuracy, head tags, eliminations, and a per-weapon breakdown. Session-scoped event IDs link each action to delayed projectile outcomes; the summary counts unique actions with any/head contact separately from direct contacts (pellets count separately), splash contacts, and area-effect damage ticks. It also records aiming/movement context, applied trainer HP, and average direct range in trainer units. Flame fire events are simulation pulses, not mouse clicks. No cross-weapon “aim accuracy” is inferred.
+
+Each drill has a rules version, and personal bests plus five-run trend charts compare only that version and the exact four-slot loadout. The trend needs at least three runs; it reports raw score movement rather than a skill rating. Up to 50 runs stay in browser storage. **EXPORT** creates a versioned JSON backup; **IMPORT** validates and merges records, skips duplicates, keeps the newest 50, and rejects files over 1 MB. Import/export is manual and works offline.
+
+See the [improvement roadmap](docs/improvement-roadmap.md) for the next steps toward a deeper trainer.
 
 Reloads animate magazine extraction/insertion, bolt motion and the support hand. Weapons ease into ADS/equip positions; T inspects them. Bots have connected head/weapon rigs, independently bending knees, body lean, aim pitch and muzzle flashes. Static weapon geometry is batched by material to reduce draw submissions; fixed Arena visuals use nine batches while original ray geometry stays intact.
 
@@ -190,13 +208,15 @@ See [the combat-readability report](docs/combat-readability-pass.md) for validat
 ## Tests
 
 ```sh
-npm test                   # 334 input, abilities, physics, movement, rigging, audio, rendering and combat tests
+npm test                   # 352 input, abilities, physics, movement, rigging, audio, rendering, combat and training tests
 npm run build              # Production build + offline cache generation
 npx playwright install chromium
-npm run test:browser       # Browser integration test
+npm run test:browser       # Chromium integration, rendering, offline and multiplayer tests
 ```
 
-You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tests. Most integration tests validate an actual WebGL frame and pointer lock, then disable rendering to run deterministic combat/AI checks efficiently on machines using software graphics. Dedicated graphics tests retain real rendering for all 26 weapon models, skeletal bots, pooled effects, contact-shading pixel comparisons, bloom resize and the Performance bypass. They exercise loadout selection, shots/headshots, reloads, jumps, grenade/smoke/molotov lifecycles, pause/settings, map selection, team bots, five-round victory, results, and mobile layout. The browser suite also covers wizard steps, draft cancellation, compact HUD dimensions, tall walls, real Bow/Medkit input, Flashbang throws and rematch selection. Additional browser tests check arena floor layers, actual stair traversal, slide-jump momentum, Shift/F controls, katana reflection, mouse spike filtering, graphics settings, and the production cache/reload with networking disabled.
+You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tests. Most integration tests validate an actual WebGL frame and pointer lock, then disable rendering to run deterministic combat/AI checks efficiently on machines using software graphics. Dedicated graphics tests retain real rendering for all 26 weapon models, skeletal bots, pooled effects, contact-shading pixel comparisons, bloom resize and the Performance bypass. They exercise loadout selection, shots/headshots, reloads, jumps, grenade/smoke/molotov lifecycles, pause/settings, map selection, team bots, five-round victory, results, and mobile layout. The browser suite also covers wizard steps, draft cancellation, compact HUD dimensions, tall walls, real Bow/Medkit input, Flashbang throws and rematch selection. Additional browser tests check arena floor layers, actual stair traversal, slide-jump momentum, Shift/F controls, katana reflection, mouse spike filtering, graphics settings, and the production cache/reload with networking disabled, including a completed offline training run. `tests/training.spec.js` checks target presets, the paused drill clock, scoring, personal-best comparisons, persistence, clearing records, and the mobile layout.
+
+GitHub Actions (`.github/workflows/ci.yml`) runs the unit suite and build on every push/PR, plus the Chromium browser regressions.
 
 ## Structure
 
@@ -227,12 +247,17 @@ You may set `BROWSER_EXECUTABLE` to an installed Chromium binary for browser tes
 - `src/batching.js`: fixed-sibling batching with optional exact ray-mesh retention.
 - `src/main.jsx`, `src/App.jsx`, `src/ui-layout.jsx`, `src/ui-hud.jsx`: React entry, declarative lobby/picker/menus and HUD.
 - `src/ui-session.js`, `src/ui-store.js`: UI/game bridge, persisted configuration and bounded HUD snapshots.
+- `src/training.js`: timed drill definitions, honest score summaries, local history validation, and per-loadout personal-best comparisons.
 - `src/combat-rules.js`, `src/damage-numbers.js`: shared health/backstab rules and bounded confirmed-hit feedback.
 - `src/environment.js`, `src/assets/studio-environment.*`: lossless generated lighting asset and procedural fallback.
 - `src/style.css`, `index.html`: presentation and minimal Vite entry shell.
 - `vite.config.js`: bundling, preview-host support and production offline cache.
 
 This is an original playable trainer foundation, not every map, weapon, animation, mode, cosmetic, or mechanic in Roblox RIVALS. Balancing is approximate. Global bot pathfinding is still a single-support-height grid, with explicit ramp decks and bounded firing-position plans. Local movement/melee combos do not constitute planned rooftop trick routes, human-equivalent decisions, or support for every weapon in the bot loadout.
+
+## Improvement roadmap
+
+The prioritized product, accessibility, training, multiplayer, performance, and architecture plan is in [docs/improvement-roadmap.md](docs/improvement-roadmap.md). It separates the first delivered training slice from future work and lists testable exit criteria.
 
 ## Reference research and endurance validation
 

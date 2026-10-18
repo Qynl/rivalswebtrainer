@@ -31,6 +31,14 @@ export function Layout({ bind, content }) {
             </button>
             <button
               className="nav-item"
+              data-tab="training"
+              aria-controls="training-tab"
+              {...bind["tab-training"]}
+            >
+              {"TRAIN"}
+            </button>
+            <button
+              className="nav-item"
               data-tab="loadout"
               {...bind["tab-loadout"]}
             >
@@ -227,6 +235,89 @@ export function Layout({ bind, content }) {
           </div>
         </main>
         <main
+          id="training-tab"
+          className="tab-content hidden"
+          {...bind["training-tab"]}
+        >
+          <div className="training-intro">
+            <div className="eyebrow">{"PRACTICE WITH A PURPOSE."}</div>
+            <h1 className="page-title">
+              {"TRAIN WITH "}
+              <span>{"PURPOSE."}</span>
+            </h1>
+            <p className="hero-description">
+              {"Short, focused drills. Honest results. Progress saved on this device."}
+            </p>
+            <p className="training-instructions">
+              {"Desktop mouse and keyboard required. Start captures the mouse; Escape pauses and lets you leave early."}
+            </p>
+          </div>
+          <section className="training-loadout" aria-label="Drill loadout">
+            <div>
+              <span className="mini-label">{"CURRENT LOADOUT"}</span>
+              <strong id="training-loadout">{content["training-loadout"]}</strong>
+              <small>{"Personal bests are compared only with this exact loadout."}</small>
+            </div>
+            <button
+              className="text-button"
+              id="training-edit-loadout"
+              {...bind["training-edit-loadout"]}
+            >
+              {"CHANGE LOADOUT ↗"}
+            </button>
+          </section>
+          <section
+            className="training-grid"
+            id="training-drills"
+            aria-label="Available training drills"
+          >
+            {content["training-drills"]}
+          </section>
+          <section className="training-history-panel" aria-labelledby="training-history-title">
+            <header>
+              <div>
+                <span className="section-number">{"YOUR RECENT RUNS"}</span>
+                <h2 id="training-history-title">{"Progress, not guesswork."}</h2>
+              </div>
+              <div className="training-data-actions">
+                <button
+                  className="text-button"
+                  id="training-export"
+                  {...bind["training-export"]}
+                >
+                  {"EXPORT"}
+                </button>
+                <button
+                  className="text-button"
+                  id="training-import"
+                  aria-controls="training-import-file"
+                  {...bind["training-import"]}
+                >
+                  {"IMPORT"}
+                </button>
+                <input
+                  id="training-import-file"
+                  type="file"
+                  accept="application/json,.json"
+                  hidden
+                  {...bind["training-import-file"]}
+                />
+                <button
+                  className="text-button"
+                  id="training-reset"
+                  {...bind["training-reset"]}
+                >
+                  {"CLEAR"}
+                </button>
+              </div>
+            </header>
+            <div id="training-history">{content["training-history"]}</div>
+          </section>
+          <p className="training-privacy">
+            {"Runs stay in this browser's local storage. Export and import are manual; nothing is uploaded."}
+          </p>
+        </main>
+        <main
           id="loadout-tab"
           className="tab-content hidden"
           {...bind["loadout-tab"]}
@@ -290,29 +381,7 @@ export function Layout({ bind, content }) {
                   "\n              Auto-sprint is always on. Chain slides and jumps to stay\n              unpredictable. Equip Fists or Bow for a second jump in midair. Use\n              ramps to launch uphill slide jumps. Air movement steers in any\n              direction, including backwards.\n            "
                 }
               </p>
-              <dl>
-                <dt>
-                  <kbd>{"W"}</kbd>
-                  <kbd>{"A"}</kbd>
-                  <kbd>{"S"}</kbd>
-                  <kbd>{"D"}</kbd>
-                </dt>
-                <dd>{"Move"}</dd>
-                <dt>
-                  <kbd>{"SPACE"}</kbd>
-                </dt>
-                <dd>{"Jump / double jump with Fists or Bow"}</dd>
-                <dt>
-                  <kbd>{"C"}</kbd>
-                  {" or "}
-                  <kbd>{"CTRL"}</kbd>
-                </dt>
-                <dd>{"Slide while moving; jump to cancel"}</dd>
-                <dt>
-                  <kbd>{"SHIFT"}</kbd>
-                </dt>
-                <dd>{"Slide (same as C); jump to cancel"}</dd>
-              </dl>
+              <dl>{content["guide-movement-controls"]}</dl>
             </section>
             <section>
               <span className="section-number">{"02 / COMBAT"}</span>
@@ -322,43 +391,7 @@ export function Layout({ bind, content }) {
                   "\n              Aim for the head. Use cover when reloading. Your secondary is\n              faster than waiting for a fresh magazine.\n            "
                 }
               </p>
-              <dl>
-                <dt>
-                  <kbd>{"LMB"}</kbd>
-                  {" / "}
-                  <kbd>{"RMB"}</kbd>
-                </dt>
-                <dd>{"Fire / aim or melee ability"}</dd>
-                <dt>
-                  <kbd>{"F"}</kbd>
-                </dt>
-                <dd>{"Quick melee ability / Knife stab"}</dd>
-                <dt>
-                  <kbd>{"G"}</kbd>
-                </dt>
-                <dd>
-                  {"Quick utility / quick Medkit heal — keeps your weapon"}
-                </dd>
-                <dt>
-                  <kbd>{"1"}</kbd>
-                  <kbd>{"2"}</kbd>
-                  <kbd>{"3"}</kbd>
-                  <kbd>{"4"}</kbd>
-                </dt>
-                <dd>{"Equip a loadout slot"}</dd>
-                <dt>
-                  <kbd>{"R"}</kbd>
-                </dt>
-                <dd>{"Reload"}</dd>
-                <dt>
-                  <kbd>{"T"}</kbd>
-                </dt>
-                <dd>{"Inspect weapon"}</dd>
-                <dt>
-                  <kbd>{"ESC"}</kbd>
-                </dt>
-                <dd>{"Pause / release mouse"}</dd>
-              </dl>
+              <dl>{content["guide-combat-controls"]}</dl>
             </section>
             <section>
               <span className="section-number">{"03 / THE DUEL"}</span>
@@ -551,6 +584,59 @@ export function Layout({ bind, content }) {
           </button>
         </div>
       </div>
+      <div
+        id="drill-results"
+        className="overlay hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="drill-result-title"
+        {...bind["drill-results"]}
+      >
+        <div className="modal drill-result-modal">
+          <span className="eyebrow" id="drill-result-eyebrow">
+            {content["drill-result-eyebrow"]}
+          </span>
+          <h2 id="drill-result-title">{content["drill-result-title"]}</h2>
+          <div className="drill-result-score">
+            <strong id="drill-result-score">{content["drill-result-score"]}</strong>
+            <span id="drill-result-score-label">
+              {content["drill-result-score-label"]}
+            </span>
+          </div>
+          <p className="drill-result-best" id="drill-result-best">
+            {content["drill-result-best"]}
+          </p>
+          <div className="drill-result-metrics" id="drill-result-metrics">
+            {content["drill-result-metrics"]}
+          </div>
+          <section className="drill-weapon-breakdown" aria-labelledby="drill-weapon-title">
+            <h3 id="drill-weapon-title">WEAPON BREAKDOWN</h3>
+            <div id="drill-result-analytics">
+              {content["drill-result-analytics"]}
+            </div>
+            <p>
+              Hit events count each shot/attack once when it deals contact. Pellet contacts, splash hits, and ongoing area ticks stay separate; range is in original trainer units.
+            </p>
+          </section>
+          <p className="drill-result-coaching" id="drill-result-coaching">
+            {content["drill-result-coaching"]}
+          </p>
+          <button
+            className="solid-button"
+            id="drill-again"
+            {...bind["drill-again"]}
+          >
+            {"RUN IT BACK ↗"}
+          </button>
+          <button
+            className="outline-button"
+            id="drill-lobby"
+            {...bind["drill-lobby"]}
+          >
+            {"BACK TO TRAINING"}
+          </button>
+        </div>
+      </div>
       <div id="settings" className="overlay hidden" {...bind["settings"]}>
         <div className="modal settings-modal">
           <div className="modal-heading">
@@ -633,6 +719,18 @@ export function Layout({ bind, content }) {
               {...bind["performance-mode"]}
             />
           </label>
+          <section className="control-settings" aria-labelledby="control-settings-title">
+            <div className="control-settings-heading">
+              <h3 id="control-settings-title">KEY BINDINGS</h3>
+              <button className="text-button" id="controls-reset" type="button" {...bind["controls-reset"]}>
+                RESET
+              </button>
+            </div>
+            <div id="control-bindings">{content["control-bindings"]}</div>
+            <p id="control-rebind-status" role="status" aria-live="polite">
+              {content["control-rebind-status"]}
+            </p>
+          </section>
           <div className="settings-note">
             {
               "\n          Settings are saved on this device. Headphones recommended.\n        "
@@ -647,7 +745,7 @@ export function Layout({ bind, content }) {
           </button>
         </div>
       </div>
-      <div id="toast" className="hidden" {...bind["toast"]}>
+      <div id="toast" className="hidden" role="status" aria-live="polite" {...bind["toast"]}>
         {content["toast"]}
       </div>{" "}
       <div id="startup-status" role="status" {...bind["startup-status"]}>

@@ -1,8 +1,28 @@
 import { smokeImmersion } from "./smoke-fx.js";
 import { BOW_DRAW_TIME } from "./combat-rules.js";
 import { createStore } from "./ui-store.js";
+import {
+  CONTROL_DEFINITIONS,
+  DEFAULT_CONTROLS,
+  rebindControl,
+  sanitizeControls,
+} from "./controls.js";
 import { loadEnvironment } from "./environment.js";
 import { DEFAULT_SETTINGS, WEAPONS, MAPS, loadSaved, save } from "./data.js";
+import {
+  addTrainingRun,
+  createDrillResult,
+  createTrainingExport,
+  findPersonalBest,
+  formatDrillTime,
+  getDrillMetric,
+  getDrillScore,
+  getTrainingDrill,
+  mergeTrainingHistory,
+  parseTrainingImport,
+  sanitizeTrainingHistory,
+  TRAINING_IMPORT_MAX_BYTES,
+} from "./training.js";
 import {
   DamageCompass,
   HitConfirmation,
@@ -19,11 +39,18 @@ for (const [key, min, max] of [
     settings[key] = Math.max(min, Math.min(max, saved[key]));
 for (const key of ["showFps", "shake", "dynamicFov", "performance"])
   if (typeof saved[key] === "boolean") settings[key] = saved[key];
-const stored = loadSaved("rivals-loadout", []);
+const stored = loadSaved("rivals-loadout", []),
+  controls = sanitizeControls(loadSaved("rivals-controls", {}));
+const trainingHistory = sanitizeTrainingHistory(
+  loadSaved("rivals-training-history", []),
+);
 export const ui = createStore({
   ready: false,
   error: "",
   tab: "play",
+  loadoutReturnTab: "play",
+  trainingHistory,
+  drillResult: null,
   mode: 1,
   difficulty: "regular",
   mapIndex: 0,
@@ -32,6 +59,8 @@ export const ui = createStore({
     WEAPONS[stored[i]]?.slot === i ? stored[i] : id,
   ),
   settings,
+  controls,
+  rebinding: null,
   screen: "lobby",
   paused: false,
   settingsOpen: false,
@@ -131,6 +160,25 @@ function snapshot(g, force = false) {
   const scoped = g.aiming && g.loadout[g.slot] === "sniper",
     dt = Math.max(0, g.clock - feedbackClock);
   feedbackClock = g.clock;
+  const drill = g.activeDrill
+    ? {
+        id: g.activeDrill.id,
+        title: g.activeDrill.title,
+        duration: g.activeDrill.duration,
+        elapsed: Math.min(g.activeDrill.duration, g.drillElapsed || 0),
+        remaining: Math.max(
+          0,
+          g.activeDrill.duration - (g.drillElapsed || 0),
+        ),
+        score: getDrillScore(g.activeDrill.id, g.matchStats),
+        scoreLabel: g.activeDrill.scoreLabel,
+        secondaryScore: getDrillMetric(
+          g.activeDrill.secondaryStat,
+          g.matchStats,
+        ),
+        secondaryLabel: g.activeDrill.secondaryLabel,
+      }
+    : null;
   const action =
     g.pendingThrow || g.throwTime > 0
       ? "THROWING " + utility.name.toUpperCase()
@@ -190,9 +238,11 @@ function snapshot(g, force = false) {
                 : w.slot === 3
                   ? "LMB TO THROW"
                   : "R TO RELOAD",
-    timer: g.range
-      ? "∞"
-      : `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`,
+    timer: drill
+      ? formatDrillTime(Math.ceil(drill.remaining))
+      : g.range
+        ? "∞"
+        : `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`,
     bowDraw:
       w.type === "bow" ? Math.min(1, (g.bowCharge || 0) / BOW_DRAW_TIME) : null,
     scoped,
@@ -256,6 +306,7 @@ function snapshot(g, force = false) {
       healing: utility.type === "heal",
     },
     stats: { ...g.matchStats },
+    drill,
     range: g.range,
     map: g.range
       ? "PRACTICE RANGE"
@@ -283,16 +334,43 @@ export const events = {
       paused: false,
       settingsOpen: false,
       result: null,
+      drillResult: null,
     });
     hud.set({ flash: 0, paint: 0 });
   },
   round(n, score, range) {
     if (game?.network) ui.set({ setup: null });
     hud.set({
-      round: range ? "PRACTICE" : "ROUND " + n,
+      round: range
+        ? game?.activeDrill
+          ? "DRILL"
+          : "PRACTICE"
+        : "ROUND " + n,
       score: [...score],
       range,
     });
+  },
+  drillComplete(g) {
+    const run = createDrillResult(
+      g.activeDrill?.id,
+      g.matchStats,
+      g.loadout,
+      new Date(),
+      { analytics: g.trainingAnalytics },
+    );
+    if (!run) return;
+    const previous = findPersonalBest(
+        ui.get().trainingHistory,
+        run.drillId,
+        run.loadout,
+      ),
+      history = addTrainingRun(ui.get().trainingHistory, run);
+    run.personalBest = !previous || run.score > previous.score;
+    run.previousBest = previous?.score ?? null;
+    run.map = g.config.map;
+    save("rivals-training-history", history);
+    ui.set({ trainingHistory: history, drillResult: run });
+    snapshot(g, true);
   },
   update: (g) => snapshot(g, true),
   tick: (g) => snapshot(g),
@@ -325,6 +403,7 @@ export const events = {
       paused: false,
       settingsOpen: false,
       setup: null,
+      drillResult: null,
     });
     hud.set({
       flash: 0,
@@ -333,6 +412,8 @@ export const events = {
       arcs: [],
       scoped: false,
       numbers: [],
+      drill: null,
+      range: false,
     });
   },
   hit,
@@ -403,7 +484,7 @@ async function initializeGame(canvas) {
         : loadEnvironment(),
     ]);
     events.environmentData = environmentData;
-    game = new Game(canvas, ui.get().settings, events);
+    game = new Game(canvas, ui.get().settings, events, ui.get().controls);
     await game.prepare();
     window.__arena = game;
     performance.mark("arena-ready");
@@ -420,7 +501,19 @@ async function initializeGame(canvas) {
   }
 }
 export const actions = {
-  tab: (tab) => ui.set({ tab }),
+  tab(tab) {
+    const current = ui.get().tab;
+    ui.set({
+      tab,
+      ...(tab === "loadout"
+        ? { loadoutReturnTab: current === "training" ? "training" : "play" }
+        : {}),
+    });
+  },
+  doneLoadout() {
+    const returnTab = ui.get().loadoutReturnTab;
+    ui.set({ tab: returnTab === "training" ? "training" : "play" });
+  },
   map() {
     const mapIndex = (ui.get().mapIndex + 1) % MAPS.length;
     ui.set({ mapIndex });
@@ -482,6 +575,116 @@ export const actions = {
       loadout: [...s.loadout],
     });
   },
+  startDrill(id, loadout, map) {
+    const s = ui.get(),
+      drill = getTrainingDrill(id);
+    if (!game || !drill) return;
+    if (!("requestPointerLock" in game.canvas))
+      return toast("Training drills require a desktop mouse and keyboard.");
+    game.start({
+      map: map || MAPS[s.mapIndex].id,
+      mode: s.mode,
+      difficulty: s.difficulty,
+      range: true,
+      drill: drill.id,
+      loadout: [...(loadout || s.loadout)],
+    });
+  },
+  leaveTraining() {
+    game?.quit();
+    ui.set({ tab: "training" });
+  },
+  clearTrainingHistory() {
+    save("rivals-training-history", []);
+    ui.set({ trainingHistory: [] });
+  },
+  exportTrainingHistory() {
+    const payload = createTrainingExport(ui.get().trainingHistory);
+    if (!payload.runs.length) return toast("Complete a drill before exporting records.");
+    try {
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {
+          type: "application/json",
+        }),
+        url = URL.createObjectURL(blob),
+        link = document.createElement("a");
+      link.href = url;
+      link.download = `rivals-training-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+      return true;
+    } catch {
+      toast("Your browser could not create the training export file.");
+      return false;
+    }
+  },
+  async importTrainingHistory(input) {
+    let contents = input;
+    if (input && typeof input.text === "function" && Number.isFinite(input.size)) {
+      if (input.size > TRAINING_IMPORT_MAX_BYTES) {
+        const tooLarge = {
+          ok: false,
+          error: "That file is too large to import (1 MB maximum).",
+        };
+        toast(tooLarge.error);
+        return tooLarge;
+      }
+      try {
+        contents = await input.text();
+      } catch {
+        const unreadable = { ok: false, error: "The selected training file could not be read." };
+        toast(unreadable.error);
+        return unreadable;
+      }
+    }
+    const imported = parseTrainingImport(contents);
+    if (!imported.ok) {
+      toast(imported.error);
+      return imported;
+    }
+    const current = ui.get().trainingHistory,
+      existing = new Set(current.map((run) => run.id)),
+      merged = mergeTrainingHistory(current, imported.runs),
+      retainedNew = merged.filter((run) => !existing.has(run.id)).length;
+    save("rivals-training-history", merged);
+    ui.set({ trainingHistory: merged });
+    if (retainedNew > 0)
+      toast(
+        `Imported ${retainedNew} new run${retainedNew === 1 ? "" : "s"}${
+          imported.dropped ? ` · skipped ${imported.dropped} invalid/older or over-cap` : ""
+        }.`,
+      );
+    else toast("No new runs imported. Duplicate records were skipped.");
+    return { ...imported, added: retainedNew };
+  },
+  beginRebind(action) {
+    if (!CONTROL_DEFINITIONS.some(([id]) => id === action)) return;
+    ui.set({ rebinding: action });
+  },
+  cancelRebind() {
+    ui.set({ rebinding: null });
+  },
+  rebind(action, code) {
+    const result = rebindControl(ui.get().controls, action, code);
+    if (!result.ok) {
+      ui.set({ rebinding: null });
+      toast(result.error);
+      return result;
+    }
+    ui.set({ controls: result.controls, rebinding: null });
+    save("rivals-controls", result.controls);
+    game?.setControls(result.controls);
+    if (result.swapped) toast("That key was already used; the two controls were swapped.");
+    return result;
+  },
+  resetControls() {
+    const controls = sanitizeControls(DEFAULT_CONTROLS);
+    ui.set({ controls, rebinding: null });
+    save("rivals-controls", controls);
+    game?.setControls(controls);
+    toast("Controls restored to defaults.");
+  },
   setting(key, value) {
     const settings = { ...ui.get().settings, [key]: value };
     ui.set({ settings });
@@ -489,10 +692,19 @@ export const actions = {
     game?.setSettings(settings);
   },
   settings(paused = false) {
-    ui.set({ settingsOpen: true, settingsFromPause: paused, paused: false });
+    ui.set({
+      settingsOpen: true,
+      settingsFromPause: paused,
+      paused: false,
+      rebinding: null,
+    });
   },
   closeSettings() {
-    ui.set({ settingsOpen: false, paused: !!ui.get().settingsFromPause });
+    ui.set({
+      settingsOpen: false,
+      paused: !!ui.get().settingsFromPause,
+      rebinding: null,
+    });
   },
 };
 

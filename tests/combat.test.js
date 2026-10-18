@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import * as THREE from "three";
 import { Game } from "../src/game.js";
 import { WEAPONS } from "../src/data.js";
+import { createTrainingAnalytics, getTrainingAnalyticsRows } from "../src/training-analytics.js";
 const v = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const entity = (team, x = 0, z = 0) => ({
   team,
@@ -123,4 +124,85 @@ test("shotgun damage falls off over distance", () => {
   g.entities = [p, e];
   g.bullet(p, v(0, 1, 25), v(0, 0, -1), WEAPONS.shotgun);
   assert.ok(e.health > 95);
+});
+
+test("training analytics count a shotgun fire event once and keep pellet/head contacts separate", () => {
+  const g = harness(),
+    p = { ...entity(0, 0, 4), isPlayer: true, vx: 2, vz: 0 },
+    target = entity(1);
+  g.player = p;
+  g.entities = [p, target];
+  g.aiming = true;
+  g.activeDrill = { id: "tracking" };
+  g.trainingAnalytics = createTrainingAnalytics([
+    "shotgun",
+    "pistol",
+    "knife",
+    "grenade",
+  ]);
+  const action = g.recordTrainingAction("shotgun");
+  for (let pellet = 0; pellet < WEAPONS.shotgun.pellets; pellet++)
+    g.bullet(p, v(0, 1.66, 4), v(0, 0, -1), WEAPONS.shotgun, false, "shotgun", action);
+
+  const [shotgun] = getTrainingAnalyticsRows(g.trainingAnalytics);
+  assert.equal(shotgun.actions, 1);
+  assert.equal(shotgun.hitActions, 1);
+  assert.equal(shotgun.headHitActions, 1);
+  assert.equal(shotgun.aimedActions, 1);
+  assert.equal(shotgun.movingActions, 1);
+  assert.equal(shotgun.directContacts, WEAPONS.shotgun.pellets);
+  assert.equal(shotgun.headContacts, WEAPONS.shotgun.pellets);
+  assert.ok(shotgun.averageDistance > 3.5 && shotgun.averageDistance < 4);
+  assert.equal("accuracy" in shotgun, false);
+});
+
+test("a real player rifle action populates local drill analytics without altering match shot semantics", () => {
+  const g = harness(),
+    p = { ...entity(0, 0, 4), isPlayer: true, vx: 0, vz: 1 },
+    target = entity(1);
+  Object.assign(g, {
+    player: p,
+    entities: [p, target],
+    loadout: ["rifle", "pistol", "knife", "grenade"],
+    slot: 0,
+    ammunition: [
+      { mag: 20, reserve: 100 },
+      { mag: 12, reserve: 60 },
+      { mag: Infinity, reserve: Infinity },
+      { mag: 1, reserve: 0 },
+    ],
+    yaw: 0,
+    pitch: 0,
+    aiming: true,
+    crouched: false,
+    cooldown: 0,
+    reloadTime: 0,
+    deflectTime: 0,
+    quickMeleeTime: 0,
+    quickUtilityTime: 0,
+    healTime: 0,
+    pendingThrow: null,
+    clock: 0,
+    kick: 0,
+    flash: 0,
+    activeDrill: { id: "tracking" },
+    trainingAnalytics: createTrainingAnalytics([
+      "rifle",
+      "pistol",
+      "knife",
+      "grenade",
+    ]),
+  });
+  assert.equal(g.firePlayer(), true);
+  const [rifle] = getTrainingAnalyticsRows(g.trainingAnalytics);
+  assert.equal(g.matchStats.shots, 1);
+  assert.equal(g.matchStats.hits, 1);
+  assert.equal(g.matchStats.headshots, 1);
+  assert.equal(rifle.actions, 1);
+  assert.equal(rifle.hitActions, 1);
+  assert.equal(rifle.headHitActions, 1);
+  assert.equal(rifle.aimedActions, 1);
+  assert.equal(rifle.movingActions, 1);
+  assert.equal(rifle.directContacts, 1);
+  assert.equal(rifle.headContacts, 1);
 });
