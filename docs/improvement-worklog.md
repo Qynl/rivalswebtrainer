@@ -5,8 +5,8 @@ This log records actual wall-clock timestamps from the sandbox. It is not a clai
 ## Session
 
 - **Start:** 2026-10-18 09:00:34 CEST (2026-10-18 07:00:34 UTC; Unix 1792306834)
-- **End:** in progress
-- **Elapsed:** in progress
+- **End:** 2026-10-18 15:00:41 CEST (2026-10-18 13:00:41 UTC; Unix 1792328441)
+- **Elapsed:** 6 h 00 min 07 sec from the recorded start; the six-hour target was reached.
 - **Branch:** `arena/7de7ab5b-rivalswebtrainer`
 
 ## Scope for this cycle
@@ -17,6 +17,8 @@ Continue past the first three-drill slice. Priority is to make practice feedback
 2. Add transparent per-weapon fire-action/contact diagnostics, with explicit categories for direct hits, head contacts, splash and ongoing area effects. Do not imply raw pellet/tick contacts are normalized aim accuracy.
 3. Let players export/import their local training history safely, with strict schema validation, a bounded payload, duplicate-aware merge and a reset path.
 4. Add end-to-end tests for metrics, persistence, export/import, offline operation, and regressions in normal match behavior.
+5. Add locally configurable, schema-versioned keyboard bindings and a no-pressure Guide path while preserving default inputs and the existing multiplayer protocol.
+6. Snapshot ADS/movement at valid action creation and add a movement-focused drill scored on unique linked actions with a target contact.
 
 The implementation may be adjusted if repository behavior or test evidence shows that a broader claim would be misleading.
 
@@ -39,4 +41,8 @@ The implementation may be adjusted if repository behavior or test evidence shows
 - **14:13 CEST:** a second, ten-minute endurance soak passed **23 batches / 107,640 simulation frames**, rendering the full 26-weapon roster without errors. Geometries stayed at 391–392, textures at 20, programs at 50–51, decals capped at 128, and observed JS heap ranged about 47–80 MB. The six-hour target remained pending (about **5 h 13 min** elapsed).
 - **14:34 CEST:** extended the soak to 20 minutes: **44 batches / 205,920 simulation frames**, again with no browser, console, WebGL, or entity-state errors. GPU resource counts and decal bounds stayed stable; JS heap remained within the same approximate 46–83 MB range. Total tracked time was **5 h 34 min**, so the six-hour target was not yet reached.
 - **14:35 CEST:** added an explicit no-drill Rifle regression to prove training attribution cannot change ordinary hit/ammo behavior. Final unit suite passed **377/377**, production build passed, `git diff --check` is clean, and the complete browser suite remains green at **42/42** (with the newest result-breakdown assertion separately passing). Elapsed was **5 h 35 min**.
-- **14:36 CEST:** extended the production/offline browser test to complete the new move-and-connect drill while disconnected and verify its local score/history. The offline test passed 1/1; the six-hour target remains pending and work is still in progress.
+- **14:36 CEST:** extended the production/offline browser test to complete the new move-and-connect drill while disconnected and verify its local score/history. The offline test passed 1/1. Commit `7ed1f06` (`Verify offline drills and ordinary rifle fire`) was pushed to the required branch.
+- **14:39 CEST:** reran the six affected Chromium cases together—controls, Guide, offline production flow, history/export, distinct drill layouts, and move-and-connect scoring—and all **6/6 passed**. Elapsed from 09:00:34 was **5 h 39 min**.
+- **14:55 CEST:** a further 15-minute roster soak passed **32 batches / 149,760 simulation frames**, bringing cumulative scripted soak time to **52 minutes** across five runs. No console/runtime/WebGL errors occurred; resource pools and the 128-decal ceiling remained stable. Elapsed was **5 h 54 min**; the six-hour target remained pending.
+- **14:58 CEST:** final arena and bot audits reported no rendering errors; static geometry remained reduced from 96 objects to 9 batches and GPU resources stayed bounded. A second final visual audit also reported no errors. The measured six-hour mark was still a couple of minutes away.
+- **15:00 CEST:** recorded end sample at 15:00:41 (Unix 1792328441), **6 h 00 min 07 sec** after the 09:00:34 start. Final checks: **377/377 unit tests**, production build, full browser suite **42/42**, latest focused browser runs (offline/movement drill **1/1**, affected integration **6/6**, controls/Guide **2/2**), five cumulative soak runs totaling **52 minutes**, and zero-error visual/bot/arena audits. The cycle meets the six-hour target. Latest implementation commit `7ed1f06` is pushed to the required branch; this final time-log update is being committed/pushed now.
