@@ -1,3 +1,4 @@
+import { abilityTargetCue } from "./gloves/ability-targets.js";
 import {
   gloveStatusReadout,
   gloveAbilityReadout,
@@ -182,10 +183,12 @@ function snapshot(g, force = false) {
     abilityReadout = gloveAbilityReadout(p, w, g.state);
   if (g.clock >= (g.gloveReachAt ?? -1) || force) {
     g.gloveReach = gloveReachCue(g);
+    g.gloveAbilityTarget = abilityTargetCue(g);
     g.gloveReachAt = g.clock + 0.08;
   }
   hud.set({
     gloveReach: g.gloveReach,
+    gloveAbilityTarget: g.gloveAbilityTarget,
     gloveNotice: g.gloveNotice?.until > g.clock ? g.gloveNotice.text : null,
     gloveAbilityLabel: abilityReadout.label,
     gloveAbilityProgress: abilityReadout.progress,

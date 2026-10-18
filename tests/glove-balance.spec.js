@@ -283,3 +283,229 @@ test("after a genuine knockdown the player can actually jump during get-up prote
   expect(retry.grace).toBeGreaterThan(0.2);
   expect(errors).toEqual([]);
 });
+
+test("big pass: native WASD plus E rolls in the requested direction, and Space E-end really restores gravity without a cooldown refund", async ({
+  page,
+}) => {
+  const errors = await ready(page),
+    motions = [];
+  for (const keys of [["KeyD"], ["KeyS"], ["KeyW", "KeyD"]]) {
+    await arrange(page, "glove_acrobat", "stationary", "glove_default", {
+      z: -12,
+    });
+    for (const key of keys) await page.keyboard.down(key);
+    await page.keyboard.press("KeyE");
+    for (const key of keys) await page.keyboard.up(key);
+    const initial = await page.evaluate(() => ({
+      x: window.__arena.player.vx,
+      z: window.__arena.player.vz,
+      yaw: window.__arena.yaw,
+      pitch: window.__arena.pitch,
+    }));
+    await step(page, 12);
+    motions.push({
+      initial,
+      position: await page.evaluate(() => ({
+        x: window.__arena.player.x,
+        z: window.__arena.player.z,
+      })),
+    });
+  }
+  expect(motions[0].initial.x).toBe(18);
+  expect(motions[0].position.x).toBeGreaterThan(1);
+  expect(motions[1].initial.z).toBe(18);
+  expect(motions[1].position.z).toBeGreaterThan(1);
+  expect(Math.hypot(motions[2].initial.x, motions[2].initial.z)).toBeCloseTo(
+    18,
+  );
+  expect(motions[2].position.x).toBeGreaterThan(0.7);
+  expect(motions[2].position.z).toBeLessThan(-0.7);
+  expect(
+    motions.every((m) => m.initial.yaw === 0 && m.initial.pitch === 0),
+  ).toBe(true);
+  await arrange(page, "glove_space", "stationary", "glove_default", { z: -12 });
+  await page.keyboard.press("KeyE");
+  await expect(page.locator(".slap-ability > span")).toHaveText("REARM");
+  await step(page, 45);
+  await expect(page.locator(".slap-ability > span")).toHaveText("END");
+  const vy = await page.evaluate(() => window.__arena.player.vy);
+  await page.keyboard.press("KeyE");
+  const exit = await page.evaluate(() => ({
+    remaining: window.__arena.player.spaceTime,
+    vy: window.__arena.player.vy,
+    cd: window.__arena.player.abilityCooldown,
+  }));
+  expect(exit.remaining).toBe(0);
+  expect(exit.vy).toBe(vy);
+  expect(exit.cd).toBeGreaterThan(12);
+  await step(page, 40);
+  expect(await page.evaluate(() => window.__arena.player.vy)).toBeLessThan(-1);
+  await expect(page.locator(".slap-status")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+test("big pass: actual target cue matches Magnet/Swapper authority, never locks Ghost or protection, and aerial swaps cannot grant a phantom grounded jump", async ({
+  page,
+}) => {
+  const errors = await ready(page);
+  await arrange(page, "glove_magnet", "stationary", "glove_default", { z: -6 });
+  await step(page, 1);
+  await expect(page.getByLabel("Ability target")).toContainText("RUSH TARGET");
+  await page.evaluate(() => {
+    window.__arena.entities[1].ghostTime = 4;
+    window.__arena.events.update(window.__arena);
+  });
+  await expect(page.getByLabel("Ability target")).toHaveCount(0);
+  await page.keyboard.press("KeyE");
+  expect(
+    await page.evaluate(() => window.__arena.player.abilityCooldown || 0),
+  ).toBe(0);
+  await page.evaluate(() => {
+    window.__arena.entities[1].ghostTime = 0;
+    window.__arena.events.update(window.__arena);
+  });
+  await expect(page.getByLabel("Ability target")).toBeVisible();
+  await page.keyboard.press("KeyE");
+  expect(await page.evaluate(() => window.__arena.player.vz)).toBe(-22);
+  await expect(page.getByLabel("Ability target")).toHaveCount(0);
+  expect(await page.evaluate(() => window.__arena.entities[1].health)).toBe(
+    150,
+  );
+  await arrange(page, "glove_swapper", "stationary", "glove_default", {
+    z: -4,
+    y: 3,
+    grounded: false,
+  });
+  await page.evaluate(() => {
+    const g = window.__arena;
+    g.pitch = Math.atan2(3, 4);
+  });
+  await step(page, 1);
+  await expect(page.getByLabel("Ability target")).toContainText("SWAP TARGET");
+  await page.keyboard.press("KeyE");
+  const swap = await page.evaluate(() => ({
+    y: window.__arena.player.y,
+    grounded: window.__arena.player.grounded,
+    jumps: window.__arena.player.jumps,
+    coyote: window.__arena.coyoteTime,
+    targetY: window.__arena.entities[1].y,
+  }));
+  expect(swap.y).toBeGreaterThan(2.9);
+  expect(swap).toMatchObject({
+    grounded: false,
+    jumps: 1,
+    coyote: 0,
+    targetY: 0,
+  });
+  await page.keyboard.press("Space");
+  expect(await page.evaluate(() => window.__arena.player.vy)).toBe(0);
+  expect(errors).toEqual([]);
+});
+test("big pass: real opponents jump the visible EMP and sidestep the Erasure lane, with distinct GPU-rendered charge/release poses and no fabricated force or rewards", async ({
+  page,
+}) => {
+  const errors = await ready(page),
+    results = [];
+  for (const key of ["stun", "za_hando"]) {
+    await arrange(page, "glove_" + key, "sparring", "glove_default", {
+      z: key === "stun" ? -4 : -5,
+      seed: 0,
+      strafe: 1,
+    });
+    await page.evaluate(() => {
+      window.__arena.config.difficulty = "regular";
+    });
+    await page.keyboard.press("KeyE");
+    expect(
+      await page.evaluate(() => window.__arena.player.gloveCastPhase),
+    ).toBe("windup");
+    if (key === "za_hando") await page.keyboard.down("KeyD");
+    await step(page, 14);
+    const early = await page.evaluate(() => ({
+      x: window.__arena.player.x,
+      yaw: window.__arena.yaw,
+      pitch: window.__arena.pitch,
+    }));
+    if (key === "za_hando") expect(early.x).toBe(0);
+    await step(page, 53);
+    if (key === "za_hando") await page.keyboard.up("KeyD");
+    results.push(
+      await page.evaluate(() => {
+        const g = window.__arena,
+          e = g.entities[1];
+        return {
+          phase: g.player.gloveCastPhase,
+          x: e.x,
+          y: e.y,
+          rag: e.ragdollTime || 0,
+          hp: e.health,
+          hits: g.matchStats.hits,
+          ownHP: g.player.health,
+        };
+      }),
+    );
+  }
+  expect(results[0].y).toBeGreaterThan(0.5);
+  expect(Math.abs(results[1].x)).toBeGreaterThan(1.68);
+  for (const result of results)
+    expect(result).toMatchObject({
+      phase: "release",
+      rag: 0,
+      hp: 150,
+      hits: 0,
+      ownHP: 150,
+    });
+  expect(errors).toEqual([]);
+});
+test("big pass: all 24 earned gloves expose readable play/counterplay and real launch/tell/cooldown facts in a compact keyboard-accessible field guide", async ({
+  page,
+}) => {
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await page.waitForFunction(() => window.__arena?.state === "lobby");
+  await page.evaluate(() => {
+    window.__arena.frame = () => {};
+  });
+  await page.getByRole("button", { name: /^Gloves\s+24$/ }).click();
+  await expect(page.locator(".slap-glove-grid>button")).toHaveCount(24);
+  for (const name of [
+    "Default",
+    "Extended",
+    "Acrobat",
+    "Dice",
+    "Space",
+    "Swapper",
+    "Reverse",
+  ]) {
+    await page
+      .getByRole("button", {
+        name: name + " glove" + (name === "Default" ? "" : " locked"),
+        exact: true,
+      })
+      .click();
+    await page.locator(".slap-field-guide summary").focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".slap-field-guide")).toHaveAttribute("open", "");
+    await expect(page.locator(".slap-field-guide dd")).toHaveCount(2);
+    await expect(page.locator(".slap-guide-numbers")).toContainText(
+      "CONTACT TELL",
+    );
+    if (name === "Dice") {
+      await expect(page.locator(".slap-glove-stats")).toContainText("16–36");
+      await expect(page.locator(".slap-guide-numbers")).toContainText(
+        "10.1–25.6",
+      );
+    }
+    expect(
+      await page.locator(".slap-field-guide dd").allTextContents(),
+    ).toEqual(expect.arrayContaining([expect.stringMatching(/.{30}/)]));
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await expect(page.locator(".slap-test-drive")).toBeVisible();
+  expect(errors).toEqual([]);
+});

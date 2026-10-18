@@ -22,6 +22,7 @@ export function inErasureLane(dx, dz, yaw, radius = 0.28) {
 }
 export const STONE_DURATION = 4;
 export const STONE_REARM = 0.35;
+export const SPACE_REARM = 0.35;
 export const BRICK_LIFETIME = 18;
 export const GHOST_DURATION = 4.5;
 export const CHILL_MOVE_SCALE = 0.65;

@@ -278,7 +278,7 @@ export function animateGlove(model, state) {
       ? Math.min(rawAge, glove.windup + 0.008)
       : rawAge;
   const p = gloveMotion(glove.key, age, glove.windup, state.gloveSequence ?? 1),
-    cast = abilityPose(glove.key, state.gloveCastAge);
+    cast = abilityPose(glove.key, state.gloveCastAge, state.gloveCastPhase);
   animateDicePanel(
     rig.dicePanel,
     state.gloveDiceRoll,

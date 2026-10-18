@@ -228,6 +228,16 @@ export class GloveFX {
         for (const s of pool.states)
           if (s.castOwner === event.player && s.castOwner != null) s.life = 0;
     if (event.phase === "cancel") return;
+    if (event.phase === "exit") {
+      p.y -= 0.52;
+      this.emit(this.rings, p, color, {
+        ground: true,
+        start: 0.9,
+        end: 0.1,
+        life: 0.25,
+      });
+      return;
+    }
     if (key === "za_hando") {
       p.y -= 0.52;
       this.erasureLane(
@@ -401,6 +411,8 @@ export function gloveActor(g, id) {
 export function presentGloveAbility(g, event) {
   if (!g.scene?.add || g.headless) return;
   g.gloveFX ||= new GloveFX(g.scene, (id) => gloveActor(g, id));
+  // An earlier contact may have created the pool before any ability was used.
+  g.gloveFX.actorLookup ||= (id) => gloveActor(g, id);
   g.gloveFX.ability(event);
   const source = gloveActor(g, event.player);
   if (source && source === g.player) {
@@ -415,7 +427,7 @@ export function presentGloveAbility(g, event) {
       za_hando: `ERASURE · ${event.affected || 0} PULLED`,
       magnet: "TARGET LOCK · RUSHING",
       anchor: "DOCK PLACED",
-      space: "ZERO-G LIFTOFF",
+      space: event.phase === "exit" ? "ZERO-G ENDED" : "ZERO-G LIFTOFF",
       golden: "POWERUP",
       reverse: "REFLECTION ACTIVE",
       acrobat: "DODGE ROLL",
@@ -436,7 +448,8 @@ export function presentGloveAbility(g, event) {
     const target = gloveActor(g, event.target);
     g.gloveFX.link(source, target, GLOVES[event.glove].color, 0.55);
   }
-  if (source && event.phase !== "cancel") {
+  if (source) {
+    source.gloveCastPhase = event.phase || "activate";
     source.gloveCastTime = g.clock;
     source.gloveCastId = event.glove;
   }

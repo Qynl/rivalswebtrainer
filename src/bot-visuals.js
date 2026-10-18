@@ -302,9 +302,14 @@ function updateGloveWeapon(model, e, clock) {
       e.slapSequence || 1,
     ),
     glove = socket.userData.weapon,
-    cast = abilityPose(GLOVES[id].key, clock - (e.gloveCastTime ?? -10));
+    cast = abilityPose(
+      GLOVES[id].key,
+      clock - (e.gloveCastTime ?? -10),
+      e.gloveCastPhase,
+    );
   animateGlove(glove, {
     gloveCastAge: clock - (e.gloveCastTime ?? -10),
+    gloveCastPhase: e.gloveCastPhase,
     gloveDiceRoll: e.diceRoll || 0,
     gloveDiceAge: clock - (e.diceRollAt ?? -10),
     gloveSwingAge: age,

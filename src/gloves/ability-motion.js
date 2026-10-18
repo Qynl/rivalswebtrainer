@@ -1,3 +1,4 @@
+import { ABILITY_CASTS } from "./balance.js";
 // Presentation-only poses. No timing, velocity, camera or damage is modified.
 // Vectors: local translation, wrist Euler, finger curl delta, torso lean.
 export const ABILITY_GESTURES = Object.freeze(
@@ -21,14 +22,51 @@ export const ABILITY_GESTURES = Object.freeze(
     }).map(([k, v]) => [k, Object.freeze(v)]),
   ),
 );
-export function abilityPose(key, age = 10) {
-  const v = ABILITY_GESTURES[key];
+export function abilityPose(key, age = 10, phase = "activate") {
+  let v = ABILITY_GESTURES[key];
+  if (phase === "cancel" || phase === "exit")
+    return {
+      x: 0,
+      y: 0,
+      z: 0,
+      rx: 0,
+      ry: 0,
+      rz: 0,
+      curl: 0,
+      lean: 0,
+      weight: 0,
+    };
+  if (phase === "windup" && ABILITY_CASTS[key]) {
+    const t =
+        Number.isFinite(age) && age >= 0 && age < ABILITY_CASTS[key] + 0.06
+          ? Math.min(1, age / 0.14)
+          : 0,
+      weight = t * t * (3 - 2 * t);
+    return {
+      x: (v?.[0] || 0) * weight,
+      y: (v?.[1] || 0) * weight,
+      z: (v?.[2] || 0) * weight,
+      rx: (v?.[3] || 0) * weight,
+      ry: (v?.[4] || 0) * weight,
+      rz: (v?.[5] || 0) * weight,
+      curl: (v?.[6] || 0) * weight,
+      lean: (v?.[7] || 0) * weight,
+      weight,
+    };
+  }
+  if (phase === "release")
+    v =
+      key === "za_hando"
+        ? [-0.4, 0.16, 0.14, -0.1, -1.15, -0.65, 0.75, -0.12]
+        : key === "stun"
+          ? [0, -0.3, -0.38, 1.15, 0.1, -0.1, 0.6, -0.2]
+          : v;
   const t = Number.isFinite(age) && age >= 0 && age < 0.7 ? age / 0.7 : 0;
   // Fast readable launch, held briefly, then a soft return. Exactly zero at rest.
-  const attack = Math.min(1, t / 0.22),
+  const attack = phase === "release" ? 1 : Math.min(1, t / 0.22),
     release = Math.max(0, Math.min(1, (t - 0.3) / 0.7));
   const weight =
-    t && v
+    (t || (phase === "release" && age === 0)) && v
       ? attack *
         attack *
         (3 - 2 * attack) *

@@ -1,4 +1,4 @@
-import { STONE_REARM, ABILITY_CASTS } from "./balance.js";
+import { STONE_REARM, SPACE_REARM, ABILITY_CASTS } from "./balance.js";
 // Read the actual authoritative/predicted-local timers; never start a cosmetic
 // countdown that could claim protection, recovery or a rush after it ended.
 const STATUSES = Object.freeze([
@@ -59,18 +59,27 @@ export function gloveAbilityReadout(body, glove, phase) {
         : "STONE";
   else if (body.ragdollTime > 0) label = "RECOVER";
   else if (body.gloveAbilityPending?.remaining > 0) label = "CAST";
+  else if (glove.key === "space" && body.spaceTime > 0)
+    label =
+      cooldown > glove.abilityCooldown - SPACE_REARM + 1e-8 ? "REARM" : "END";
   else if (!Number.isFinite(cooldown)) label = "WAIT";
   else if (cooldown > 0) label = `${read("", cooldown).remaining.toFixed(1)}s`;
   else if (glove.key === "thanos" && body.markTime > 0) label = "RETURN";
   else label = "READY";
   const readyProgress =
-    label === "PASSIVE" || label === "EXIT"
+    label === "PASSIVE" || label === "EXIT" || label === "END"
       ? 1
       : label === "REARM"
-        ? (glove.abilityCooldown - cooldown) / STONE_REARM
+        ? (glove.abilityCooldown - cooldown) /
+          (glove.key === "space" ? SPACE_REARM : STONE_REARM)
         : label === "CAST"
           ? 1 -
             body.gloveAbilityPending.remaining / (ABILITY_CASTS[glove.key] || 1)
           : progress;
-  return { label, progress: Math.max(0, Math.min(1, readyProgress)) };
+  return {
+    label,
+    progress: Number.isFinite(readyProgress)
+      ? Math.max(0, Math.min(1, readyProgress))
+      : 0,
+  };
 }

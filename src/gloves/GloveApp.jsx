@@ -1,3 +1,4 @@
+import { GLOVE_GUIDE } from "./field-guide.js";
 import React, {
   useEffect,
   useRef,
@@ -211,6 +212,19 @@ function MatchHUD({ h, profile }) {
             ),
         )}
       </div>
+      {h.gloveAbilityTarget && h.alive !== false && (
+        <div
+          className="slap-ability-target"
+          aria-label="Ability target"
+          style={{ left: h.gloveAbilityTarget.x, top: h.gloveAbilityTarget.y }}
+        >
+          <i aria-hidden="true" />
+          <span>
+            {h.gloveAbilityTarget.label}
+            <small>{h.gloveAbilityTarget.distance.toFixed(1)} m</small>
+          </span>
+        </div>
+      )}
       {h.gloveReach && !h.marker && (
         <div className={`slap-reach ${h.gloveReach.state}`}>
           {h.gloveReach.label}
@@ -259,18 +273,19 @@ function MatchHUD({ h, profile }) {
           <small>
             {status === "RAGDOLL"
               ? "Recovering · Movement returns automatically"
-              : status === "STONE FORM"
-                ? "Protected · E to exit after rearm"
-                : {
-                    CHILLED: "Movement & jump reduced",
-                    HIDDEN: "Slapping reveals you · Still vulnerable",
-                    POWERUP: "Protected · Enhanced slap power",
-                    REFLECTING: "Incoming slaps return to the attacker",
-                    "ZERO-G": "Low gravity · Air steering active",
-                    BOOSTING: "Speed boosted · Chill cleared",
-                    "DODGE ROLL": "Committed roll · Slapping allowed",
-                    "MAGNET RUSH": "Committed rush · Slapping allowed",
-                  }[status] || ""}
+              : status === "ZERO-G"
+                ? "E AGAIN TO END LOW GRAVITY"
+                : status === "STONE FORM"
+                  ? "Protected · E to exit after rearm"
+                  : {
+                      CHILLED: "Movement & jump reduced",
+                      HIDDEN: "Slapping reveals you · Still vulnerable",
+                      POWERUP: "Protected · Enhanced slap power",
+                      REFLECTING: "Incoming slaps return to the attacker",
+                      BOOSTING: "Speed boosted · Chill cleared",
+                      "DODGE ROLL": "Committed roll · Slapping allowed",
+                      "MAGNET RUSH": "Committed rush · Slapping allowed",
+                    }[status] || ""}
           </small>
         </div>
       )}
@@ -719,7 +734,8 @@ export function GloveApp() {
                 <p>{glove.description}</p>
                 <div className="slap-glove-stats">
                   <span>
-                    DAMAGE <b>{glove.damage}</b>
+                    DAMAGE{" "}
+                    <b>{glove.key === "dice" ? "16–36" : glove.damage}</b>
                   </span>
                   <span>
                     REACH <b>{glove.range}m</b>
@@ -728,6 +744,36 @@ export function GloveApp() {
                     RECOVERY <b>{glove.interval}s</b>
                   </span>
                 </div>
+                <details className="slap-field-guide" key={glove.id}>
+                  <summary>
+                    PLAY / COUNTERPLAY <span>+</span>
+                  </summary>
+                  <dl>
+                    <dt>PLAY</dt>
+                    <dd>{GLOVE_GUIDE[glove.key]?.play}</dd>
+                    <dt>COUNTER</dt>
+                    <dd>{GLOVE_GUIDE[glove.key]?.counter}</dd>
+                  </dl>
+                  <div className="slap-guide-numbers">
+                    <span>
+                      BASE LAUNCH{" "}
+                      <b>
+                        {glove.key === "dice" ? "10.1–25.6" : glove.power} m/s
+                      </b>
+                    </span>
+                    <span>
+                      CONTACT TELL <b>{glove.windup}s</b>
+                    </span>
+                    <span>
+                      ABILITY{" "}
+                      <b>
+                        {glove.activation === "passive"
+                          ? "PASSIVE"
+                          : `${glove.abilityCooldown}s`}
+                      </b>
+                    </span>
+                  </div>
+                </details>
                 {profile.slaps < glove.cost ? (
                   <button className="slap-equip locked" disabled>
                     ⌑ {glove.cost - profile.slaps} more slaps to unlock

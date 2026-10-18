@@ -1,3 +1,4 @@
+import { settleGloveTeleport } from "../gloves/mobility.js";
 import { presentBoomerangReturn } from "../gloves/boomerang-return.js";
 import { presentGloveAbility } from "../gloves/fx.js";
 import { playGloveAbilityAudio, playGloveSwingAudio } from "../gloves/audio.js";
@@ -448,8 +449,8 @@ export class MultiplayerSession {
             [g.player.vx, g.player.vy, g.player.vz] = event.velocity;
           g.player.boostTime = event.boost || 0;
           if (event.glove === "glove_space") {
-            g.player.spaceTime = 2.6;
-            g.player.grounded = false;
+            g.player.spaceTime = event.phase === "exit" ? 0 : 2.6;
+            if (event.phase !== "exit") g.player.grounded = false;
           }
         }
         if (event.player === this.id && event.glove === "glove_default") {
@@ -464,7 +465,7 @@ export class MultiplayerSession {
           event.phase === "exit"
         )
           g.player.stoneTime = 0;
-        if (!["windup", "cancel"].includes(event.phase))
+        if (!["windup", "cancel", "exit"].includes(event.phase))
           g.combatFX?.burst(
             v(event.position),
             new THREE.Color(WEAPONS[event.glove].color).getHex(),
@@ -478,7 +479,11 @@ export class MultiplayerSession {
               : null;
         if (destination) {
           [g.player.x, g.player.y, g.player.z] = destination;
-          g.player.vx = g.player.vy = g.player.vz = 0;
+          if (["glove_swapper", "glove_thanos"].includes(event.glove))
+            settleGloveTeleport(g.player, g.world.boxes, g);
+          else if (event.velocity)
+            [g.player.vx, g.player.vy, g.player.vz] = event.velocity;
+          else g.player.vx = g.player.vy = g.player.vz = 0;
           this.correction.set(0, 0, 0);
           this.prediction.clear();
         }

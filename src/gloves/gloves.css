@@ -2012,3 +2012,96 @@
   font-variant-numeric: tabular-nums;
   opacity: 0.85;
 }
+
+/* One advisory target, not another large HUD panel. No enemy name/health. */
+.slap-ability-target {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  color: #f1d48a;
+  text-align: center;
+  text-shadow: 0 1px 5px #142229;
+  font-size: 8px;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+.slap-ability-target > i {
+  display: block;
+  width: 28px;
+  height: 28px;
+  margin: auto;
+  border: 1px solid #ecd28b88;
+  border-radius: 5px;
+  box-shadow: 0 0 9px #efcb6330;
+  transform: rotate(45deg);
+}
+.slap-ability-target > span {
+  display: block;
+  margin-top: 11px;
+  padding: 3px 5px;
+  background: #172e36b8;
+  border-radius: 3px;
+}
+.slap-ability-target small {
+  display: block;
+  margin-top: 3px;
+  color: #e1e2d5;
+  font-size: 8px;
+  letter-spacing: 0.5px;
+}
+.slap-field-guide {
+  border-top: 1px solid #35484d;
+  margin: 0 0 12px;
+  color: #a8bfc3;
+  font-size: 10px;
+  line-height: 1.6;
+}
+.slap-field-guide summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 8px 0;
+  font-size: 8px;
+  letter-spacing: 1px;
+  color: #e1c68b;
+  display: flex;
+  justify-content: space-between;
+}
+.slap-field-guide summary::-webkit-details-marker {
+  display: none;
+}
+.slap-field-guide summary:focus-visible {
+  outline: 2px solid #e1c68b;
+  outline-offset: 3px;
+}
+.slap-field-guide[open] summary span {
+  transform: rotate(45deg);
+}
+.slap-field-guide dl {
+  margin: 0 0 10px;
+  display: grid;
+  grid-template-columns: 58px 1fr;
+  gap: 5px 8px;
+}
+.slap-field-guide dt {
+  font-size: 8px;
+  color: #dfd8be;
+  letter-spacing: 0.5px;
+}
+.slap-field-guide dd {
+  margin: 0;
+}
+.slap-guide-numbers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font-size: 7px;
+  margin-bottom: 10px;
+  color: #8caaad;
+  letter-spacing: 0.7px;
+}
+.slap-guide-numbers b {
+  color: #d7e2dc;
+  margin-left: 4px;
+  font-size: 9px;
+  letter-spacing: 0;
+}

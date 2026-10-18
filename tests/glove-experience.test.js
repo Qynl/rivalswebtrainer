@@ -179,7 +179,7 @@ test("failed abilities explain authority rejection without fake cooldown, FX, da
     Object.assign(other.player, { x: 0, z: -40 });
     assert.equal(useGloveAbility(g), false);
     const denied = m.events.find((e) => e.type === "gloveDenied");
-    assert.equal(denied.reason, "NO VISIBLE TARGET · 14 m");
+    assert.equal(denied.reason, "FACE A VISIBLE TARGET · 14 m");
     assert.equal(denied.round, m.round);
     assert.equal(g.player.abilityCooldown || 0, 0);
     assert.equal(g.matchStats.hits, 0);

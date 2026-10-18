@@ -2833,6 +2833,7 @@ export class Game {
         ? abilityPose(
             GLOVES[e.activeWeapon]?.key,
             this.clock - (e.gloveCastTime ?? -10),
+            e.gloveCastPhase,
           ).lean
         : 0;
       m.parts.upperBody.rotation.x = THREE.MathUtils.damp(
@@ -3238,6 +3239,7 @@ export class Game {
         gloveSwingAge: this.clock - (this.lastSlapAt ?? -10),
         gloveSequence: this.shotSequence || 1,
         gloveCastAge: this.clock - (p.gloveCastTime ?? -10),
+        gloveCastPhase: p.gloveCastPhase,
         gloveImpact: this.slapImpact || 0,
         gloveDiceRoll: p.diceRoll || 0,
         gloveDiceAge: this.clock - (p.diceRollAt ?? -10),

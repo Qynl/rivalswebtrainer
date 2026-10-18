@@ -1,3 +1,6 @@
+import { abilityTarget } from "./ability-targets.js";
+import { rollDirection, settleGloveTeleport } from "./mobility.js";
+import { castCounterplay } from "./bot-counterplay.js";
 import {
   contactRegion,
   RECOVERY_WINDOW,
@@ -7,6 +10,7 @@ import {
   BRICK_LIFETIME,
   GHOST_DURATION,
   inErasureLane,
+  SPACE_REARM,
 } from "./balance.js";
 import { considerGloveTrapJump } from "./bot-traps.js";
 import { presentBoomerangReturn } from "./boomerang-return.js";
@@ -384,6 +388,22 @@ export function useGloveAbility(g, body = g.player, id = g.loadout?.[0]) {
     return deny(
       body.stoneTime > 0 ? "STONE FORM ACTIVE" : "RECOVERING · WAIT TO CAST",
     );
+  if (glove.key === "space" && body.spaceTime > 0) {
+    if (body.abilityCooldown > glove.abilityCooldown - SPACE_REARM + 1e-8)
+      return deny("ZERO-G REARMING");
+    body.spaceTime = 0;
+    emitAbility(g, {
+      type: "gloveAbility",
+      phase: "exit",
+      player: body.id,
+      glove: id,
+      position: [body.x, body.y + 0.6, body.z],
+      velocity: [body.vx, body.vy, body.vz],
+      round: g.round,
+      time: g.clock,
+    });
+    return true;
+  }
   if (body.abilityCooldown > 0)
     return deny(`READY IN ${Math.ceil(body.abilityCooldown)}s`);
   const origin = [body.x, body.y + 0.6, body.z];
@@ -450,7 +470,11 @@ export function useGloveAbility(g, body = g.player, id = g.loadout?.[0]) {
       if (!canOccupy(body, m.x, m.y, m.z, g.world.boxes, body.height))
         return deny("RETURN POINT BLOCKED");
       Object.assign(body, m);
-      body.vx = body.vy = body.vz = 0;
+      settleGloveTeleport(
+        body,
+        g.world.boxes,
+        body.context || (body === g.player ? g : null),
+      );
       destination = [body.x, body.y, body.z];
       body.gloveMark = null;
       body.markTime = 0;
@@ -460,14 +484,13 @@ export function useGloveAbility(g, body = g.player, id = g.loadout?.[0]) {
     }
   } else if (glove.key === "acrobat") {
     body.boostTime = 0.5;
-    body.vx = -Math.sin(yaw) * 18;
-    body.vz = -Math.cos(yaw) * 18;
+    const direction = rollDirection(g, body, yaw);
+    body.vx = direction.x * 18;
+    body.vz = direction.z * 18;
     body.vy = Math.max(0, body.vy);
   } else if (glove.key === "magnet") {
-    target = nearbyEnemies(g, body, 14).find(
-      (e) => !(e.ragdollTime > 0) && !(e.ghostTime > 0),
-    );
-    if (!target) return deny("NO VISIBLE TARGET · 14 m");
+    target = abilityTarget(g, body, "magnet");
+    if (!target) return deny("FACE A VISIBLE TARGET · 14 m");
     const dx = target.x - body.x,
       dz = target.z - body.z,
       d = Math.hypot(dx, dz);
@@ -509,16 +532,21 @@ export function useGloveAbility(g, body = g.player, id = g.loadout?.[0]) {
     }
     destination = [body.x, body.y, body.z];
   } else if (glove.key === "swapper") {
-    target = slapTargets(g, body, glove, 20, 0.93).find(
-      (e) =>
-        canOccupy(body, e.x, e.y, e.z, g.world.boxes, body.height) &&
-        canOccupy(e, body.x, body.y, body.z, g.world.boxes, e.height),
-    );
+    target = abilityTarget(g, body, "swapper");
     if (!target) return deny("AIM AT A CLEAR TARGET · 20 m");
     const a = { x: body.x, y: body.y, z: body.z };
     Object.assign(body, { x: target.x, y: target.y, z: target.z });
     Object.assign(target, a);
-    body.vx = body.vy = body.vz = target.vx = target.vy = target.vz = 0;
+    settleGloveTeleport(
+      body,
+      g.world.boxes,
+      body.context || (body === g.player ? g : null),
+    );
+    settleGloveTeleport(
+      target,
+      g.world.boxes,
+      target.context || (target === g.player ? g : null),
+    );
     destination = [body.x, body.y, body.z];
   }
   body.abilityCooldown =
@@ -549,7 +577,7 @@ function emitAbility(g, event) {
   if (g.emitGlove) g.emitGlove(event);
   else {
     playGloveAbilityAudio(g, event);
-    if (!["windup", "cancel"].includes(event.phase))
+    if (!["windup", "cancel", "exit"].includes(event.phase))
       g.combatFX?.burst(
         v(...event.position),
         new THREE.Color(GLOVES[event.glove].color).getHex(),
@@ -649,6 +677,8 @@ export function updateGloveBot(g, e, dt) {
   }
   if (blocked(e)) {
     e.gloveTrapNotice = null;
+    e.gloveCastNotice = null;
+    e.gloveCounterplay = null;
     if (e.gloveDuel) e.gloveDuel.seenAt = g.clock;
     e.slapPending = null;
     ragdollStep(g, e, dt);
@@ -713,8 +743,13 @@ export function updateGloveBot(g, e, dt) {
     dt,
     perceived,
   );
-  const speed = MOVEMENT.runSpeed * intent.speed * gloveMoveScale(e, glove);
+  let speed = MOVEMENT.runSpeed * intent.speed * gloveMoveScale(e, glove);
   wish = committedWish(e, glove, wish);
+  const counter = castCounterplay(g, e, glove, perceived, los, wish);
+  if (counter) {
+    wish = counter.wish;
+    speed = MOVEMENT.runSpeed * counter.speed * gloveMoveScale(e, glove);
+  }
   accelerate(e, wish, speed, dt);
   considerGloveTrapJump(g, e, glove);
   const startX = e.x,
@@ -729,9 +764,10 @@ export function updateGloveBot(g, e, dt) {
     e.grounded = false;
     e.jumps = 1;
   }
-  if (intent.attack) beginSlap(g, e, glove.id);
+  if (intent.attack && !counter) beginSlap(g, e, glove.id);
   if (
     glove.activation === "active" &&
+    !counter &&
     !(e.abilityCooldown > 0) &&
     intent.reacted &&
     intent.facing

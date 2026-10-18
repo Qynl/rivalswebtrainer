@@ -48,7 +48,10 @@ export function playGloveAbilityAudio(g, event) {
   const key = GLOVES[event.glove].key,
     sound = event.phase === "windup" ? "glovePower" : gloveAbilitySound(key);
   if (local(g, event.player) && g.player.alive) {
-    g.audio.play?.(sound, event.phase === "windup" ? 0.35 : 0.9);
+    g.audio.play?.(
+      sound,
+      event.phase === "windup" ? 0.35 : event.phase === "exit" ? 0.3 : 0.9,
+    );
     return;
   }
   if (
@@ -60,7 +63,12 @@ export function playGloveAbilityAudio(g, event) {
     spatial(g, sound, event.origin, 0.4);
     spatial(g, sound, event.position, 0.55);
   } else
-    spatial(g, sound, event.position, event.phase === "windup" ? 0.3 : 0.75);
+    spatial(
+      g,
+      sound,
+      event.position,
+      event.phase === "windup" ? 0.3 : event.phase === "exit" ? 0.2 : 0.75,
+    );
 }
 export function playGloveImpactAudio(g, event, source, target) {
   if (!audible(g)) return;

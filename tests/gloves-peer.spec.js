@@ -1318,3 +1318,147 @@ test("static RTC EMP has a real shared warning window; a client jump during the 
     await guest.close();
   }
 });
+
+test("big pass RTC: a joining player chooses a sideways Acrobat roll and the host ends Space early, with matching authority states and no fabricated contacts", async ({
+  page,
+  browser,
+}) => {
+  const guest = await browser.newPage({
+      viewport: { width: 800, height: 600 },
+    }),
+    requests = [],
+    errors = [];
+  try {
+    await expandedRoom(
+      page,
+      guest,
+      "glove_space",
+      "glove_acrobat",
+      requests,
+      errors,
+    );
+    for (const p of [page, guest])
+      await p.evaluate(() => {
+        const g = window.__arena,
+          n = g.network;
+        g.yaw = g.pitch = 0;
+        window.__mobilityEvents = [];
+        const original = n.processEvents.bind(n);
+        n.processEvents = (events) => {
+          for (const e of events)
+            if (
+              e.id > n.lastEvent &&
+              e.type === "gloveAbility" &&
+              ["glove_space", "glove_acrobat"].includes(e.glove)
+            )
+              window.__mobilityEvents.push({
+                glove: e.glove,
+                phase: e.phase || "activate",
+                time: e.time,
+                velocity: e.velocity,
+              });
+          original(events);
+        };
+      });
+    await guest.evaluate(() => {
+      const n = window.__arena.network;
+      n.seq = Math.max(n.seq, 28000) + 1;
+      n.client.send({
+        type: "input",
+        input: {
+          seq: n.seq,
+          yaw: 0,
+          pitch: 0,
+          keys: 8,
+          fire: false,
+          aim: false,
+          paused: false,
+          actions: [{ id: ++n.actionId, type: "ability" }],
+        },
+      });
+    });
+    await guest.waitForFunction(() =>
+      window.__mobilityEvents.some((e) => e.glove === "glove_acrobat"),
+    );
+    await guest.evaluate(() => {
+      const n = window.__arena.network;
+      n.client.send({
+        type: "input",
+        input: {
+          seq: ++n.seq,
+          yaw: 0,
+          pitch: 0,
+          keys: 0,
+          fire: false,
+          aim: false,
+          paused: false,
+          actions: [],
+        },
+      });
+    });
+    for (const p of [page, guest])
+      await p.waitForFunction(() =>
+        window.__mobilityEvents.some((e) => e.glove === "glove_acrobat"),
+      );
+    const roll = await guest.evaluate(() => ({
+      event: window.__mobilityEvents.find((e) => e.glove === "glove_acrobat"),
+      yaw: window.__arena.yaw,
+      pitch: window.__arena.pitch,
+    }));
+    expect(roll.event.velocity[0]).toBe(18);
+    expect(Math.abs(roll.event.velocity[2])).toBe(0);
+    expect(roll.yaw).toBe(0);
+    expect(roll.pitch).toBe(0);
+    await expandedAbility(page);
+    await page.waitForFunction(() =>
+      window.__mobilityEvents.some((e) => e.glove === "glove_space"),
+    );
+    await page.waitForFunction(() => {
+      const n = window.__arena.network,
+        start = window.__mobilityEvents.find((e) => e.glove === "glove_space");
+      return n.latest.time - start.time >= 0.36;
+    });
+    await expandedAbility(page);
+    for (const p of [page, guest])
+      await p.waitForFunction(() =>
+        window.__mobilityEvents.some(
+          (e) => e.glove === "glove_space" && e.phase === "exit",
+        ),
+      );
+    const views = await Promise.all(
+      [page, guest].map((p) =>
+        p.evaluate(() => {
+          const g = window.__arena,
+            s = g.network.latest,
+            space = s.players.find((p) => p.weapon === "glove_space");
+          return {
+            spaceTime: space.quickMelee,
+            cooldown: space.dashCooldown,
+            phases: window.__mobilityEvents
+              .filter((e) => e.glove === "glove_space")
+              .map((e) => e.phase),
+            health: s.players.map((p) => p.health),
+            hits: s.players.reduce((sum, p) => sum + p.stats.hits, 0),
+            slaps: JSON.parse(localStorage.getItem("slap-arena-profile-v1"))
+              .slaps,
+          };
+        }),
+      ),
+    );
+    for (const view of views) {
+      expect(view.spaceTime).toBe(0);
+      expect(view.cooldown).toBeGreaterThan(11);
+      expect(view.phases).toEqual(["activate", "exit"]);
+      expect(view.health).toEqual([150, 150]);
+      expect(view.hits).toBe(0);
+      expect(view.slaps).toBe(5500);
+    }
+    expect(requests).toEqual([]);
+    expect(errors).toEqual([]);
+  } finally {
+    for (const p of [page, guest])
+      if (!p.isClosed())
+        await p.evaluate(() => window.__arena?.network?.leave());
+    await guest.close();
+  }
+});

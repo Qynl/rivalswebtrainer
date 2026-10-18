@@ -66,6 +66,13 @@ export function glovePerceivedTarget(g, actor, target, visible) {
       stoneTime: target.stoneTime || 0,
       reverseTime: target.reverseTime || 0,
       slapPending: target.slapPending,
+      abilityCast: target.gloveAbilityPending
+        ? {
+            id: target.gloveAbilityPending.id,
+            yaw: target.gloveAbilityPending.yaw,
+            remaining: target.gloveAbilityPending.remaining,
+          }
+        : null,
     });
     Object.assign(memory.base, { x: goal.x, y: goal.y, z: goal.z });
     memory.seenAt = g.clock;
@@ -75,6 +82,7 @@ export function glovePerceivedTarget(g, actor, target, visible) {
     // No target coordinates, motion or protection state is read in this branch.
     goal.vx = goal.vz = 0;
     goal.slapPending = null;
+    goal.abilityCast = null;
     goal.goldTime = goal.stoneTime = goal.reverseTime = 0;
     if (
       g.clock >= memory.nextSearch &&

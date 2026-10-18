@@ -80,6 +80,9 @@ export function resetPracticeTarget(e) {
   e.avoidanceSince = null;
   e.visible = false;
   e.gloveBlockedFor = 0;
+  e.gloveCastNotice = e.gloveCounterplay = null;
+  e.gloveCastTime = undefined;
+  e.gloveCastPhase = undefined;
   e.footDistance = e.nextGloveStep = e.diceRoll = 0;
   e.diceRollAt = undefined;
   e.animationPhase = e.seed || 0;
