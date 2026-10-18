@@ -205,3 +205,7 @@ Fighting opponents can notice an armed hostile Brick in front of them, on their 
 ### Timed status and real cast availability
 
 The existing small status readout shows actual remaining timer values, including Fart Blast/Acrobat/Magnet's real movement window. It does not invent a cosmetic duration or change gameplay. Availability distinguishes prep, recovery, stone form, round-end waiting and elimination from ordinary cooldown readiness. Thanos uses its 0.4s rearm track while marked and full cooldown after return/expiry; its private hint shows remaining mark time, and eliminated players cannot see an actionable return prompt. Movement/aim and earned progression are unchanged.
+
+### Ordinary multi-tab save safety
+
+Award/equip operations refresh the latest valid saved profile before writing, so an ordinarily stale tab does not overwrite newer earned progress or reject its genuinely unlocked gloves. Real storage events update collection/profile views without write-back loops, and do not change equipment in an active match. Corrupt, deleted, older or inaccessible storage does not erase higher session progress. This is local persistence, not an atomic concurrent transaction or server anti-cheat system; unlock prices, profile format, accepted-contact rewards and bounded session receipt deduplication are unchanged.

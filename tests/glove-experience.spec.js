@@ -1808,3 +1808,99 @@ test("ability HUD distinguishes prep and a real incoming ragdoll from cooldown r
   await expect(page.locator(".slap-ability > span")).toHaveText("READY");
   expect(errors).toEqual([]);
 });
+
+test("real earned milestones sync across tabs, persist on reload and never silently change the glove in an active match", async ({
+  page,
+  context,
+}) => {
+  const errors = await prepare(page),
+    other = await context.newPage();
+  try {
+    const otherErrors = await prepare(other);
+    await practice(page);
+    const earned = await page.evaluate(() => {
+      const g = window.__arena;
+      g.practiceOptions = {
+        mode: "stationary",
+        count: 1,
+        opponent: "glove_default",
+      };
+      g.startRound();
+      const p = g.player,
+        e = g.entities[1];
+      g.yaw = g.pitch = 0;
+      let contacts = 0;
+      for (let hit = 0; hit < 15; hit++) {
+        Object.assign(p, {
+          x: 0,
+          y: 0,
+          z: 8,
+          vx: 0,
+          vy: 0,
+          vz: 0,
+          grounded: true,
+        });
+        Object.assign(e, {
+          x: 0,
+          y: 0,
+          z: 5.8,
+          vx: 0,
+          vy: 0,
+          vz: 0,
+          grounded: true,
+          health: 150,
+          alive: true,
+          ragdollTime: 0,
+          slapGrace: 0,
+        });
+        g.firePlayer();
+        for (let i = 0; i < 60 && e.health === 150; i++) g.simulate(1 / 120);
+        if (e.health < 150) contacts++;
+        for (let i = 0; i < 100; i++) g.simulate(1 / 120);
+      }
+      return {
+        contacts,
+        hits: g.matchStats.hits,
+        trial: !!g.testDrive,
+        slaps: JSON.parse(localStorage.getItem("slap-arena-profile-v1")).slaps,
+        glove: g.loadout[0],
+      };
+    });
+    expect(earned).toEqual({
+      contacts: 15,
+      hits: 15,
+      trial: false,
+      slaps: 15,
+      glove: "glove_default",
+    });
+    await expect(other.locator(".slap-wallet strong")).toHaveText("15");
+    await other
+      .getByRole("button", { name: "Diamond glove", exact: true })
+      .click();
+    await expect(other.locator(".slap-equip")).toBeEnabled();
+    await other.locator(".slap-equip").click();
+    await expect
+      .poll(() =>
+        page.evaluate(async () => {
+          const { progression } = await import("/src/gloves/progression.js");
+          return progression.profile.selected;
+        }),
+      )
+      .toBe("glove_diamond");
+    expect(await page.evaluate(() => window.__arena.loadout[0])).toBe(
+      "glove_default",
+    );
+    await other.reload();
+    await other.waitForFunction(() => window.__arena?.state === "lobby");
+    await expect(other.locator(".slap-wallet strong")).toHaveText("15");
+    await expect(other.locator(".slap-equip")).toContainText("EQUIPPED");
+    expect(
+      await other.evaluate(() =>
+        JSON.parse(localStorage.getItem("slap-arena-profile-v1")),
+      ),
+    ).toEqual({ version: 1, slaps: 15, selected: "glove_diamond" });
+    expect([...errors, ...otherErrors]).toEqual([]);
+  } finally {
+    await other.close();
+  }
+});

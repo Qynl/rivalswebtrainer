@@ -35,11 +35,46 @@ export function writeProfile(profile, storage) {
   return safe;
 }
 export class SlapProgression {
-  constructor(storage) {
+  constructor(
+    storage,
+    eventTarget = storage === undefined ? globalThis.window : null,
+  ) {
     this.storage = storage;
     this.profile = readProfile(storage);
     this.listeners = new Set();
     this.seen = new Set();
+    this.eventTarget = eventTarget;
+    this.onStorage = (event) => {
+      if (event.key === KEY) this.refresh();
+    };
+    eventTarget?.addEventListener?.("storage", this.onStorage);
+  }
+  // Read before ordinary writes so an older tab cannot replace newer earned
+  // progress. This is not a cross-tab atomic transaction or server anti-cheat.
+  refresh() {
+    let stored;
+    try {
+      const raw = (this.storage ?? globalThis.localStorage)?.getItem(KEY);
+      if (!raw) return false;
+      stored = sanitizeProfile(JSON.parse(raw));
+    } catch {
+      return false;
+    }
+    // A failed/quota-limited write can leave the session ahead of storage.
+    // Never erase that session's progress or selection with an older value.
+    if (stored.slaps < this.profile.slaps) return false;
+    if (
+      stored.slaps === this.profile.slaps &&
+      stored.selected === this.profile.selected
+    )
+      return false;
+    this.profile = stored;
+    for (const f of this.listeners) f();
+    return true;
+  }
+  dispose() {
+    this.eventTarget?.removeEventListener?.("storage", this.onStorage);
+    this.listeners.clear();
   }
   subscribe = (listener) => {
     this.listeners.add(listener);
@@ -52,6 +87,7 @@ export class SlapProgression {
     return this.profile;
   }
   select(id) {
+    this.refresh();
     if (!canUseGlove(id, this.profile.slaps)) return false;
     this.update({ ...this.profile, selected: id });
     return true;
@@ -60,6 +96,7 @@ export class SlapProgression {
   award(receipt) {
     if (typeof receipt !== "string" || !receipt || this.seen.has(receipt))
       return false;
+    this.refresh();
     this.seen.add(receipt);
     if (this.seen.size > 2048)
       this.seen.delete(this.seen.values().next().value);
