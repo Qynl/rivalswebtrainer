@@ -1904,3 +1904,36 @@ test("real earned milestones sync across tabs, persist on reload and never silen
     await other.close();
   }
 });
+
+test("bounded elimination feed keeps the newest confirmed UI events instead of dropping the latest, without inventing match stats or rewards", async ({
+  page,
+}) => {
+  const errors = await prepare(page);
+  await practice(page);
+  const before = await page.evaluate(() => {
+    const g = window.__arena,
+      before = {
+        stats: { ...g.matchStats },
+        profile: localStorage.getItem("slap-arena-profile-v1"),
+      };
+    g.events.feedClear();
+    for (let i = 1; i <= 5; i++) g.events.kill("SOURCE", `TARGET${i}`, false);
+    return before;
+  });
+  const entries = page.locator(".slap-feed > div");
+  await expect(entries).toHaveCount(4);
+  await expect(entries.first()).toContainText("TARGET5");
+  expect(await entries.allTextContents()).toEqual([
+    "SOURCE ✦ TARGET5",
+    "SOURCE ✦ TARGET4",
+    "SOURCE ✦ TARGET3",
+    "SOURCE ✦ TARGET2",
+  ]);
+  expect(
+    await page.evaluate(() => ({
+      stats: { ...window.__arena.matchStats },
+      profile: localStorage.getItem("slap-arena-profile-v1"),
+    })),
+  ).toEqual(before);
+  expect(errors).toEqual([]);
+});

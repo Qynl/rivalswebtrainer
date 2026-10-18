@@ -302,7 +302,7 @@ function MatchHUD({ h, profile }) {
         <div className="glove-cast-notice">{h.gloveNotice}</div>
       )}
       <aside className="slap-feed">
-        {h.feed?.slice(-4).map((f, i) => (
+        {h.feed?.slice(0, 4).map((f, i) => (
           <div key={f.id || i}>
             {f.killer || f.source} <span>✦</span> {f.victim}
           </div>
