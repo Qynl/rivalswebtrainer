@@ -103,10 +103,10 @@ test("Brick keeps its full studded silhouette and fixed physical size while its 
   assert.ok(size.x > 0.69);
   assert.ok(size.y > 0.19);
   assert.ok(size.z > 0.37);
-  animateBrick(mesh, 9, 0);
+  animateBrick(mesh, 18, 0);
   assert.equal(mesh.userData.armed, false);
   const arming = mesh.userData.brickRig.signal.color.getHex();
-  animateBrick(mesh, 8.5, 0.5);
+  animateBrick(mesh, 17.5, 0.5);
   assert.equal(mesh.userData.armed, true);
   assert.notEqual(mesh.userData.brickRig.signal.color.getHex(), arming);
   animateBrick(mesh, 0.5, 8.5);

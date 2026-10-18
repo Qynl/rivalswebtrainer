@@ -1,3 +1,4 @@
+import { contactRegion } from "./balance.js";
 import { GLOVES } from "./catalog.js";
 // Advisory presentation only. No aim correction, damage, rewards or hidden-enemy
 // detection. The authority still validates actual contact at windup completion.
@@ -39,17 +40,28 @@ export function gloveReachCue(g) {
       !g.hasLOS(origin, target)
     )
       continue;
-    const near = d < glove.range + (e.radius || 0.28),
+    const region = contactRegion(
+      glove,
+      { x: dx, y: dy, z: dz },
+      yaw,
+      pitch,
+      e.radius || 0.28,
+    );
+    const near = region === "contact",
       guarded = e.goldTime > 0 || e.stoneTime > 0;
     best = {
       distance: d,
       state: guarded
         ? "protected"
-        : near && e.reverseTime > 0
-          ? "reflecting"
-          : near && !(e.slapGrace > 0)
-            ? "ready"
-            : "approach",
+        : glove.key === "extended" && region === "inside"
+          ? "too-close"
+          : glove.key === "extended" && ["side", "vertical"].includes(region)
+            ? "align"
+            : near && e.reverseTime > 0
+              ? "reflecting"
+              : near && !(e.slapGrace > 0)
+                ? "ready"
+                : "approach",
     };
   }
   return best
@@ -57,6 +69,8 @@ export function gloveReachCue(g) {
         state: best.state,
         label: {
           ready: "IN REACH",
+          "too-close": "BACK UP · HANDLE BLIND SPOT",
+          align: "AIM THE TIP",
           protected: "PROTECTED",
           reflecting: "REFLECTING",
           approach: "CLOSE THE GAP",

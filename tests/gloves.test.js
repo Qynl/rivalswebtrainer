@@ -210,11 +210,11 @@ test("Diamond protects but immobilizes; Default bursts speed without fake damage
   const s = setup("glove_diamond");
   try {
     assert.equal(useGloveAbility(s.g), true);
-    assert.equal(s.g.player.stoneTime, 2.5);
+    assert.equal(s.g.player.stoneTime, 4);
     assert.equal(beginSlap(s.g), false);
     assert.equal(resolveSlap(s.other, s.other.player, "glove_default"), 0);
     assert.equal(s.g.player.health, 150);
-    tickGloves(s.g, 2.6);
+    tickGloves(s.g, 4.1);
     assert.equal(s.g.player.stoneTime, 0);
     assert.equal(useGloveAbility(s.g), false);
   } finally {
@@ -610,7 +610,7 @@ test("Brick traps are bounded, expire, have no damage/reward, and can be jumped 
     assert.equal(zones.length, 4);
     assert.equal(new Set(zones.map((z) => z.id)).size, 4);
     assert.ok(zones.every((z) => z.type === "brick" && z.id > 0));
-    tickGloves(s.g, 10);
+    tickGloves(s.g, 19);
     assert.equal(s.g.gloveBricks.length, 0);
     const model = createBrickModel();
     // Beveled studded body and underside are batched; the arm/expiry LED is independent.
@@ -669,7 +669,7 @@ test("Ghost really hides enemies and names, remains hittable, and breaks invisib
   const s = setup("glove_ghost");
   try {
     assert.equal(useGloveAbility(s.g), true);
-    assert.equal(s.g.player.ghostTime, 3.2);
+    assert.equal(s.g.player.ghostTime, 4.5);
     const target = {
       team: 1,
       ghostTime: 3.2,
@@ -746,15 +746,18 @@ test("Stun EMP only affects grounded visible enemies, without damage or slap rew
   try {
     s.other.player.grounded = false;
     useGloveAbility(s.g);
+    tickGloves(s.g, 0.51);
     assert.equal(s.other.player.ragdollTime, 0);
     s.other.player.grounded = true;
     s.g.player.abilityCooldown = 0;
     s.g.hasLOS = () => false;
     useGloveAbility(s.g);
+    tickGloves(s.g, 0.51);
     assert.equal(s.other.player.ragdollTime, 0);
     s.g.hasLOS = () => true;
     s.g.player.abilityCooldown = 0;
     useGloveAbility(s.g);
+    tickGloves(s.g, 0.51);
     assert.equal(s.other.player.ragdollTime, 1.1);
     assert.equal(s.other.player.slapGrace, 0);
     assert.equal(s.other.player.health, 150);
@@ -769,10 +772,12 @@ test("Za Hando pulls nearby enemies, never allies or targets behind walls", () =
   try {
     s.g.hasLOS = () => false;
     useGloveAbility(s.g);
+    tickGloves(s.g, 0.51);
     assert.equal(s.other.player.vz, 0);
     s.g.hasLOS = () => true;
     s.g.player.abilityCooldown = 0;
     useGloveAbility(s.g);
+    tickGloves(s.g, 0.51);
     assert.equal(s.other.player.vz, 13);
     assert.equal(s.other.player.health, 150);
     assert.equal(s.g.matchStats.hits, 0);
@@ -869,7 +874,7 @@ test("Boomerang has a delayed stronger return impulse and only one damage/reward
 test("Speedrun gains permanent running speed and chill resistance without changing default movement", () => {
   assert.equal(gloveMoveScale({}, GLOVES.glove_default), 1);
   assert.equal(gloveMoveScale({}, GLOVES.glove_speedrun), 1.4);
-  assert.equal(gloveMoveScale({ chillTime: 5 }, GLOVES.glove_default), 0.55);
+  assert.equal(gloveMoveScale({ chillTime: 5 }, GLOVES.glove_default), 0.65);
   assert.ok(gloveMoveScale({ chillTime: 5 }, GLOVES.glove_speedrun) > 1);
 });
 
@@ -892,7 +897,7 @@ test("Golden really protects, enhances outgoing hits and then expires with a lon
     s.match.damage(s.g.player, 50, s.other.player);
     assert.equal(s.g.player.health, 150);
     assert.equal(resolveSlap(s.g, s.g.player, "glove_golden"), 1);
-    assert.equal(s.other.player.health, 117.5);
+    assert.equal(s.other.player.health, 124);
     tickGloves(s.g, 3.1);
     assert.equal(s.g.player.goldTime, 0);
     assert.ok(s.g.player.abilityCooldown > 20);

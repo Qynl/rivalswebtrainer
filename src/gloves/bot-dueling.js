@@ -1,3 +1,4 @@
+import { contactRegion } from "./balance.js";
 // Offline decision-making only. No damage/range bonuses, instant turns or camera
 // changes: bots still use the exact same glove windups and collision rules.
 export const DUEL_BOT_SKILLS = Object.freeze({
@@ -126,7 +127,15 @@ export function duelBotIntent(
       reacted &&
       facing &&
       !respectGuard &&
-      distance < glove.range + 0.1 &&
+      (glove.key === "extended"
+        ? contactRegion(
+            glove,
+            { x: dx, y: target.y - bot.y, z: dz },
+            yaw,
+            0,
+            0.28,
+          ) === "contact"
+        : distance < glove.range + 0.1) &&
       Math.abs(target.y - bot.y) < 2.2,
   };
 }

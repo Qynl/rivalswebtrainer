@@ -1,3 +1,4 @@
+import { ERASURE_LANE } from "./balance.js";
 import { GloveLinks } from "./links.js";
 import * as THREE from "three";
 import { GLOVES } from "./catalog.js";
@@ -61,8 +62,9 @@ function pool(scene, geometry, count, kind = "ring") {
   };
 }
 export class GloveFX {
-  constructor(scene) {
+  constructor(scene, actorLookup = null) {
     this.scene = scene;
+    this.actorLookup = actorLookup;
     this.rings = pool(
       scene,
       new THREE.RingGeometry(0.8, 1, 40),
@@ -97,6 +99,10 @@ export class GloveFX {
         angle: 0,
         ground: false,
         inward: false,
+        castOwner: null,
+        offsetX: 0,
+        offsetZ: 0,
+        lane: false,
       },
       options,
     );
@@ -176,12 +182,83 @@ export class GloveFX {
       );
     }
   }
+  erasureLane(p, yaw, color, life, owner) {
+    const { min, range, halfWidth } = ERASURE_LANE,
+      forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)),
+      right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+    for (const side of [-1, 1])
+      this.emit(
+        this.rays,
+        p
+          .clone()
+          .addScaledVector(forward, (range + min) / 2)
+          .addScaledVector(right, side * halfWidth),
+        color,
+        {
+          ground: true,
+          lane: true,
+          angle: yaw,
+          length: range - min,
+          offsetX: (forward.x * (range + min)) / 2 + right.x * side * halfWidth,
+          offsetZ: (forward.z * (range + min)) / 2 + right.z * side * halfWidth,
+          life,
+          castOwner: owner,
+        },
+      );
+    for (const end of [min, range])
+      this.emit(this.rays, p.clone().addScaledVector(forward, end), color, {
+        ground: true,
+        lane: true,
+        angle: yaw + Math.PI / 2,
+        length: halfWidth * 2,
+        offsetX: forward.x * end,
+        offsetZ: forward.z * end,
+        life,
+        castOwner: owner,
+      });
+  }
   ability(event) {
     const glove = GLOVES[event.glove];
     if (!glove) return;
     const p = new THREE.Vector3().fromArray(event.position),
       color = glove.color,
       key = glove.key;
+    if (["cancel", "release"].includes(event.phase))
+      for (const pool of [this.rings, this.rays])
+        for (const s of pool.states)
+          if (s.castOwner === event.player && s.castOwner != null) s.life = 0;
+    if (event.phase === "cancel") return;
+    if (key === "za_hando") {
+      p.y -= 0.52;
+      this.erasureLane(
+        p,
+        event.yaw || 0,
+        color,
+        event.phase === "windup" ? event.windup : 0.3,
+        event.phase === "windup" ? event.player : null,
+      );
+      return;
+    }
+    if (event.phase === "windup") {
+      p.y -= 0.52;
+      const radius = key === "stun" ? 5.8 : 9;
+      this.emit(this.rings, p, color, {
+        ground: true,
+        start: radius,
+        end: radius,
+        life: event.windup + 0.03,
+        castOwner: event.player,
+      });
+      this.emit(this.rings, p, color, {
+        ground: true,
+        start: 0.15,
+        end: radius,
+        inward: true,
+        life: event.windup,
+        castOwner: event.player,
+      });
+      return;
+    }
     const radial = key === "stun" || key === "za_hando",
       inward = key === "za_hando";
     if (key === "default") {
@@ -267,6 +344,10 @@ export class GloveFX {
         s.life = Math.max(0, s.life - dt);
         const age = 1 - s.life / s.max;
         data.progress.setX(i, age);
+        const actor =
+          s.castOwner != null ? this.actorLookup?.(s.castOwner) : null;
+        if (actor)
+          s.p.set(actor.x + s.offsetX, actor.y + 0.08, actor.z + s.offsetZ);
         this.dummy.position.copy(s.p).addScaledVector(s.v, s.max - s.life);
         this.dummy.quaternion.copy(camera?.quaternion || s.q);
         const t = 1 - Math.pow(1 - age, 3),
@@ -276,6 +357,9 @@ export class GloveFX {
         if (s.ground) this.dummy.quaternion.setFromAxisAngle(X, -Math.PI / 2);
         if (ray === "cloud") {
           this.dummy.scale.setScalar(radius);
+        } else if (ray && s.lane) {
+          this.dummy.rotateZ(s.angle);
+          this.dummy.scale.set(0.045, s.length, 1);
         } else if (ray) {
           this.dummy.rotateZ(s.angle);
           this.direction
@@ -316,14 +400,14 @@ export function gloveActor(g, id) {
 }
 export function presentGloveAbility(g, event) {
   if (!g.scene?.add || g.headless) return;
-  g.gloveFX ||= new GloveFX(g.scene);
+  g.gloveFX ||= new GloveFX(g.scene, (id) => gloveActor(g, id));
   g.gloveFX.ability(event);
   const source = gloveActor(g, event.player);
   if (source && source === g.player) {
     const glove = GLOVES[event.glove];
     const names = {
       default: "FART BLAST · BOOSTING",
-      diamond: "STONE FORM",
+      diamond: event.phase === "exit" ? "STONE FORM ENDED" : "STONE FORM",
       flash: "BLINK",
       ghost: "INVISIBILITY",
       thanos: event.mark ? "RETURN POINT SET" : "TIME REVERSAL",
@@ -339,7 +423,12 @@ export function presentGloveAbility(g, event) {
       swapper: "POSITIONS SWAPPED",
     };
     g.gloveNotice = {
-      text: names[glove?.key] || glove?.ability || "ABILITY",
+      text:
+        event.phase === "windup"
+          ? `${glove?.ability} · WINDING UP`
+          : event.phase === "cancel"
+            ? "CAST INTERRUPTED"
+            : names[glove?.key] || glove?.ability || "ABILITY",
       until: g.clock + 1.1,
     };
   }
@@ -347,7 +436,7 @@ export function presentGloveAbility(g, event) {
     const target = gloveActor(g, event.target);
     g.gloveFX.link(source, target, GLOVES[event.glove].color, 0.55);
   }
-  if (source) {
+  if (source && event.phase !== "cancel") {
     source.gloveCastTime = g.clock;
     source.gloveCastId = event.glove;
   }

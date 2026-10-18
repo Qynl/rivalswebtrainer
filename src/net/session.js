@@ -419,6 +419,25 @@ export class MultiplayerSession {
         );
       }
       if (event.type === "gloveAbility" && event.round === this.round) {
+        if (event.player === this.id) {
+          if (event.phase === "windup") {
+            g.player.gloveAbilityPending = {
+              id: event.glove,
+              presentationOnly: true,
+              remaining: Math.max(
+                0,
+                (event.windup || 0) -
+                  Math.max(0, (this.latest?.time ?? event.time) - event.time),
+              ),
+            };
+            if (
+              event.glove === "glove_za_hando" &&
+              g.player.gloveAbilityPending.remaining > 0
+            )
+              g.player.vx = g.player.vz = 0;
+          } else if (["release", "cancel"].includes(event.phase))
+            g.player.gloveAbilityPending = null;
+        }
         presentGloveAbility(g, event);
         playGloveAbilityAudio(g, event);
         if (
@@ -439,11 +458,18 @@ export class MultiplayerSession {
           if (event.velocity)
             [g.player.vx, g.player.vy, g.player.vz] = event.velocity;
         }
-        g.combatFX?.burst(
-          v(event.position),
-          new THREE.Color(WEAPONS[event.glove].color).getHex(),
-          16,
-        );
+        if (
+          event.player === this.id &&
+          event.glove === "glove_diamond" &&
+          event.phase === "exit"
+        )
+          g.player.stoneTime = 0;
+        if (!["windup", "cancel"].includes(event.phase))
+          g.combatFX?.burst(
+            v(event.position),
+            new THREE.Color(WEAPONS[event.glove].color).getHex(),
+            16,
+          );
         const destination =
           event.player === this.id
             ? event.destination

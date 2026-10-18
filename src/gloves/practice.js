@@ -63,7 +63,8 @@ export function resetPracticeTarget(e) {
     "markTime",
   ])
     e[key] = 0;
-  e.slapPending =
+  e.gloveAbilityPending =
+    e.slapPending =
     e.gloveMark =
     e.boomerangAt =
     e.boomerangOwner =

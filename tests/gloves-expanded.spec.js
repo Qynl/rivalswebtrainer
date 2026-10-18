@@ -262,12 +262,23 @@ test("expanded glove bots actually use abilities and land authoritative melee, r
       Object.assign(bot, {
         x: 0,
         y: 0,
-        z: glove.key === "swapper" ? 12 : glove.key === "flash" ? 10 : 6,
+        z:
+          glove.key === "diamond"
+            ? 3.5
+            : glove.key === "swapper"
+              ? 12
+              : glove.key === "flash"
+                ? 10
+                : 6,
         vx: 0,
         vy: 0,
         vz: 0,
         grounded: true,
       });
+      if (glove.key === "diamond") {
+        g.yaw = Math.PI;
+        bot.yaw = 0;
+      } // The warned attack is visible and faces the defender.
       if (glove.key === "diamond")
         g.player.slapPending = { remaining: 0.3, id: "glove_default" };
       let activated = false,
@@ -275,6 +286,7 @@ test("expanded glove bots actually use abilities and land authoritative melee, r
       for (let i = 0; i < 120 * 4; i++) {
         g.clock += 1 / 120;
         g.updateSupport(1 / 120);
+        g.updatePlayerMelee(1 / 120); // The initial defensive threat really finishes.
         g.updateBot(bot, 1 / 120);
         activated ||= bot.abilityCooldown > 0;
         launched ||= (g.player.ragdollTime || 0) > 0;

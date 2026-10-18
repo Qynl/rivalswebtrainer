@@ -1135,3 +1135,186 @@ test("real RTC Boomerang return cues reach both viewers from the second authorit
     await guest.close();
   }
 });
+
+test("static RTC EMP has a real shared warning window; a client jump during the tell avoids the authority release without damage or rewards", async ({
+  page,
+  browser,
+}) => {
+  const guest = await browser.newPage({
+      viewport: { width: 800, height: 600 },
+    }),
+    requests = [],
+    errors = [];
+  try {
+    await expandedRoom(
+      page,
+      guest,
+      "glove_stun",
+      "glove_spring",
+      requests,
+      errors,
+    );
+    for (const p of [page, guest])
+      await p.evaluate(() => {
+        const g = window.__arena,
+          n = g.network;
+        window.__castPhases = [];
+        window.__jumpDuringTell = false;
+        const original = n.processEvents.bind(n);
+        n.processEvents = (events) => {
+          for (const e of events || [])
+            if (
+              e.id > n.lastEvent &&
+              e.type === "gloveAbility" &&
+              e.glove === "glove_stun"
+            ) {
+              window.__castPhases.push({ phase: e.phase, time: e.time });
+              if (e.phase === "windup" && g.loadout[0] === "glove_spring")
+                setTimeout(() => {
+                  const s = n.latest?.players.find((p) => p.id === n.id);
+                  if (!s?.alive) return;
+                  window.__jumpDuringTell = true;
+                  n.seq = Math.max(n.seq, 27000) + 1;
+                  n.client.send({
+                    type: "input",
+                    input: {
+                      seq: n.seq,
+                      yaw: 0,
+                      pitch: 0,
+                      keys: 0,
+                      fire: false,
+                      aim: false,
+                      paused: false,
+                      actions: [{ id: ++n.actionId, type: "jump" }],
+                    },
+                  });
+                }, 80);
+            }
+          original(events);
+        };
+        window.__balanceApproach = setInterval(() => {
+          const s = n.latest,
+            self = s?.players.find((p) => p.id === n.id),
+            other = s?.players.find((p) => p.id !== n.id && p.alive);
+          if (!self?.alive || !other || s.phase !== "playing") return;
+          const distance = Math.hypot(self.x - other.x, self.z - other.z),
+            visible = g.hasLOS(g.eye(self), g.eye(other)),
+            path = g.world.nav.path(self, other),
+            close = distance < 3.8 && visible,
+            goal = close
+              ? other
+              : path.find(
+                  (p) => Math.hypot(p.x - self.x, p.z - self.z) > 0.4,
+                ) || other,
+            yaw = Math.atan2(-(goal.x - self.x), -(goal.z - self.z));
+          window.__balanceClose = close;
+          window.__balanceDistance = distance;
+          g.yaw = yaw;
+          n.seq = Math.max(n.seq, 26000) + 1;
+          n.client.send({
+            type: "input",
+            input: {
+              seq: n.seq,
+              yaw,
+              pitch: 0,
+              keys: close ? 0 : 1,
+              fire: false,
+              aim: false,
+              paused: false,
+              actions: [],
+            },
+          });
+        }, 16);
+      });
+    for (const p of [page, guest])
+      await p.waitForFunction(() => window.__balanceClose, null, {
+        timeout: 35000,
+      });
+    for (const p of [page, guest])
+      await p.evaluate(() => {
+        clearInterval(window.__balanceApproach);
+        const n = window.__arena.network;
+        n.seq++;
+        n.client.send({
+          type: "input",
+          input: {
+            seq: n.seq,
+            yaw: window.__arena.yaw,
+            pitch: 0,
+            keys: 0,
+            fire: false,
+            aim: false,
+            paused: false,
+            actions: [],
+          },
+        });
+      });
+    const before = await page.evaluate(() => {
+      const n = window.__arena.network,
+        s = n.latest;
+      return {
+        distance: Math.hypot(
+          s.players[0].x - s.players[1].x,
+          s.players[0].z - s.players[1].z,
+        ),
+        visible: window.__arena.hasLOS(
+          window.__arena.eye(s.players[0]),
+          window.__arena.eye(s.players[1]),
+        ),
+      };
+    });
+    expect(before.distance).toBeLessThan(4.5);
+    expect(before.visible).toBe(true);
+    await expandedAbility(page);
+    for (const p of [page, guest])
+      await p.waitForFunction(
+        () => window.__castPhases.some((e) => e.phase === "release"),
+        null,
+        { timeout: 10000 },
+      );
+    const views = await Promise.all(
+      [page, guest].map((p) =>
+        p.evaluate(() => {
+          const g = window.__arena,
+            n = g.network,
+            s = n.latest,
+            target = s.players.find((p) => p.weapon === "glove_spring");
+          return {
+            phases: window.__castPhases,
+            target: {
+              health: target.health,
+              rag: target.dash,
+              jumped: target.y > 0.5,
+            },
+            slaps: JSON.parse(localStorage.getItem("slap-arena-profile-v1"))
+              .slaps,
+            hits: s.players.reduce((a, p) => a + p.stats.hits, 0),
+            jumpSent: window.__jumpDuringTell,
+          };
+        }),
+      ),
+    );
+    for (const view of views) {
+      expect(view.phases.map((e) => e.phase)).toEqual(["windup", "release"]);
+      expect(view.phases[1].time - view.phases[0].time).toBeGreaterThanOrEqual(
+        0.39,
+      );
+      expect(view.target.health).toBe(150);
+      expect(view.target.rag || 0).toBe(0);
+      expect(view.target.jumped).toBe(true);
+      expect(view.slaps).toBe(5500);
+      expect(view.hits).toBe(0);
+    }
+    expect(views[1].jumpSent).toBe(true);
+    expect(requests).toEqual([]);
+    expect(errors).toEqual([]);
+  } finally {
+    for (const p of [page, guest])
+      if (!p.isClosed())
+        await p.evaluate(() => {
+          clearInterval(window.__balanceApproach);
+          window.__arena?.network?.leave();
+        });
+    await guest.close();
+  }
+});

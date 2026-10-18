@@ -1,3 +1,4 @@
+import { STONE_REARM, ABILITY_CASTS } from "./balance.js";
 // Read the actual authoritative/predicted-local timers; never start a cosmetic
 // countdown that could claim protection, recovery or a rush after it ended.
 const STATUSES = Object.freeze([
@@ -49,11 +50,27 @@ export function gloveAbilityReadout(body, glove, phase) {
   else if (glove?.activation !== "active") label = "PASSIVE";
   else if (phase === "countdown") label = "PREP";
   else if (phase !== "playing") label = "WAIT";
-  else if (body.stoneTime > 0) label = "STONE";
+  else if (body.stoneTime > 0)
+    label =
+      glove.key === "diamond"
+        ? cooldown <= glove.abilityCooldown - STONE_REARM + 1e-8
+          ? "EXIT"
+          : "REARM"
+        : "STONE";
   else if (body.ragdollTime > 0) label = "RECOVER";
+  else if (body.gloveAbilityPending?.remaining > 0) label = "CAST";
   else if (!Number.isFinite(cooldown)) label = "WAIT";
   else if (cooldown > 0) label = `${read("", cooldown).remaining.toFixed(1)}s`;
   else if (glove.key === "thanos" && body.markTime > 0) label = "RETURN";
   else label = "READY";
-  return { label, progress: label === "PASSIVE" ? 1 : progress };
+  const readyProgress =
+    label === "PASSIVE" || label === "EXIT"
+      ? 1
+      : label === "REARM"
+        ? (glove.abilityCooldown - cooldown) / STONE_REARM
+        : label === "CAST"
+          ? 1 -
+            body.gloveAbilityPending.remaining / (ABILITY_CASTS[glove.key] || 1)
+          : progress;
+  return { label, progress: Math.max(0, Math.min(1, readyProgress)) };
 }

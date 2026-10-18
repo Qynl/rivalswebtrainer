@@ -1,3 +1,4 @@
+import { BRICK_LIFETIME } from "./balance.js";
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { batchFixedMeshes } from "../batching.js";
@@ -66,7 +67,7 @@ export function alignBrickModel(root, boxes, p) {
 export function animateBrick(root, life, clock = 0) {
   const rig = root.userData.brickRig;
   if (!rig) return;
-  const arming = life > 8.6,
+  const arming = life > BRICK_LIFETIME - 0.4,
     expiring = life < 1.2;
   const pulse =
     arming || expiring

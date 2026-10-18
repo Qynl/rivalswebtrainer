@@ -1,3 +1,13 @@
+import {
+  contactRegion,
+  RECOVERY_WINDOW,
+  ABILITY_CASTS,
+  STONE_DURATION,
+  STONE_REARM,
+  BRICK_LIFETIME,
+  GHOST_DURATION,
+  inErasureLane,
+} from "./balance.js";
 import { considerGloveTrapJump } from "./bot-traps.js";
 import { presentBoomerangReturn } from "./boomerang-return.js";
 import { recordDiceOutcome } from "./dice-outcome.js";
@@ -53,13 +63,13 @@ export function tickBody(body, dt) {
 export function tickGloves(g, dt) {
   if (!gloveMatch(g)) return;
   tickBody(g.player, dt);
-  tickSpecial(g, g.player);
+  tickSpecial(g, g.player, dt);
   // Multiplayer contexts each own exactly one body. Offline owns all of them.
   if (!g.headless && !g.network)
     for (const e of g.entities)
       if (e !== g.player) {
         tickBody(e, dt);
-        tickSpecial(g, e);
+        tickSpecial(g, e, dt);
       }
   if (!g.network) tickBricks(g, dt);
   g.slapImpact = Math.max(0, (g.slapImpact || 0) - dt);
@@ -97,7 +107,8 @@ export function beginSlap(g, body = g.player, id = g.loadout?.[0]) {
     blocked(body) ||
     g.state !== "playing" ||
     body.gloveCooldown > 0 ||
-    body.slapPending
+    body.slapPending ||
+    body.gloveAbilityPending
   )
     return false;
   body.ghostTime = 0;
@@ -146,11 +157,6 @@ export function slapTargets(
 ) {
   const yaw = source.isPlayer ? (source.context?.yaw ?? g.yaw) : source.yaw;
   const pitch = source.isPlayer ? (source.context?.pitch ?? g.pitch ?? 0) : 0;
-  const forward = v(
-    -Math.sin(yaw) * Math.cos(pitch),
-    Math.sin(pitch),
-    -Math.cos(yaw) * Math.cos(pitch),
-  );
   const origin = g.eye(source);
   return g.entities
     .filter((e) => {
@@ -163,13 +169,10 @@ export function slapTargets(
         e.slapGrace > 0
       )
         return false;
-      const delta = g.eye(e).sub(origin),
-        distance = delta.length();
+      const delta = g.eye(e).sub(origin);
       return (
-        distance < range + e.radius &&
-        distance > 0.001 &&
-        delta.normalize().dot(forward) > cone &&
-        g.hasLOS(origin, g.eye(e))
+        contactRegion(glove, delta, yaw, pitch, e.radius, range, cone) ===
+          "contact" && g.hasLOS(origin, g.eye(e))
       );
     })
     .sort(
@@ -180,7 +183,13 @@ export function slapTargets(
 }
 export function resolveSlap(g, source, id) {
   const glove = GLOVES[id];
-  if (!glove || blocked(source) || g.state !== "playing") return 0;
+  if (
+    !glove ||
+    blocked(source) ||
+    source.gloveAbilityPending ||
+    g.state !== "playing"
+  )
+    return 0;
   let count = 0;
   for (const target of slapTargets(
     g,
@@ -232,8 +241,7 @@ export function applyImpact(
       : 0;
   const power =
     (roll ? 7 + roll * 3.1 : glove.power) * (source.goldTime > 0 ? 1.3 : 1);
-  const damage =
-    (roll ? 12 + roll * 4 : glove.damage) * (source.goldTime > 0 ? 1.25 : 1);
+  const damage = roll ? 12 + roll * 4 : glove.damage;
   const anchor =
     glove.key === "anchor" && source.markTime > 0 ? source.gloveMark : null;
   const dx = anchor ? anchor.x - target.x : target.x - source.x,
@@ -250,7 +258,7 @@ export function applyImpact(
   target.jumps = 1;
   target.height = 1.15;
   target.ragdollTime = glove.ragdoll;
-  target.slapGrace = glove.grace ?? glove.ragdoll + 0.12;
+  target.slapGrace = glove.grace ?? glove.ragdoll + RECOVERY_WINDOW;
   if (glove.key === "boomerang") {
     target.boomerangAt = g.clock + 0.28;
     target.boomerangOwner = source;
@@ -260,6 +268,7 @@ export function applyImpact(
   }
   target.ragdollGeneration = (target.ragdollGeneration || 0) + 1;
   target.slapPending = null;
+  cancelAbilityCast(g, target);
   if (glove.key === "snow") target.chillTime = 5;
   const context = target.context || (target.isPlayer ? g : null);
   if (context) {
@@ -355,6 +364,22 @@ export function useGloveAbility(g, body = g.player, id = g.loadout?.[0]) {
   const deny = (reason) => denyGloveAbility(g, body, reason);
   if (glove.activation !== "active")
     return deny("PASSIVE GLOVE · NO ABILITY KEY NEEDED");
+  if (glove.key === "diamond" && body.stoneTime > 0) {
+    if (body.abilityCooldown > glove.abilityCooldown - STONE_REARM + 1e-8)
+      return deny("STONE FORM REARMING");
+    body.stoneTime = 0;
+    emitAbility(g, {
+      type: "gloveAbility",
+      phase: "exit",
+      player: body.id,
+      glove: id,
+      position: [body.x, body.y + 0.6, body.z],
+      round: g.round,
+      time: g.clock,
+    });
+    return true;
+  }
+  if (body.gloveAbilityPending) return deny("ABILITY WINDING UP");
   if (blocked(body))
     return deny(
       body.stoneTime > 0 ? "STONE FORM ACTIVE" : "RECOVERING · WAIT TO CAST",
@@ -386,17 +411,27 @@ export function useGloveAbility(g, body = g.player, id = g.loadout?.[0]) {
       if (owned[0].mesh) owned[0].mesh.visible = false;
     }
     g.gloveBricks = g.gloveBricks.filter((b) => b.life > 0);
-    const brick = { ...position, owner: body, life: 9, armedAt: g.clock + 0.4 };
+    const brick = {
+      ...position,
+      owner: body,
+      life: BRICK_LIFETIME,
+      armedAt: g.clock + 0.4,
+    };
     g.gloveBricks.push(brick);
     if (!g.headless && g.scene) {
       brick.mesh = createBrickModel();
       brick.mesh.position.set(position.x, position.y, position.z);
       alignBrickModel(brick.mesh, g.world.boxes, position);
       g.scene.add(brick.mesh);
-      g.effects.push({ mesh: brick.mesh, life: 9, max: 9, brick });
+      g.effects.push({
+        mesh: brick.mesh,
+        life: BRICK_LIFETIME,
+        max: BRICK_LIFETIME,
+        brick,
+      });
     }
   } else if (glove.key === "ghost") {
-    body.ghostTime = 3.2;
+    body.ghostTime = GHOST_DURATION;
   } else if (glove.key === "golden") {
     body.goldTime = 3;
   } else if (glove.key === "reverse") {
@@ -441,32 +476,11 @@ export function useGloveAbility(g, body = g.player, id = g.loadout?.[0]) {
     body.vz = (dz / d) * 22;
     body.boostTime = 0.55;
   } else if (glove.key === "stun" || glove.key === "za_hando") {
-    for (const enemy of nearbyEnemies(
-      g,
-      body,
-      glove.key === "stun" ? 5.8 : 9,
-    )) {
-      if (glove.key === "stun" && !enemy.grounded) continue;
-      if (
-        applyImpact(
-          g,
-          body,
-          enemy,
-          {
-            ...glove,
-            key: glove.key === "za_hando" ? "pull" : "stun",
-            power: glove.key === "stun" ? 0 : 13,
-            lift: glove.key === "stun" ? 1.4 : 3.5,
-            ragdoll: glove.key === "stun" ? 1.1 : 0.5,
-            grace: 0,
-          },
-          false,
-        )
-      )
-        affected++;
-    }
+    body.slapPending = null;
+    body.gloveAbilityPending = { id, remaining: ABILITY_CASTS[glove.key], yaw };
+    if (glove.key === "za_hando") body.vx = body.vz = 0;
   } else if (glove.key === "diamond") {
-    body.stoneTime = 2.5;
+    body.stoneTime = STONE_DURATION;
     body.slapPending = null;
     body.vx = body.vz = body.vy = 0;
   } else if (glove.key === "default") {
@@ -511,6 +525,8 @@ export function useGloveAbility(g, body = g.player, id = g.loadout?.[0]) {
     glove.key === "thanos" && body.markTime > 0 ? 0.4 : glove.abilityCooldown;
   const event = {
     type: "gloveAbility",
+    phase: body.gloveAbilityPending ? "windup" : undefined,
+    windup: body.gloveAbilityPending?.remaining,
     player: body.id,
     target: target?.id,
     glove: id,
@@ -526,19 +542,77 @@ export function useGloveAbility(g, body = g.player, id = g.loadout?.[0]) {
     round: g.round,
     time: g.clock,
   };
+  emitAbility(g, event);
+  return true;
+}
+function emitAbility(g, event) {
   if (g.emitGlove) g.emitGlove(event);
   else {
     playGloveAbilityAudio(g, event);
-    g.combatFX?.burst(
-      v(...event.position),
-      new THREE.Color(glove.color).getHex(),
-      16,
-    );
+    if (!["windup", "cancel"].includes(event.phase))
+      g.combatFX?.burst(
+        v(...event.position),
+        new THREE.Color(GLOVES[event.glove].color).getHex(),
+        16,
+      );
   }
   presentGloveAbility(g, event);
   g.events.update?.(g);
-  return true;
 }
+function cancelAbilityCast(g, body) {
+  const pending = body.gloveAbilityPending;
+  if (!pending) return;
+  body.gloveAbilityPending = null;
+  emitAbility(g, {
+    type: "gloveAbility",
+    phase: "cancel",
+    player: body.id,
+    glove: pending.id,
+    position: [body.x, body.y + 0.6, body.z],
+    round: g.round,
+    time: g.clock,
+  });
+}
+function releaseAreaAbility(g, body, glove, yaw) {
+  let affected = 0;
+  for (const enemy of nearbyEnemies(g, body, glove.key === "stun" ? 5.8 : 9)) {
+    if (glove.key === "stun" && !enemy.grounded) continue;
+    if (
+      glove.key === "za_hando" &&
+      !inErasureLane(enemy.x - body.x, enemy.z - body.z, yaw, enemy.radius)
+    )
+      continue;
+    if (
+      applyImpact(
+        g,
+        body,
+        enemy,
+        {
+          ...glove,
+          key: glove.key === "za_hando" ? "pull" : "stun",
+          power: glove.key === "stun" ? 0 : 13,
+          lift: glove.key === "stun" ? 1.4 : 3.5,
+          ragdoll: glove.key === "stun" ? 1.1 : 0.5,
+          grace: 0,
+        },
+        false,
+      )
+    )
+      affected++;
+  }
+  emitAbility(g, {
+    type: "gloveAbility",
+    phase: "release",
+    yaw,
+    player: body.id,
+    glove: glove.id,
+    position: [body.x, body.y + 0.6, body.z],
+    affected,
+    round: g.round,
+    time: g.clock,
+  });
+}
+
 export function updateGloveBot(g, e, dt) {
   if (!e.alive) {
     ragdollStep(g, e, dt);
@@ -553,6 +627,26 @@ export function updateGloveBot(g, e, dt) {
     return;
   }
   const glove = GLOVES[e.activeWeapon] || GLOVES[DEFAULT_GLOVE];
+  // A defensive rock is not a compulsory self-stun for offline opponents.
+  // Finish blocking the visible tell, then use the same E exit as a player.
+  if (
+    glove.key === "diamond" &&
+    e.stoneTime > 0 &&
+    e.stoneTime <= STONE_DURATION - 0.65 &&
+    !g.entities.some(
+      (enemy) =>
+        enemy.alive &&
+        enemy.team !== e.team &&
+        Math.hypot(enemy.x - e.x, enemy.z - e.z) < 4.3 &&
+        gloveEnemyVisible(g, e, enemy) &&
+        (enemy.slapPending || enemy.gloveAbilityPending),
+    )
+  ) {
+    if (useGloveAbility(g, e, glove.id)) {
+      g.animateBot(e, dt);
+      return;
+    }
+  }
   if (blocked(e)) {
     e.gloveTrapNotice = null;
     if (e.gloveDuel) e.gloveDuel.seenAt = g.clock;
@@ -683,7 +777,22 @@ export function nearbyEnemies(g, body, range) {
         Math.hypot(b.x - body.x, b.z - body.z),
     );
 }
-function tickSpecial(g, e) {
+function tickSpecial(g, e, dt) {
+  if (g.network && e.gloveAbilityPending?.presentationOnly) {
+    e.gloveAbilityPending.remaining -= dt;
+    if (e.gloveAbilityPending.remaining <= 0) e.gloveAbilityPending = null;
+  }
+  if (!g.network && e.gloveAbilityPending) {
+    if (blocked(e) || g.state !== "playing") cancelAbilityCast(g, e);
+    else {
+      e.gloveAbilityPending.remaining -= dt;
+      if (e.gloveAbilityPending.remaining <= 1e-8) {
+        const { id, yaw } = e.gloveAbilityPending;
+        e.gloveAbilityPending = null;
+        releaseAreaAbility(g, e, GLOVES[id], yaw);
+      }
+    }
+  }
   if (!g.network && e.boomerangAt != null && g.clock >= e.boomerangAt) {
     const owner = e.boomerangOwner;
     e.boomerangAt = null;

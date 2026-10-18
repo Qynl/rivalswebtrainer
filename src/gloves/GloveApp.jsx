@@ -260,7 +260,7 @@ function MatchHUD({ h, profile }) {
             {status === "RAGDOLL"
               ? "Recovering · Movement returns automatically"
               : status === "STONE FORM"
-                ? "Protected · Cannot move or slap"
+                ? "Protected · E to exit after rearm"
                 : {
                     CHILLED: "Movement & jump reduced",
                     HIDDEN: "Slapping reveals you · Still vulnerable",

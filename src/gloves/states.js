@@ -1,3 +1,4 @@
+import { CHILL_MOVE_SCALE } from "./balance.js";
 import { GRAVITY } from "../physics.js";
 // Glove-only timer meanings. Legacy firearm snapshot semantics are unchanged.
 export function gloveState(body) {
@@ -22,8 +23,13 @@ export function receiveGloveState(body, state) {
   });
 }
 export function gloveMoveScale(body, glove) {
+  if (body.gloveAbilityPending && glove.key === "za_hando") return 0;
   const chill =
-    body.chillTime > 0 ? (glove.key === "speedrun" ? 0.85 : 0.55) : 1;
+    body.chillTime > 0
+      ? glove.key === "speedrun"
+        ? 0.85
+        : CHILL_MOVE_SCALE
+      : 1;
   const passive = glove.key === "speedrun" ? 1.4 : 1;
   const gold = body.goldTime > 0 ? 1.15 : 1;
   const boost =
