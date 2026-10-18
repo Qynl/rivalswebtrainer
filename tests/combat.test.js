@@ -254,6 +254,44 @@ test("a real player rifle action populates local drill analytics without alterin
   assert.equal(rifle.headContacts, 1);
 });
 
+test("ordinary rifle fire keeps its hit and ammo behavior when training attribution is inactive", () => {
+  const g = harness(),
+    p = { ...entity(0, 0, 4), isPlayer: true, vx: 0, vz: 0 },
+    target = entity(1);
+  Object.assign(g, {
+    player: p,
+    entities: [p, target],
+    loadout: ["rifle", "pistol", "knife", "grenade"],
+    slot: 0,
+    ammunition: [
+      { mag: 20, reserve: 100 },
+      { mag: 12, reserve: 60 },
+      { mag: Infinity, reserve: Infinity },
+      { mag: 1, reserve: 0 },
+    ],
+    yaw: 0,
+    pitch: 0,
+    aiming: true,
+    cooldown: 0,
+    reloadTime: 0,
+    deflectTime: 0,
+    quickMeleeTime: 0,
+    quickUtilityTime: 0,
+    healTime: 0,
+    pendingThrow: null,
+    clock: 0,
+    activeDrill: null,
+    trainingAnalytics: null,
+    trainingEventSequence: 0,
+  });
+  assert.equal(g.firePlayer(), true);
+  assert.deepEqual(
+    [g.ammunition[0].mag, g.matchStats.shots, g.matchStats.hits, g.trainingEventSequence],
+    [19, 1, 1, 0],
+  );
+  assert.equal(target.health < 100, true);
+});
+
 test("delayed Bow impacts retain their fire-time context and count one head-hit event", () => {
   const g = trainingHarness(["bow"]),
     p = { ...entity(0, 0, 4), isPlayer: true, vx: 1, vz: 0 },

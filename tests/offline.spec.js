@@ -89,5 +89,36 @@ test("production assets support a disconnected reload and range session", async 
       JSON.parse(localStorage.getItem("rivals-training-history"))?.[0]?.score,
     ),
   ).toBe(7);
+
+  await page.click("#start-drill-move-connect");
+  await page.waitForFunction(
+    () =>
+      window.__arena?.activeDrill?.id === "move-connect" &&
+      window.__arena.state === "playing" &&
+      document.pointerLockElement !== null,
+  );
+  await page.evaluate(() => {
+    const game = window.__arena,
+      weaponId = game.loadout[0];
+    game.player.vx = 2;
+    const action = game.recordTrainingAction(weaponId);
+    game.recordTrainingContact(weaponId, {
+      kind: "direct",
+      distance: 5,
+      damage: 1,
+      action,
+    });
+    game.drillElapsed = game.activeDrill.duration - 1 / 240;
+    game.simulate(1 / 120);
+  });
+  await expect(page.locator("#drill-result-score")).toHaveText("1");
+  await expect(page.locator("#drill-result-score-label")).toHaveText("MOVE HITS");
+  expect(
+    await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("rivals-training-history"))?.some(
+        (run) => run.drillId === "move-connect" && run.score === 1,
+      ),
+    ),
+  ).toBe(true);
   expect(errors).toEqual([]);
 });
