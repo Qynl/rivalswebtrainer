@@ -641,6 +641,43 @@ footer .live-dot {
   letter-spacing: 1px;
   font-weight: 900;
 }
+.guide-start-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 30px;
+  margin: 28px 0 0;
+  padding: 22px 25px;
+  border: 1px solid #ffffff16;
+  border-radius: 8px;
+  background: linear-gradient(110deg, #20212e, #1b1c28);
+}
+.guide-start-card .section-number {
+  color: var(--orange);
+  font-size: 8px;
+  letter-spacing: 1px;
+}
+.guide-start-card h2 {
+  margin: 10px 0 5px;
+  font-size: 18px;
+}
+.guide-start-card p {
+  margin: 0;
+  color: #a6a3b5;
+  font-size: 10px;
+  line-height: 1.6;
+}
+.guide-start-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.guide-start-actions button {
+  padding: 11px 12px;
+  font-size: 8px;
+  white-space: nowrap;
+}
 .guide-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1359,6 +1396,14 @@ kbd {
   }
   #loadout-mini {
     gap: 7px;
+  }
+  .guide-start-card {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .guide-start-actions {
+    justify-content: flex-start;
   }
   .guide-grid section {
     padding: 20px;
@@ -3303,6 +3348,10 @@ kbd {
   font-weight: 750;
   font-variant-numeric: tabular-nums;
 }
+.drill-weapon-row .drill-context-hit {
+  margin-top: 6px;
+  color: #aad8c8;
+}
 .drill-weapon-row small {
   margin-top: 4px;
   color: #817e90;
@@ -3408,6 +3457,20 @@ kbd {
   .brand-sub {
     font-size: 5px;
     letter-spacing: 1.2px;
+  }
+  .guide-start-card {
+    padding: 16px;
+  }
+  .guide-start-actions {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .guide-start-actions button {
+    white-space: normal;
+  }
+  .guide-start-actions button:last-child {
+    grid-column: 1 / -1;
   }
   .training-intro .page-title {
     font-size: 46px;

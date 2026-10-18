@@ -7,6 +7,7 @@ export const TRAINING_IMPORT_MAX_BYTES = 1_000_000;
 const RUN_LIMIT = 50;
 const MAX_IMPORT_BYTES = TRAINING_IMPORT_MAX_BYTES;
 const MAX_IMPORT_RUNS = 500;
+const MAX_RUN_COUNT = 1_000_000;
 
 const definitions = [
   {
@@ -46,6 +47,24 @@ const definitions = [
       "Place the reticle at head height before you fire. Compare head tags with total hits after the run.",
   },
   {
+    id: "move-connect",
+    title: "Move and connect",
+    category: "MOVEMENT",
+    rulesVersion: TRAINING_RULES_VERSION,
+    duration: 60,
+    targetCount: 5,
+    targetSpeed: 1.05,
+    respawnDelay: 1.2,
+    scoreStat: "movingHits",
+    scoreLabel: "MOVE HITS",
+    secondaryStat: "hits",
+    secondaryLabel: "ALL HITS",
+    description:
+      "Keep moving through each engagement. Score one point when an action fired while moving makes at least one target contact.",
+    coaching:
+      "Strafe with intention, then settle your crosshair through the shot. Multiple pellets and ongoing damage still count as one connected action.",
+  },
+  {
     id: "clears",
     title: "Target clear sprint",
     category: "SPEED",
@@ -76,7 +95,9 @@ export function getTrainingDrill(id) {
 }
 
 function count(value) {
-  return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+  return Number.isFinite(value)
+    ? Math.min(MAX_RUN_COUNT, Math.max(0, Math.floor(value)))
+    : 0;
 }
 
 function ratio(numerator, denominator) {
@@ -113,6 +134,10 @@ function legacyRunId(drillId, endedAt, loadout, stats) {
 
 export function getDrillMetric(stat, stats = {}) {
   if (stat === "accuracy") return ratio(count(stats.hits), count(stats.shots));
+  if (stat === "movingHits")
+    return Array.isArray(stats.analytics?.weapons)
+      ? count(stats.analytics.weapons.reduce((sum, row) => sum + count(row.movingHitActions), 0))
+      : 0;
   return ["shots", "hits", "headshots", "kills"].includes(stat)
     ? count(stats[stat])
     : 0;
@@ -152,12 +177,12 @@ export function createDrillResult(
     hits: count(stats.hits),
     headshots: count(stats.headshots),
     kills: count(stats.kills),
+    analytics: sanitizeTrainingAnalytics(options.analytics, safeLoadout),
   };
   result.accuracy = ratio(result.hits, result.shots);
   result.headshotRate = ratio(result.headshots, result.hits);
   result.score = getDrillScore(drillId, result);
   result.scoreLabel = drill.scoreLabel;
-  result.analytics = sanitizeTrainingAnalytics(options.analytics, safeLoadout);
   return result;
 }
 
@@ -319,7 +344,23 @@ export function parseTrainingImport(input) {
     } catch {
       return { ok: false, error: "This is not valid training-history JSON." };
     }
-  } else payload = input;
+  } else {
+    let encoded;
+    try {
+      encoded = JSON.stringify(input);
+    } catch {
+      return { ok: false, error: "This training-history payload could not be read." };
+    }
+    if (typeof encoded !== "string")
+      return { ok: false, error: "This is not valid training-history JSON." };
+    if (new TextEncoder().encode(encoded).byteLength > MAX_IMPORT_BYTES)
+      return { ok: false, error: "That file is too large to import (1 MB maximum)." };
+    try {
+      payload = JSON.parse(encoded);
+    } catch {
+      return { ok: false, error: "This is not valid training-history JSON." };
+    }
+  }
   if (
     !payload ||
     typeof payload !== "object" ||

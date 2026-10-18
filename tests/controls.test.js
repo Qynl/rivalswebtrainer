@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import { Game } from "../src/game.js";
 import { MultiplayerSession } from "../src/net/session.js";
 import {
+  CONTROL_SCHEMA_VERSION,
   DEFAULT_CONTROLS,
+  createControlsRecord,
   formatControl,
   isBindableCode,
   rebindControl,
@@ -87,4 +89,18 @@ test("remapped action names keep the existing multiplayer ability protocol", () 
     session.keyAction(control);
   session.keyAction("moveForward");
   assert.deepEqual(sent, ["jump", "slide", "ability", "utility", "reload"]);
+});
+
+test("control preferences are schema-versioned and retain a legacy flat-map migration", () => {
+  const record = createControlsRecord(DEFAULT_CONTROLS);
+  assert.deepEqual(record, {
+    schemaVersion: CONTROL_SCHEMA_VERSION,
+    bindings: DEFAULT_CONTROLS,
+  });
+  assert.deepEqual(sanitizeControls(record), DEFAULT_CONTROLS);
+  assert.deepEqual(sanitizeControls({ moveForward: ["KeyI"] }).moveForward, ["KeyI"]);
+  assert.deepEqual(
+    sanitizeControls({ schemaVersion: CONTROL_SCHEMA_VERSION + 1, bindings: { moveForward: ["KeyI"] } }),
+    DEFAULT_CONTROLS,
+  );
 });

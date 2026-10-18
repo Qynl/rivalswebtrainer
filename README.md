@@ -11,7 +11,7 @@ npm ci
 npm run dev
 ```
 
-Open the address printed by Vite. Select an arena, team size, difficulty, then **Enter Arena**. Choose **Primary → Secondary → Melee → Utility** in the compact pre-match picker and click **Deploy**. Rematches use the same picker; cancelling it leaves your saved loadout unchanged. Click **Warm Up in the Range** for open-ended practice, or open **TRAIN** for three timed aim drills with local personal-best tracking. In offline modes, every teammate and opponent other than you is a local bot. Choose **Multiplayer** for human-only online lobbies: create/join by code, pick teams and weapons, ready up, then let the host start 1v1–3v3. The default multiplayer runs in the host browser with automatic PeerJS discovery: **no backend deployment, accounts, API configuration or manual WebRTC exchange**. Share the invite link/code and keep the host tab open and active. See [multiplayer and its network limits](docs/multiplayer.md).
+Open the address printed by Vite. Select an arena, team size, difficulty, then **Enter Arena**. Choose **Primary → Secondary → Melee → Utility** in the compact pre-match picker and click **Deploy**. Rematches use the same picker; cancelling it leaves your saved loadout unchanged. Click **Warm Up in the Range** for open-ended practice, or open **TRAIN** for four timed practice drills with local personal-best tracking. In offline modes, every teammate and opponent other than you is a local bot. Choose **Multiplayer** for human-only online lobbies: create/join by code, pick teams and weapons, ready up, then let the host start 1v1–3v3. The default multiplayer runs in the host browser with automatic PeerJS discovery: **no backend deployment, accounts, API configuration or manual WebRTC exchange**. Share the invite link/code and keep the host tab open and active. See [multiplayer and its network limits](docs/multiplayer.md).
 
 ### Production / disconnected use
 
@@ -40,10 +40,11 @@ Mobile layouts support browsing/configuration, but combat requires desktop point
   - Utility: Grenade, Molotov, Smoke, Flashbang, Medkit.
 - Charged ballistic arrows, minigun spin-up with animated barrels, paint splats, arcing impact grenades, close-range flame/afterburn, LOS-aware flashbang blindness, and interruptible 70-HP / quick 25-HP medkit heals. Medkits are one use per round (unlimited in the range).
 - Headshots, pellet falloff, reloads, recoil, scope/ADS, ballistic explosives, fire pools, smoke blocking bot perception, tracers, and hit/kill feedback.
-- Dedicated open-lane free-practice range with moving/respawning targets and unlimited reserves/utilities, plus three 60-second drills: fast target tracking, headshot discipline, and elimination speed.
-- Drill results show the selected score, match stats, and a per-weapon event breakdown: emitted fire/attack actions, unique actions with any/head contact, ADS and movement context, direct/head contacts, splash/area contacts, applied damage, and average direct-hit range in trainer units. These counters keep pellets and damage-over-time ticks distinct; they are not normalized aim accuracy.
+- Dedicated open-lane free-practice range with moving/respawning targets and unlimited reserves/utilities, plus four 60-second drills: target tracking, headshot discipline, elimination speed, and moving-hit control.
+- Drill results show the selected score, match stats, and a per-weapon event breakdown: emitted fire/attack actions, unique actions with any/head contact, ADS/movement action and hit context, direct/head contacts, splash/area contacts, applied damage, and average direct-hit range in trainer units. These counters keep pellets and damage-over-time ticks distinct; they are not normalized aim accuracy.
 - Up to 50 runs stay on this device. Personal bests and recent-score trends are compared only within the same drill rules version and exact loadout; trends wait for three runs. Records can be cleared or manually exported/imported as a validated, versioned JSON file. Nothing is uploaded.
-- Procedural Web Audio sounds; locally persisted sensitivity, FOV, volume, performance mode, keyboard bindings, loadout, last 20 match results, and recent training runs. Bindings are configurable in Settings, duplicate keys swap safely, and browser shortcuts remain reserved.
+- The GUIDE tab offers a no-pressure first-session path to controls, the free range, and timed drills; it never blocks play.
+- Procedural Web Audio sounds; locally persisted sensitivity, FOV, volume, performance mode, versioned keyboard bindings, loadout, last 20 match results, and recent training runs. Bindings are configurable in Settings, duplicate keys swap safely, and common browser shortcuts remain reserved.
 
 ## Controls
 
@@ -74,6 +75,7 @@ Choose **TRAIN** in the lobby, then start a drill with your current four-slot lo
 - **Track the strafe:** five faster targets; score confirmed hits.
 - **Headshot discipline:** three slower targets; score head tags.
 - **Target clear sprint:** five targets with faster respawns; score eliminations.
+- **Move and connect:** score each moving fire/attack action that makes at least one contact, once even when several pellets or effect ticks connect.
 
 The result screen includes shots, hits, accuracy, head tags, eliminations, and a per-weapon breakdown. Session-scoped event IDs link each action to delayed projectile outcomes; the summary counts unique actions with any/head contact separately from direct contacts (pellets count separately), splash contacts, and area-effect damage ticks. It also records aiming/movement context, applied trainer HP, and average direct range in trainer units. Flame fire events are simulation pulses, not mouse clicks. No cross-weapon “aim accuracy” is inferred.
 

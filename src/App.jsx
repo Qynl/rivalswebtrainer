@@ -378,6 +378,9 @@ export function App() {
       }
     }
   };
+  click("guide-open-settings", () => actions.settings(false));
+  click("guide-open-range", actions.range);
+  click("guide-open-training", () => actions.tab("training"));
   click("resume-button", () => game.resume());
   click("quit-button", () => game.quit());
   click("results-lobby", () => game.quit());
@@ -555,7 +558,9 @@ export function App() {
           </span>
           <span>
             <b>{row.aimedActions}/{row.movingActions}</b>
-            <small>ADS / MOVING</small>
+            <small>ADS / MOVING ACTIONS</small>
+            <b className="drill-context-hit">{row.aimedHitActions}/{row.movingHitActions}</b>
+            <small>ADS / MOVING HITS</small>
           </span>
           <span>
             <b>

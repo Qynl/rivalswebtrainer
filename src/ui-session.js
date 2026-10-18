@@ -4,6 +4,7 @@ import { createStore } from "./ui-store.js";
 import {
   CONTROL_DEFINITIONS,
   DEFAULT_CONTROLS,
+  createControlsRecord,
   rebindControl,
   sanitizeControls,
 } from "./controls.js";
@@ -673,7 +674,7 @@ export const actions = {
       return result;
     }
     ui.set({ controls: result.controls, rebinding: null });
-    save("rivals-controls", result.controls);
+    save("rivals-controls", createControlsRecord(result.controls));
     game?.setControls(result.controls);
     if (result.swapped) toast("That key was already used; the two controls were swapped.");
     return result;
@@ -681,7 +682,7 @@ export const actions = {
   resetControls() {
     const controls = sanitizeControls(DEFAULT_CONTROLS);
     ui.set({ controls, rebinding: null });
-    save("rivals-controls", controls);
+    save("rivals-controls", createControlsRecord(controls));
     game?.setControls(controls);
     toast("Controls restored to defaults.");
   },

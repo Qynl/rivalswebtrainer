@@ -38,7 +38,7 @@ test("timed tracking drill produces a local personal best, retry and session his
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await ready(page);
-  await expect(page.locator("#training-drills article")).toHaveCount(3);
+  await expect(page.locator("#training-drills article")).toHaveCount(4);
   await expect(page.locator('[data-drill-card="tracking"]')).toContainText("NO RUN YET");
   await page.click("#training-edit-loadout");
   await expect(page.locator("#loadout-tab")).toBeVisible();
@@ -123,7 +123,7 @@ test("timed tracking drill produces a local personal best, retry and session his
     schemaVersion: 1,
   });
   expect(exported.runs).toHaveLength(2);
-  expect(exported.runs[0].analytics.version).toBe(1);
+  expect(exported.runs[0].analytics.version).toBe(2);
 
   await page.setViewportSize({ width: 390, height: 844 });
   expect(
@@ -176,6 +176,7 @@ test("precision and speed drills load distinct target layouts and the clock free
   for (const [id, expectedTargets, expectedSpeed] of [
     ["precision", 3, 0.62],
     ["clears", 5, 1.05],
+    ["move-connect", 5, 1.05],
   ]) {
     await page.click(`#start-drill-${id}`);
     await page.waitForFunction(
@@ -209,4 +210,48 @@ test("precision and speed drills load distinct target layouts and the clock free
     await page.click('[data-tab="training"]');
   }
   expect(errors).toEqual([]);
+});
+
+test("move-and-connect scores linked moving hit actions once, not every pellet", async ({ page }) => {
+  await ready(page);
+  await page.click("#start-drill-move-connect");
+  await page.waitForFunction(
+    () =>
+      window.__arena?.activeDrill?.id === "move-connect" &&
+      window.__arena.state === "playing" &&
+      document.pointerLockElement !== null,
+  );
+  await page.evaluate(() => {
+    const game = window.__arena;
+    game.player.vx = 2;
+    const weaponId = game.loadout[0],
+      action = game.recordTrainingAction(weaponId);
+    for (let i = 0; i < 4; i++)
+      game.recordTrainingContact(weaponId, {
+        kind: "direct",
+        distance: 10 + i,
+        damage: 3,
+        action,
+      });
+    game.drillElapsed = game.activeDrill.duration - 1 / 240;
+    game.simulate(1 / 120);
+  });
+  await expect(page.locator("#drill-results")).toBeVisible();
+  await expect(page.locator("#drill-result-score")).toHaveText("1");
+  await expect(page.locator("#drill-result-score-label")).toHaveText("MOVE HITS");
+  await expect(
+    page.locator("#drill-result-analytics .drill-weapon-row").first().locator(".drill-context-hit"),
+  ).toHaveText("0/1");
+  await expect(page.locator("#drill-result-analytics")).toContainText("ADS / MOVING HITS");
+  const run = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("rivals-training-history"))[0],
+  );
+  expect(run).toMatchObject({ drillId: "move-connect", score: 1 });
+  expect(run.analytics.weapons[0]).toMatchObject({
+    actions: 1,
+    hitActions: 1,
+    movingActions: 1,
+    movingHitActions: 1,
+    directContacts: 4,
+  });
 });

@@ -1690,17 +1690,12 @@ export class Game {
     const id = (Number.isSafeInteger(this.trainingEventSequence)
         ? this.trainingEventSequence
         : 0) + 1,
-      speed = Math.hypot(this.player?.vx || 0, this.player?.vz || 0);
-    if (
-      !addTrainingAction(this.trainingAnalytics, weaponId, {
-        aiming: !!this.aiming,
-        moving: speed > 0.5,
-      })
-    ) {
+      aiming = !!this.aiming,
+      moving = Math.hypot(this.player?.vx || 0, this.player?.vz || 0) > 0.5;
+    if (!addTrainingAction(this.trainingAnalytics, weaponId, { aiming, moving }))
       return null;
-    }
     this.trainingEventSequence = id;
-    return { id, weaponId, hit: false, head: false };
+    return { id, weaponId, hit: false, head: false, aiming, moving };
   }
   recordTrainingContact(weaponId, outcome) {
     if (!this.activeDrill || !this.trainingAnalytics) return false;

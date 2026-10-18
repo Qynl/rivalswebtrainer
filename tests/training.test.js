@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  createTrainingAnalytics,
+  recordTrainingAction,
+  recordTrainingContact,
+} from "../src/training-analytics.js";
+import {
   addTrainingRun,
   createTrainingExport,
   createDrillResult,
@@ -23,9 +28,9 @@ const sniperLoadout = ["sniper", "revolver", "knife", "smoke"];
 const run = (drillId, stats, loadout = rifleLoadout, endedAt = "2026-10-17T12:00:00.000Z") =>
   createDrillResult(drillId, stats, loadout, endedAt);
 
-test("three 60-second drills have unique IDs and real target/scoring definitions", () => {
-  assert.equal(TRAINING_DRILLS.length, 3);
-  assert.equal(new Set(TRAINING_DRILLS.map((drill) => drill.id)).size, 3);
+test("four 60-second drills have unique IDs and real target/scoring definitions", () => {
+  assert.equal(TRAINING_DRILLS.length, 4);
+  assert.equal(new Set(TRAINING_DRILLS.map((drill) => drill.id)).size, 4);
   for (const drill of TRAINING_DRILLS) {
     assert.equal(drill.duration, 60);
     assert.ok(drill.targetCount >= 3);
@@ -41,11 +46,48 @@ test("drill scoring uses its declared metric and handles zero or malformed stats
   assert.equal(getDrillScore("tracking", { hits: 12.8 }), 12);
   assert.equal(getDrillScore("precision", { headshots: 7 }), 7);
   assert.equal(getDrillScore("clears", { kills: 5 }), 5);
+  assert.equal(
+    getDrillScore("move-connect", {
+      analytics: { weapons: [{ movingHitActions: 3 }, { movingHitActions: 2 }] },
+    }),
+    5,
+  );
+  assert.equal(getDrillScore("move-connect", {}), 0);
   assert.equal(getDrillMetric("accuracy", { hits: 3, shots: 8 }), 38);
   assert.equal(getDrillMetric("accuracy", { hits: 0, shots: 0 }), 0);
   assert.equal(getDrillMetric("accuracy", { hits: 4, shots: 5 }), 80);
   assert.equal(getDrillScore("not-a-drill", { hits: 99 }), 0);
   assert.equal(getDrillScore("tracking", { hits: Infinity }), 0);
+  assert.equal(getDrillScore("tracking", { hits: 1e100 }), 1_000_000);
+  assert.equal(
+    getDrillMetric("movingHits", {
+      analytics: { weapons: [{ movingHitActions: 1e100 }, { movingHitActions: 1e100 }] },
+    }),
+    1_000_000,
+  );
+});
+
+test("move-and-connect scores unique moving actions with a hit, and recomputes safely on load", () => {
+  const analytics = createTrainingAnalytics(rifleLoadout),
+    action = { id: 1, weaponId: "rifle", hit: false, head: false, moving: true };
+  recordTrainingAction(analytics, "rifle", { moving: true });
+  recordTrainingContact(analytics, "rifle", {
+    kind: "direct",
+    distance: 9,
+    action,
+  });
+  recordTrainingAction(analytics, "rifle", { moving: false });
+  const result = createDrillResult(
+    "move-connect",
+    { shots: 2, hits: 2 },
+    rifleLoadout,
+    "2026-10-18T12:00:00.000Z",
+    { analytics },
+  );
+  assert.equal(result.score, 1);
+  assert.equal(result.scoreLabel, "MOVE HITS");
+  assert.equal(result.analytics.weapons[0].movingHitActions, 1);
+  assert.equal(sanitizeTrainingHistory([{ ...result, score: 999 }])[0].score, 1);
 });
 
 test("run summaries freeze accurate counts, derived rates and an independent loadout copy", () => {
@@ -157,6 +199,18 @@ test("exports use a versioned envelope and imports round-trip only validated loc
 test("imports reject malformed, unsupported, oversized, and excessive payloads", () => {
   assert.equal(parseTrainingImport("{").ok, false);
   assert.equal(parseTrainingImport("x".repeat(1_000_001)).ok, false);
+  assert.equal(
+    parseTrainingImport({
+      format: TRAINING_EXPORT_FORMAT,
+      schemaVersion: 1,
+      runs: [],
+      extra: "x".repeat(1_000_001),
+    }).ok,
+    false,
+  );
+  const cyclic = {};
+  cyclic.self = cyclic;
+  assert.equal(parseTrainingImport(cyclic).ok, false);
   assert.equal(parseTrainingImport({ format: "other", schemaVersion: 1, runs: [] }).ok, false);
   assert.equal(
     parseTrainingImport({ format: TRAINING_EXPORT_FORMAT, schemaVersion: 2, runs: [] }).ok,

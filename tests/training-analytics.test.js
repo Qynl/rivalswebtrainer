@@ -38,7 +38,14 @@ test("training analytics count firing context separately from target contacts", 
 
 test("one linked action gets at most one hit/head event across multiple pellet contacts", () => {
   const analytics = createTrainingAnalytics(["shotgun"]),
-    action = { id: 1, weaponId: "shotgun", hit: false, head: false };
+    action = {
+      id: 1,
+      weaponId: "shotgun",
+      hit: false,
+      head: false,
+      aiming: true,
+      moving: true,
+    };
   recordTrainingAction(analytics, "shotgun");
   recordTrainingContact(analytics, "shotgun", {
     kind: "direct",
@@ -59,8 +66,16 @@ test("one linked action gets at most one hit/head event across multiple pellet c
   });
   const [row] = getTrainingAnalyticsRows(analytics);
   assert.deepEqual(
-    [row.actions, row.hitActions, row.headHitActions, row.directContacts, row.headContacts],
-    [1, 1, 1, 3, 2],
+    [
+      row.actions,
+      row.hitActions,
+      row.headHitActions,
+      row.aimedHitActions,
+      row.movingHitActions,
+      row.directContacts,
+      row.headContacts,
+    ],
+    [1, 1, 1, 1, 1, 3, 2],
   );
   assert.equal(action.hit, true);
   assert.equal(action.head, true);
@@ -104,6 +119,10 @@ test("analytics reject unknown events and sanitize imported counters to the load
         {
           weaponId: "rifle",
           actions: 10,
+          hitActions: 15,
+          headHitActions: 9,
+          aimedHitActions: 20,
+          movingHitActions: 20,
           aimedActions: 100,
           movingActions: -1,
           directContacts: 3,
@@ -119,12 +138,15 @@ test("analytics reject unknown events and sanitize imported counters to the load
     },
     loadout,
   );
+  assert.equal(clean.version, TRAINING_ANALYTICS_VERSION);
   assert.equal(clean.weapons.length, 4);
   assert.deepEqual(clean.weapons[0], {
     weaponId: "rifle",
     actions: 10,
-    hitActions: 0,
-    headHitActions: 0,
+    hitActions: 10,
+    headHitActions: 3,
+    aimedHitActions: 10,
+    movingHitActions: 0,
     aimedActions: 10,
     movingActions: 0,
     directContacts: 3,
@@ -163,6 +185,10 @@ test("analytics require bounded sampled distances and expose no accuracy fiction
     loadout,
   );
   const rifle = getTrainingAnalyticsRows(clean)[0];
+  assert.equal(clean.version, TRAINING_ANALYTICS_VERSION);
+  assert.equal(rifle.hitActions, 0);
+  assert.equal(rifle.aimedHitActions, 0);
+  assert.equal(rifle.movingHitActions, 0);
   assert.equal(rifle.averageDistance, 9);
   assert.equal(rifle.aimedPercent, null);
   assert.equal(rifle.movingPercent, null);

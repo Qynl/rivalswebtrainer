@@ -47,7 +47,7 @@ This is not a recommendation to rewrite the engine. The safer approach is to ext
 
 A first, deliberately bounded training loop is now implemented:
 
-- A new **TRAIN** lobby tab with three 60-second drills: **Track the strafe**, **Headshot discipline**, and **Target clear sprint**.
+- A new **TRAIN** lobby tab with four 60-second drills: **Track the strafe**, **Headshot discipline**, **Target clear sprint**, and **Move and connect** (one score per moving action that contacts a target).
 - The drills use distinct target counts, movement speeds, and respawn cadence while reusing the actual range, weapons, hitboxes, and fixed simulation.
 - The timer is simulation-driven and pauses with the game. Ending a drill freezes play, releases pointer lock, clears active projectiles/effects, and shows a result instead of silently continuing.
 - Results report shots, hits, accuracy, head tags, eliminations, and the drill’s explicit score. Bow head hits are now included in the head-tag counter.
@@ -60,8 +60,9 @@ A first, deliberately bounded training loop is now implemented:
 A second follow-on slice extends that loop without introducing a backend:
 
 - Every drill run now records a rules version. Personal-best and trend comparisons are scoped to that version and the exact four-slot loadout; legacy records are migrated as version 1, and different versions remain visible in history without being compared.
-- Settings now exposes locally saved movement/combat key rebinding with duplicate-key swaps, reset-to-default, Escape/blur cancellation, and reserved browser shortcuts. Dynamic in-game movement and ability actions still map to the existing multiplayer input protocol; no server-side binding or schema change is required.
-- Training records have bounded per-weapon diagnostics: emitted fire/attack events, ADS/moving context, direct contacts and head contacts, splash contacts, continuing area-effect ticks, applied training HP, and sampled direct-hit range in original trainer units.
+- Settings now exposes locally saved movement/combat key rebinding with duplicate-key swaps, reset-to-default, Escape/blur cancellation, and reserved browser shortcuts. Binding preferences are schema-versioned; dynamic movement and ability actions still map to the existing multiplayer input protocol, with no server-side binding/schema change.
+- The GUIDE page includes a concise first-session path to personalize controls, enter the free range, or open timed drills without an account or forced onboarding modal.
+- Training records have bounded per-weapon diagnostics: emitted fire/attack events, ADS/moving context, unique moving/aimed hit actions, direct contacts and head contacts, splash contacts, continuing area-effect ticks, applied training HP, and sampled direct-hit range in original trainer units. Analytics schema v1 is sanitized/migrated to v2 without discarding prior counters.
 - Per-run action IDs link delayed projectile, splash, and continuing-effect outcomes back to the initiating action while the simulation is live. The saved record keeps aggregate counters rather than a replayable event timeline.
 - Those counters explicitly **do not** turn shotgun pellets, flame pulses, or explosive splash into a cross-weapon accuracy percentage. Pellet contacts and unique hit actions stay separate; a persisted event timeline and broader weapon-specific denominators remain future hardening steps.
 - The TRAIN cards show a five-run sparkline and score average for the same drill/rules/loadout. A directional trend is withheld until three runs exist; no opaque “skill rating” is produced.

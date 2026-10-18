@@ -372,6 +372,18 @@ export function Layout({ bind, content }) {
             {"KNOW YOUR "}
             <span>{"GAME."}</span>
           </h1>
+          <section className="guide-start-card" aria-labelledby="guide-start-title">
+            <div>
+              <span className="section-number">START HERE · NO ACCOUNT NEEDED</span>
+              <h2 id="guide-start-title">Build a practice loop.</h2>
+              <p>Set up your keys, warm up without a timer, then try one short drill. Your results stay in this browser.</p>
+            </div>
+            <div className="guide-start-actions">
+              <button className="outline-button" id="guide-open-settings" {...bind["guide-open-settings"]}>SET UP CONTROLS</button>
+              <button className="outline-button" id="guide-open-range" {...bind["guide-open-range"]}>WARM UP IN RANGE</button>
+              <button className="solid-button" id="guide-open-training" {...bind["guide-open-training"]}>OPEN TRAINING</button>
+            </div>
+          </section>
           <div className="guide-grid">
             <section>
               <span className="section-number">{"01 / MOVEMENT"}</span>
@@ -615,7 +627,7 @@ export function Layout({ bind, content }) {
               {content["drill-result-analytics"]}
             </div>
             <p>
-              Hit events count each shot/attack once when it deals contact. Pellet contacts, splash hits, and ongoing area ticks stay separate; range is in original trainer units.
+              Hit events count each shot/attack once when it connects; ADS/movement hit counts use that same per-action rule. Pellet contacts, splash hits, and ongoing area ticks stay separate; range is in original trainer units.
             </p>
           </section>
           <p className="drill-result-coaching" id="drill-result-coaching">

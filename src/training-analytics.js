@@ -1,6 +1,7 @@
 import { WEAPONS } from "./data.js";
 
-export const TRAINING_ANALYTICS_VERSION = 1;
+export const TRAINING_ANALYTICS_VERSION = 2;
+const LEGACY_ANALYTICS_VERSION = 1;
 const MAX_COUNT = 1_000_000;
 const MAX_DAMAGE = 100_000_000;
 const MAX_DISTANCE = 1_000_000;
@@ -9,6 +10,8 @@ const emptyWeapon = (weaponId) => ({
   actions: 0,
   hitActions: 0,
   headHitActions: 0,
+  aimedHitActions: 0,
+  movingHitActions: 0,
   aimedActions: 0,
   movingActions: 0,
   directContacts: 0,
@@ -84,6 +87,10 @@ export function recordTrainingContact(analytics, weaponId, outcome = {}) {
   if (action?.weaponId === weaponId && Number.isSafeInteger(action.id)) {
     if (!action.hit) {
       row.hitActions = safeCount(row.hitActions + 1);
+      if (action.aiming)
+        row.aimedHitActions = safeCount(row.aimedHitActions + 1);
+      if (action.moving)
+        row.movingHitActions = safeCount(row.movingHitActions + 1);
       action.hit = true;
     }
     if (kind === "direct" && outcome.head && !action.head) {
@@ -99,7 +106,7 @@ export function recordTrainingContact(analytics, weaponId, outcome = {}) {
 export function sanitizeTrainingAnalytics(value, loadout) {
   if (
     !value ||
-    value.version !== TRAINING_ANALYTICS_VERSION ||
+    ![LEGACY_ANALYTICS_VERSION, TRAINING_ANALYTICS_VERSION].includes(value.version) ||
     !Array.isArray(value.weapons) ||
     !Array.isArray(loadout)
   )
@@ -116,11 +123,25 @@ export function sanitizeTrainingAnalytics(value, loadout) {
         row = emptyWeapon(id);
       row.actions = safeCount(input.actions);
       row.hitActions = Math.min(row.actions, safeCount(input.hitActions));
-      row.headHitActions = Math.min(row.hitActions, safeCount(input.headHitActions));
       row.aimedActions = Math.min(row.actions, safeCount(input.aimedActions));
       row.movingActions = Math.min(row.actions, safeCount(input.movingActions));
       row.directContacts = safeCount(input.directContacts);
       row.headContacts = Math.min(row.directContacts, safeCount(input.headContacts));
+      row.headHitActions = Math.min(
+        row.hitActions,
+        row.headContacts,
+        safeCount(input.headHitActions),
+      );
+      row.aimedHitActions = Math.min(
+        row.hitActions,
+        row.aimedActions,
+        safeCount(input.aimedHitActions),
+      );
+      row.movingHitActions = Math.min(
+        row.hitActions,
+        row.movingActions,
+        safeCount(input.movingHitActions),
+      );
       row.splashContacts = safeCount(input.splashContacts);
       row.areaTicks = safeCount(input.areaTicks);
       row.damage = safeTotal(input.damage, MAX_DAMAGE);

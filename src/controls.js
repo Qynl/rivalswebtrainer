@@ -1,3 +1,5 @@
+export const CONTROL_SCHEMA_VERSION = 1;
+
 export const CONTROL_DEFINITIONS = [
   ["moveForward", "Move forward"],
   ["moveLeft", "Move left"],
@@ -45,6 +47,13 @@ export function isBindableCode(code) {
   return typeof code === "string" && SAFE_CODE.test(code) && !RESERVED_CODES.has(code);
 }
 
+export function createControlsRecord(controls) {
+  return {
+    schemaVersion: CONTROL_SCHEMA_VERSION,
+    bindings: sanitizeControls(controls),
+  };
+}
+
 export function getControlCodes(controls, action) {
   const value = controls?.[action];
   return Array.isArray(value)
@@ -55,6 +64,13 @@ export function getControlCodes(controls, action) {
 }
 
 export function sanitizeControls(value) {
+  if (value?.schemaVersion !== undefined)
+    value =
+      value.schemaVersion === CONTROL_SCHEMA_VERSION &&
+      value.bindings &&
+      typeof value.bindings === "object"
+        ? value.bindings
+        : {};
   const controls = {};
   const used = new Set();
   for (const action of ACTION_IDS) {
