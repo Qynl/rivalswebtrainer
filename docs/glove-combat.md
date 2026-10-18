@@ -209,3 +209,5 @@ The existing small status readout shows actual remaining timer values, including
 ### Ordinary multi-tab save safety
 
 Award/equip operations refresh the latest valid saved profile before writing, so an ordinarily stale tab does not overwrite newer earned progress or reject its genuinely unlocked gloves. Real storage events update collection/profile views without write-back loops, and do not change equipment in an active match. Corrupt, deleted, older or inaccessible storage does not erase higher session progress. This is local persistence, not an atomic concurrent transaction or server anti-cheat system; unlock prices, profile format, accepted-contact rewards and bounded session receipt deduplication are unchanged.
+
+Trap jumping yields to existing disengage/close-spacing decisions: residual forward velocity during a protected-opponent retreat must not trigger an airborne dodge that weakens grounded braking. Normal approach jumps and surprise trips are unchanged.

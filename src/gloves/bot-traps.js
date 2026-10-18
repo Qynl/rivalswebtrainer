@@ -4,6 +4,7 @@ import { duelBotSkill } from "./bot-dueling.js";
 
 // Offline opponents can react to an actual visible, armed floor trap. This is
 // an ordinary jump, never immunity, a teleport or knowledge of its hidden owner.
+// Grounded defensive braking takes priority over a forward-momentum dodge.
 export function considerGloveTrapJump(g, actor, glove) {
   const committed =
     actor.boostTime > 0 &&
@@ -15,6 +16,8 @@ export function considerGloveTrapJump(g, actor, glove) {
     !actor.grounded ||
     actor.ragdollTime > 0 ||
     actor.stoneTime > 0 ||
+    actor.gloveTactic === "disengage" ||
+    actor.gloveTactic === "space" ||
     committed
   ) {
     actor.gloveTrapNotice = null;

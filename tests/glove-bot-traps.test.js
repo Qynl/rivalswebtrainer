@@ -92,6 +92,8 @@ test("losing sight, changing traps and crowd control reset reaction; no local-pl
     "player",
     "network",
     "committed",
+    "retreat",
+    "spacing",
   ]) {
     const { g, actor, brick, glove } = fixture();
     considerGloveTrapJump(g, actor, glove);
@@ -105,6 +107,8 @@ test("losing sight, changing traps and crowd control reset reaction; no local-pl
     if (mode === "player") g.player = actor;
     if (mode === "network") g.network = {};
     if (mode === "committed") actor.boostTime = 1.3;
+    if (mode === "retreat") actor.gloveTactic = "disengage";
+    if (mode === "spacing") actor.gloveTactic = "space";
     assert.equal(considerGloveTrapJump(g, actor, glove), false, mode);
     assert.equal(actor.vy, 0, mode);
   }
@@ -123,4 +127,33 @@ test("low ceilings deny a dodge and Spring keeps its existing jump speed rather 
     assert.equal(considerGloveTrapJump(g, actor, glove), !ceiling);
     assert.equal(actor.vy, ceiling ? 0 : 13.4);
   }
+});
+
+test("a newly noticed protection threat keeps grounded retreat braking even while old velocity still points toward a trap", async () => {
+  const { duelBotIntent } = await import("../src/gloves/bot-dueling.js"),
+    { GLOVES } = await import("../src/gloves/catalog.js");
+  const { g, actor, brick } = fixture(),
+    glove = GLOVES.glove_default,
+    target = { x: 0, y: 0, z: -3, team: 0, goldTime: 3 };
+  actor.gloveTactic = duelBotIntent(actor, target, glove, {
+    now: g.clock,
+    dt: 1 / 120,
+    difficulty: "regular",
+    visible: true,
+  }).tactic;
+  considerGloveTrapJump(g, actor, glove);
+  g.clock += 0.18;
+  brick.z = -1.5;
+  actor.gloveTactic = duelBotIntent(actor, target, glove, {
+    now: g.clock,
+    dt: 1 / 120,
+    difficulty: "regular",
+    visible: true,
+  }).tactic;
+  assert.equal(actor.gloveTactic, "disengage");
+  assert.ok(actor.vz < 0, "residual forward velocity is the risky case");
+  assert.equal(considerGloveTrapJump(g, actor, glove), false);
+  assert.equal(actor.grounded, true);
+  assert.equal(actor.vy, 0);
+  assert.equal(actor.gloveTrapNotice, null);
 });
