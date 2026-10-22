@@ -1,5 +1,5 @@
 /**
- * DOM smoke test: builds the real HUD against the real index.html markup and
+ * DOM smoke test: renders the real React shell and drives the HUD against it
  * drives every method the game calls. This is the closest thing to a browser
  * we can run headlessly, and it catches every element-id typo.
  */
@@ -13,12 +13,33 @@ let hud: import('../src/client/hud.ts').Hud;
 beforeAll(async () => {
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const dom = new JSDOM(html, { url: 'http://localhost/' });
-  const g = globalThis as unknown as { window: unknown; document: unknown; performance: unknown; HTMLElement: unknown; HTMLDivElement: unknown; SVGElement: unknown };
+  const g = globalThis as unknown as {
+    window: unknown;
+    document: unknown;
+    performance: unknown;
+    HTMLElement: unknown;
+    HTMLDivElement: unknown;
+    SVGElement: unknown;
+    navigator: unknown;
+    Node: unknown;
+    Element: unknown;
+    Event: unknown;
+    MouseEvent: unknown;
+  };
   g.window = dom.window;
   g.document = dom.window.document;
   g.HTMLElement = dom.window.HTMLElement;
   g.HTMLDivElement = dom.window.HTMLDivElement;
   g.SVGElement = dom.window.SVGElement;
+  // Node 22 already defines a getter-only navigator on globalThis.
+  Object.defineProperty(globalThis, 'navigator', { value: dom.window.navigator, configurable: true });
+  g.Node = dom.window.Node;
+  g.Element = dom.window.Element;
+  g.Event = dom.window.Event;
+  g.MouseEvent = dom.window.MouseEvent;
+  // The shell is React now: render it before anything looks an id up.
+  const { mountApp } = await import('./renderapp.ts');
+  await mountApp(dom.window.document.getElementById('root'));
   const { Hud } = await import('../src/client/hud.ts');
   hud = new Hud();
 });

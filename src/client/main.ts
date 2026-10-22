@@ -36,7 +36,8 @@ import { Armory } from './armory.ts';
 import { Sfx } from './audio.ts';
 import { Hud } from './hud.ts';
 import { Input } from './input.ts';
-import { Net, type ConnState } from './net.ts';
+import { Net, type ConnState, type Transport } from './net.ts';
+import { LocalNet } from './localnet.ts';
 import { Progress } from './progress.ts';
 import { Renderer, type RemoteView, type RopeView } from './renderer.ts';
 
@@ -60,7 +61,10 @@ class Game {
   private hud = new Hud();
   private sfx = new Sfx();
   private input: Input;
-  private net = new Net();
+  /** The authority. A socket when there is a server, the room itself when not. */
+  private net: Transport = new Net();
+  /** Set while a remote connection is being attempted and nothing has answered. */
+  private fallbackTimer: number | null = null;
   /** Coins, level and equipped cosmetics. Local to this browser on purpose. */
   private progress = Progress.load();
   private armory: Armory;
@@ -140,7 +144,7 @@ class Game {
     this.phys = new Physics(ARENA);
     this.input = new Input(this.canvas);
     this.bindUi();
-    this.bindNet();
+    this.bindTransport(new Net());
     this.armory = new Armory(this.progress, () => this.applyLoadout(), this.sfx);
     this.applyLoadout();
     this.resetLocalSpawn(0);
@@ -204,7 +208,7 @@ class Game {
       localStorage.setItem('gg_name', name);
       this.mode = mode;
       this.enterMatchScreen();
-      this.net.connect(name, mode);
+      this.connectRemote(name, mode);
       this.hud.setMenuNote(mode === 'duel' ? 'SEARCHING FOR A DUEL…' : 'DEPLOYING SPECTER…');
     };
     joinDuel.onclick = () => start('duel');
@@ -299,9 +303,16 @@ class Game {
     this.stats();
   }
 
-  private bindNet(): void {
-    this.net.onState = (s: ConnState) => this.onConnState(s);
-    this.net.onWelcome = (msg) => {
+  /**
+   * Binds the game's handlers to a transport. Transport objects are swapped
+   * exactly once per match attempt (socket → in-page room when no server
+   * answers), so the whole surface is re-bound rather than patched.
+   */
+  private bindTransport(t: Transport): void {
+    this.net = t;
+    t.onState = (s: ConnState) => this.onConnState(s);
+    t.onWelcome = (msg) => {
+      this.clearFallback();
       this.you = msg.you as 0 | 1;
       this.local.id = this.you;
       this.local.skin = this.you;
@@ -334,29 +345,29 @@ class Game {
       this.started = true;
       this.lastPhase = msg.match.phase;
     };
-    this.net.onWaiting = (text) => {
+    t.onWaiting = (text) => {
       this.hud.toastMsg(text, 3200);
       this.hud.setMenuNote(text);
     };
-    this.net.onSnapshot = (snap) => this.onSnapshot(snap);
-    this.net.onShot = (msg) => this.onShotMsg(msg);
-    this.net.onKill = (msg) => this.onKillMsg(msg);
-    this.net.onOver = (msg) => this.onOverMsg(msg);
-    this.net.onInfo = (msg) => {
+    t.onSnapshot = (snap) => this.onSnapshot(snap);
+    t.onShot = (msg) => this.onShotMsg(msg);
+    t.onKill = (msg) => this.onKillMsg(msg);
+    t.onOver = (msg) => this.onOverMsg(msg);
+    t.onInfo = (msg) => {
       const mine = msg.text.includes(SKINS[this.you].name) || msg.text.startsWith(this.net.playerName);
       this.hud.feedLine(msg.text, msg.kind === 'leave' || msg.kind === 'forfeit' ? 'them' : mine ? 'me' : 'system');
     };
-    this.net.onOpponentLeft = (remaining) => {
+    t.onOpponentLeft = (remaining) => {
       this.hud.bannerText('OPPONENT DISCONNECTED', 'them', 2600);
       this.hud.toastMsg(`OPPONENT DISCONNECTED — ${remaining}s TO RETURN`, 2600);
       this.hud.feedLine('OPPONENT DISCONNECTED', 'them');
       this.hud.setNet(this.net.latency, 'RECONNECTING', 'warn');
     };
-    this.net.onOpponentBack = () => {
+    t.onOpponentBack = () => {
       this.hud.bannerText('OPPONENT RETURNED', 'system', 1800);
       this.hud.feedLine('OPPONENT RETURNED', 'system');
     };
-    this.net.onReconnected = () => {
+    t.onReconnected = () => {
       this.history = [];
       this.snapBuf = [];
       this.playheadValid = false;
@@ -365,9 +376,58 @@ class Game {
     };
   }
 
+  /**
+   * Where the authority lives.
+   *
+   * Same origin by default, which is the bundled server. A hosted build (Pages)
+   * can point at a server somewhere else with `?server=wss://host/ws` or a
+   * build-time `VITE_WS_URL`; with neither and nothing listening, the match
+   * falls back to the in-page room so the page is always playable.
+   */
+  private serverUrl(): string {
+    const explicit = params.get('server') ?? '';
+    if (explicit) return explicit;
+    const built = (import.meta.env?.VITE_WS_URL as string | undefined) ?? '';
+    if (built) return built;
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    return `${proto}://${location.host}/ws`;
+  }
+
+  private clearFallback(): void {
+    if (this.fallbackTimer !== null) {
+      window.clearTimeout(this.fallbackTimer);
+      this.fallbackTimer = null;
+    }
+  }
+
+  private connectRemote(name: string, mode: 'duel' | 'practice'): void {
+    const remote = new Net();
+    remote.url = this.serverUrl();
+    this.bindTransport(remote);
+    remote.connect(name, mode);
+    // Nothing answered within a couple of seconds: this is a static host, so
+    // run the same duel in the page instead of sitting on CONNECTING for ever.
+    this.clearFallback();
+    this.fallbackTimer = window.setTimeout(() => {
+      if (this.net !== remote || remote.state === 'open') return;
+      remote.disconnectNow();
+      this.goOffline(name);
+    }, 2600);
+  }
+
+  private goOffline(name: string): void {
+    const local = new LocalNet();
+    this.bindTransport(local);
+    this.mode = 'practice';
+    local.connect(name, 'practice');
+    this.hud.toastMsg('NO SERVER — LOCAL SCRIMMAGE VS SPECTER', 3200);
+    this.hud.feedLine('OFFLINE · IN-PAGE AUTHORITY', 'system');
+    this.hud.setMenuNote('LOCAL SCRIMMAGE — RUN THE NODE SERVER FOR REAL DUELS');
+  }
+
   private onConnState(s: ConnState): void {
     if (s === 'open') {
-      this.hud.setNet(this.net.latency, 'ONLINE', 'ok');
+      this.hud.setNet(this.net.latency, this.net.offline ? 'LOCAL' : 'ONLINE', 'ok');
     } else if (s === 'connecting') {
       this.hud.setNet(0, 'CONNECTING', 'warn');
     } else if (s === 'reconnecting') {
@@ -1147,7 +1207,11 @@ class Game {
     this.hud.setWeaponLabel(this.local.slot === 1 ? 'GRAPNEL' : SKINS[this.you].weapon === 'lance' ? 'LANCE' : 'NEEDLE');
     this.hud.setRing(this.ringActive(), this.ringRadius(), this.insideRing(), this.serverMatchTime);
     this.hud.setTimer(this.serverMatchTime);
-    this.hud.setNet(this.net.latency, this.net.state === 'open' ? 'ONLINE' : 'OFFLINE', this.net.state === 'open' ? 'ok' : 'bad');
+    this.hud.setNet(
+      this.net.latency,
+      this.net.state === 'open' ? (this.net.offline ? 'LOCAL' : 'ONLINE') : 'OFFLINE',
+      this.net.state === 'open' ? 'ok' : 'bad',
+    );
     this.hud.setHint(performance.now() < this.hintUntil);
     if (this.ringActive() && !this.insideRing() && performance.now() - this.ringWarnSound > 1200) {
       this.ringWarnSound = performance.now();
@@ -1206,7 +1270,13 @@ function lerpAngle(a: number, b: number, t: number): number {
   return a + d * t;
 }
 
-async function boot(): Promise<void> {
+/**
+ * Boots the game into the already-rendered shell.
+ *
+ * React mounts the DOM first (see `main.tsx`), then this runs: everything below
+ * looks its elements up by id on the first line, so the order matters.
+ */
+export async function bootGame(): Promise<void> {
   const status = document.getElementById('menu-status');
   try {
     await initRapier();
@@ -1228,5 +1298,3 @@ async function boot(): Promise<void> {
     console.error(err);
   }
 }
-
-void boot();

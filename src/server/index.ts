@@ -226,7 +226,8 @@ async function main(): Promise<void> {
       const since = now - (destroyedAt.get(room) ?? now);
       if (since > 2500) {
         for (const ws of room.sockets) {
-          if (ws && ws.readyState === WebSocket.OPEN) ws.close(1000, 'match over');
+          if (!ws) continue;
+          if (ws.readyState === undefined || ws.readyState === WebSocket.OPEN) ws.close?.(1000, 'match over');
         }
         rooms.delete(room);
         destroyedAt.delete(room);

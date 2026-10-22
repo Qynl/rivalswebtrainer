@@ -6,8 +6,6 @@
  * client for anything that can decide a kill.
  */
 
-import { randomUUID } from 'node:crypto';
-import type { WebSocket } from 'ws';
 import { ARENA } from '../shared/arena.ts';
 import {
   canFire,
@@ -33,9 +31,23 @@ import {
 } from '../shared/sim.ts';
 import { Bot } from './bot.ts';
 import { sanitizeLoadout, type Loadout } from '../shared/cosmetics.ts';
+import { uid } from '../shared/id.ts';
+
+/**
+ * The room does not care what a socket is, only that it can take a string.
+ *
+ * That one line is what lets the identical authoritative room run inside the
+ * browser for offline play (see `localnet.ts`) with no second implementation of
+ * the rules, and still run under `ws` on a server.
+ */
+export interface SocketLike {
+  send(data: string): void;
+  readyState?: number;
+  close?(code?: number, reason?: string): void;
+}
 
 interface Slot {
-  ws: WebSocket | null;
+  ws: SocketLike | null;
   name: string;
   /** Cosmetics only, echoed to the opponent so their view of you matches. */
   look: Loadout;
@@ -75,7 +87,7 @@ export class Room {
       ws: null,
       name: i === 0 ? 'PLAYER' : 'OPPONENT',
       look: sanitizeLoadout(undefined),
-      token: randomUUID(),
+      token: uid(),
       connected: false,
       leftAt: null,
       queue: [],
@@ -108,7 +120,7 @@ export class Room {
   }
 
   /** Human joins a free slot. Returns the slot index or null if none. */
-  join(ws: WebSocket, name: string, look?: unknown): number | null {
+  join(ws: SocketLike, name: string, look?: unknown): number | null {
     const idx = this.slots.findIndex((s) => !s.connected && s.leftAt === null);
     if (idx < 0) return null;
     const slot = this.slots[idx];
@@ -117,7 +129,7 @@ export class Room {
     slot.look = sanitizeLoadout(look);
     slot.connected = true;
     slot.leftAt = null;
-    slot.token = randomUUID();
+    slot.token = uid();
     slot.queue.length = 0;
     slot.lastInput = { seq: 0, keys: 0, yaw: this.players[idx].yaw, pitch: this.players[idx].pitch };
     this.send(slot, {
@@ -139,7 +151,7 @@ export class Room {
   }
 
   /** Reconnect with the token issued at first join. */
-  reconnect(ws: WebSocket, token: string, name: string, look?: unknown): number | null {
+  reconnect(ws: SocketLike, token: string, name: string, look?: unknown): number | null {
     const idx = this.slots.findIndex((s) => s.token === token && (s.leftAt !== null || !s.connected));
     if (idx < 0) return null;
     const slot = this.slots[idx];
@@ -178,7 +190,7 @@ export class Room {
     }
     if (this.match.phase !== 'live') {
       // Nothing to defend: free the seat immediately.
-      slot.token = randomUUID();
+      slot.token = uid();
       slot.leftAt = now;
       return;
     }
@@ -436,7 +448,7 @@ export class Room {
         // Nothing at stake yet: free the seat as soon as the socket is gone.
         if (waitedMs > 1000) {
           slot.leftAt = null;
-          slot.token = randomUUID();
+          slot.token = uid();
         }
         continue;
       }
@@ -574,7 +586,7 @@ export class Room {
   }
 
   /** Clears the socket references so the manager can close the room. */
-  get sockets(): (WebSocket | null)[] {
+  get sockets(): (SocketLike | null)[] {
     return [this.slots[0].ws, this.slots[1].ws];
   }
 

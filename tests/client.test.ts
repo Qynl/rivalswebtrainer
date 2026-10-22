@@ -59,7 +59,7 @@ beforeAll(async () => {
     server.stderr.on('data', (d: Buffer) => errors.push(`server: ${d.toString()}`));
   });
 
-  await import('../src/client/main.ts');
+  await import('../src/client/main.tsx');
 }, 40000);
 
 afterAll(() => {
