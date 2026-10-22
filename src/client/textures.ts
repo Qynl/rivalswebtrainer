@@ -560,3 +560,40 @@ export function aimRingTexture(): THREE.Texture {
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
+
+/**
+ * Weathering streaks: the rain-water and rust trails that run down any concrete
+ * face that has stood outside for a few years. Transparent, so it layers over
+ * the masonry texture instead of replacing it.
+ */
+export function streakTexture(): THREE.Texture {
+  const w = 64;
+  const h = 256;
+  const [c, ctx] = canvas(w, h);
+  ctx.clearRect(0, 0, w, h);
+  for (let i = 0; i < 26; i++) {
+    const x = Math.random() * w;
+    const len = h * (0.3 + Math.random() * 0.7);
+    const wide = 1 + Math.random() * 5;
+    const grad = ctx.createLinearGradient(0, 0, 0, len);
+    const a = 0.06 + Math.random() * 0.16;
+    grad.addColorStop(0, `rgba(58, 52, 44, ${a})`);
+    grad.addColorStop(0.6, `rgba(48, 44, 38, ${a * 0.55})`);
+    grad.addColorStop(1, 'rgba(40, 38, 34, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(x, 0, wide, len);
+  }
+  // A few brighter mineral blooms so it is not all soot.
+  for (let i = 0; i < 8; i++) {
+    const x = Math.random() * w;
+    const grad = ctx.createLinearGradient(0, 0, 0, h * 0.5);
+    grad.addColorStop(0, 'rgba(196, 186, 162, 0.1)');
+    grad.addColorStop(1, 'rgba(196, 186, 162, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(x, 0, 2 + Math.random() * 4, h * 0.5);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  return tex;
+}

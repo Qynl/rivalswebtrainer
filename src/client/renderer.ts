@@ -19,7 +19,7 @@ import { Line2 } from 'three/addons/lines/Line2.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import type { Arena } from '../shared/arena.ts';
-import { SKINS, WEAPON } from '../shared/constants.ts';
+import { GRAPPLE, SKINS, WEAPON } from '../shared/constants.ts';
 import { DEFAULT_LOADOUT, gunSkin, grappleSkin, killEffect, type Loadout } from '../shared/cosmetics.ts';
 import { clamp, lerp, smoothstep, type Vec3 } from '../shared/mathx.ts';
 import type { PlayerState } from '../shared/sim.ts';
@@ -35,6 +35,7 @@ import {
   signTexture,
   aimRingTexture,
   cloudTexture,
+  streakTexture,
   deckStencilTexture,
   patternTexture,
 } from './textures.ts';
@@ -331,6 +332,8 @@ export class Renderer {
   private aimMark: THREE.Sprite | null = null;
   private aimTarget: { point: Vec3; onPlayer: boolean } | null = null;
   private moteAcc = 0;
+  private readonly tint = new THREE.Color();
+  private readonly warm = new THREE.Color(0xffcf8a);
   /** A short FOV punch: the lens equivalent of a flinch, used on hook catches. */
   private fovPunch = 0;
   /** Claws whipping back to the hand after a miss, so nothing blinks out. */
@@ -643,6 +646,8 @@ export class Renderer {
       this.anchorInst!.setMatrixAt(i, new THREE.Matrix4().makeTranslation(a.x, a.y, a.z));
     });
     this.anchorInst.instanceMatrix.needsUpdate = true;
+    const brass = new THREE.Color(0xc9a86a);
+    this.arena.anchors.forEach((_, i) => this.anchorInst!.setColorAt(i, brass));
     this.anchorInst.castShadow = true;
     this.scene.add(this.anchorInst);
     const haloGeo = new THREE.BufferGeometry();
@@ -1077,6 +1082,106 @@ export class Renderer {
       }
     }
 
+    // ── Panel joints and fascia ───────────────────────────────────────────
+    // Concrete that has been cast in place is never one pour: every wall shows
+    // horizontal lift lines and vertical shutter joints, and every slab has a
+    // fascia band where the formwork was clamped. Two instanced draw calls buy
+    // the whole map a scale and a history it did not have.
+    const joints: THREE.Matrix4[] = [];
+    const fascia: THREE.Matrix4[] = [];
+    for (const b of this.arena.blocks) {
+      if (b.kind === 'wall' || (b.kind === 'strut' && b.hx >= 3 && b.hz >= 3)) {
+        const lifts = Math.max(2, Math.round((b.hy * 2) / 3.4));
+        for (let i = 1; i < lifts; i++) {
+          const y = b.y - b.hy + (i / lifts) * b.hy * 2;
+          push(joints, b.x, y, b.z, b.hx * 2 + 0.03, 0.05, b.hz * 2 + 0.03);
+        }
+        const bays = Math.max(2, Math.round(Math.max(b.hx, b.hz) / 2.6));
+        for (let i = 1; i < bays; i++) {
+          const t = (i / bays - 0.5) * 2;
+          push(joints, b.x + t * b.hx * 0.98, b.y, b.z, 0.05, b.hy * 2, b.hz * 2 + 0.03);
+          push(joints, b.x, b.y, b.z + t * b.hz * 0.98, b.hx * 2 + 0.03, b.hy * 2, 0.05);
+        }
+      } else if (b.kind === 'deck') {
+        // Shadow gap under the top edge, and a fascia band below it.
+        push(fascia, b.x, b.y + b.hy - 0.12, b.z, b.hx * 2 - 0.06, 0.09, b.hz * 2 - 0.06);
+        push(fascia, b.x, b.y - b.hy + 0.1, b.z, b.hx * 2 + 0.02, 0.12, b.hz * 2 + 0.02);
+      }
+    }
+
+    // ── Weathering ────────────────────────────────────────────────────────
+    // Rain and rust trails on the vertical faces. One instanced draw call, and
+    // the difference between "concrete texture" and "a building that has been
+    // standing in weather" is almost entirely these streaks.
+    const streakQuads: THREE.Matrix4[] = [];
+    let seed = 7;
+    const rnd = (): number => {
+      seed = (seed * 1664525 + 1013904223) % 4294967296;
+      return seed / 4294967296;
+    };
+    for (const b of this.arena.blocks) {
+      if (b.kind !== 'wall') continue;
+      const faces: { axis: 'x' | 'z'; side: number; width: number }[] = [
+        { axis: 'z', side: 1, width: b.hx * 2 },
+        { axis: 'z', side: -1, width: b.hx * 2 },
+        { axis: 'x', side: 1, width: b.hz * 2 },
+        { axis: 'x', side: -1, width: b.hz * 2 },
+      ];
+      for (const face of faces) {
+        const n = 3 + Math.floor(rnd() * 4);
+        for (let i = 0; i < n; i++) {
+          const along = (rnd() - 0.5) * face.width * 0.9;
+          const wdt = 0.7 + rnd() * 2.2;
+          const hgt = 4 + rnd() * Math.min(16, b.hy * 1.4);
+          const y = b.y + b.hy - hgt * 0.5 - rnd() * 2;
+          const off = (face.side > 0 ? 1 : -1) * 0.02;
+          if (face.axis === 'z') {
+            push(
+              streakQuads,
+              b.x + along,
+              y,
+              b.z + face.side * (b.hz + Math.abs(off)),
+              wdt,
+              hgt,
+              1,
+              face.side > 0 ? 0 : Math.PI,
+            );
+          } else {
+            push(
+              streakQuads,
+              b.x + face.side * (b.hx + Math.abs(off)),
+              y,
+              b.z + along,
+              wdt,
+              hgt,
+              1,
+              face.side > 0 ? Math.PI / 2 : -Math.PI / 2,
+            );
+          }
+        }
+      }
+    }
+    if (streakQuads.length) {
+      // The quads are built flat; rotate each into its wall plane by using a
+      // plane whose local +z is the face normal.
+      const quadGeo = new THREE.PlaneGeometry(1, 1);
+      const grime = new THREE.MeshStandardMaterial({
+        map: streakTexture(),
+        transparent: true,
+        opacity: 0.85,
+        roughness: 1,
+        metalness: 0,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+      });
+      const mesh = new THREE.InstancedMesh(quadGeo, grime, streakQuads.length);
+      streakQuads.forEach((m, i) => mesh.setMatrixAt(i, m));
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.name = 'weathering';
+      this.scene.add(mesh);
+    }
+
     const instanced = (list: THREE.Matrix4[], geo: THREE.BufferGeometry, mat: THREE.Material, shadow = true): void => {
       if (!list.length) return;
       const mesh = new THREE.InstancedMesh(geo, mat, list.length);
@@ -1093,6 +1198,8 @@ export class Renderer {
     instanced(bands, unit, steel);
     const pipeGeo = new THREE.CylinderGeometry(0.16, 0.16, 1, 8);
     instanced(pipes, pipeGeo, steel);
+    instanced(joints, unit, new THREE.MeshStandardMaterial({ color: 0x8e8a80, roughness: 1, metalness: 0 }), false);
+    instanced(fascia, unit, new THREE.MeshStandardMaterial({ color: 0xb3aea2, roughness: 0.95, metalness: 0 }), false);
     void mat4;
 
     // Skyline: hazy towers and a crane out past the arena. They never enter
@@ -1893,11 +2000,21 @@ export class Renderer {
       this.anchorSpin += dt * 0.5;
       const m = new THREE.Matrix4();
       const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, this.anchorSpin, 0));
+      // Pinions inside the claw's reach read warm; the rest sit back in brass
+      // shadow. It is the same information the reticle gives, available at a
+      // glance, and it costs nothing: 44 instance colours, no draw calls.
+      const holding = local.slot === 1;
       this.arena.anchors.forEach((a, i) => {
         m.compose(new THREE.Vector3(a.x, a.y + Math.sin(this.time * 1.2 + i) * 0.08, a.z), q, new THREE.Vector3(1, 1, 1));
         this.anchorInst!.setMatrixAt(i, m);
+        const d = Math.hypot(a.x - local.eye.x, a.y - local.eye.y, a.z - local.eye.z);
+        const inReach = holding && d <= GRAPPLE.range;
+        const heat = inReach ? clamp(1 - d / GRAPPLE.range, 0, 1) : 0;
+        this.tint.setHex(0x6d604a).lerp(this.warm, 0.25 + heat * 0.75);
+        this.anchorInst!.setColorAt(i, this.tint);
       });
       this.anchorInst.instanceMatrix.needsUpdate = true;
+      if (this.anchorInst.instanceColor) this.anchorInst.instanceColor.needsUpdate = true;
     }
     if (this.anchorHalos) {
       (this.anchorHalos.material as THREE.PointsMaterial).opacity = 0.3 + Math.sin(this.time * 2) * 0.1;
