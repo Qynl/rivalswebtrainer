@@ -45,6 +45,17 @@ function stubGL(canvas: HTMLCanvasElement): WebGL2RenderingContext {
         switch (prop) {
           case 'getParameter':
             return param(args[0] as number);
+          case 'getExtension': {
+            // Pretend every extension exists but is inert: three only calls
+            // optional entry points behind a null check.
+            const ext = new Proxy({}, {
+              get(target, key: string) {
+                if (key in target) return target[key as keyof typeof target];
+                return () => null;
+              },
+            });
+            return ext;
+          }
           case 'getShaderPrecisionFormat':
             return { precision: 23, rangeMin: 127, rangeMax: 127 };
           case 'getContextAttributes':
@@ -106,6 +117,12 @@ function stub2d(): CanvasRenderingContext2D {
   return new Proxy({} as CanvasRenderingContext2D, {
     get(_t, prop: string) {
       if (prop === 'createRadialGradient' || prop === 'createLinearGradient') return () => gradient;
+      if (prop === 'getImageData') {
+        return (_x: number, _y: number, w = 1, h = 1) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h });
+      }
+      if (prop === 'createImageData') {
+        return (w = 1, h = 1) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h });
+      }
       return () => undefined;
     },
     set() {

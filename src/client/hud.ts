@@ -47,6 +47,9 @@ export class Hud {
   private speedvignette = el('speedvignette');
   private ringvignette = el('ringvignette');
   private weaponLabel = el('weaponLabel');
+  private ammoCount = el('ammoCount');
+  private matchTimer = el('matchtimer');
+  private hitdir = el('hitdir');
   private menuStatus = el('menu-status');
   private menuNote = el('menu-note');
   private resultTitle = el('result-title');
@@ -181,6 +184,25 @@ export class Hud {
     this.hitTimer = performance.now();
   }
 
+  /** Seconds of match time, shown as m:ss in the score pod. */
+  setTimer(seconds: number): void {
+    const total = Math.max(0, Math.floor(seconds));
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    this.matchTimer.textContent = `${m}:${s < 10 ? '0' : ''}${s}`;
+  }
+
+  /** Damage arc rotated to the shooter, relative to where you are looking. */
+  hitDirection(angle: number): void {
+    this.hitdir.style.setProperty('--dir', `${angle}rad`);
+    this.hitdir.classList.remove('show');
+    void this.hitdir.offsetWidth;
+    this.hitdir.classList.add('show');
+    window.clearTimeout(this.hitdirTimer);
+    this.hitdirTimer = window.setTimeout(() => this.hitdir.classList.remove('show'), 900);
+  }
+  private hitdirTimer = 0;
+
   damage(): void {
     this.flashEl.classList.remove('show');
     void this.flashEl.offsetWidth;
@@ -211,6 +233,9 @@ export class Hud {
 
     const reloadPct = opts.fireCooldown > 0 ? 1 - opts.fireCooldown / 1 : 1;
     this.reloadArc.classList.toggle('on', opts.fireCooldown > 0);
+    const loaded = opts.fireCooldown <= 0;
+    this.ammoCount.textContent = loaded ? '1' : '0';
+    this.ammoCount.classList.toggle('empty', !loaded);
     const circ = 2 * Math.PI * 16;
     this.reloadCircle.style.strokeDashoffset = `${circ * (1 - reloadPct)}`;
 

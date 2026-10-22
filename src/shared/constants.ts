@@ -100,9 +100,11 @@ export const WEAPON = {
   hipSpreadDeg: 2.4,
   scopeTime: 0.17,
   unscopeTime: 0.12,
+  /** Vertical FOV. 70 v (≈100 h at 16:9) is the modern tactical-shooter
+   *  frame; 34 v is a ~2.4x optic, so the scope genuinely reaches out. */
   scopedFov: 34,
-  baseFov: 78,
-  maxFovKick: 24,
+  baseFov: 70,
+  maxFovKick: 20,
   /** Scope glint: fully bright after holding still this long. */
   glintRamp: 0.3,
   glintAngularSpeed: 22 * (Math.PI / 180),
@@ -151,18 +153,18 @@ export const SKINS = [
   {
     id: 'azure',
     name: 'AZURE',
-    color: 0x3ff2ff,
-    glow: '#39f6ff',
-    accent: '#ff3f86',
+    color: 0x5bc8e8,
+    glow: '#5bc8e8',
+    accent: '#e6b264',
     weapon: 'lance',
     pitch: 1,
   },
   {
     id: 'ember',
     name: 'EMBER',
-    color: 0xff3f86,
-    glow: '#ff4f8d',
-    accent: '#39f6ff',
+    color: 0xe8795a,
+    glow: '#e8795a',
+    accent: '#e6b264',
     weapon: 'needle',
     pitch: 0.84,
   },

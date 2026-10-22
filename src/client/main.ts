@@ -103,6 +103,10 @@ class Game {
   private lastPhase = '';
   private chainAt = 0;
   private prevEye: Vec3 = { x: 0, y: 0, z: 0 };
+  /** Frame-time average and the adaptive-resolution nudge it drives. */
+  private frameTimeEma = 1 / 60;
+  private quality = 1;
+  private qualityTimer = 0;
 
   constructor() {
     this.canvas = el<HTMLCanvasElement>('view');
@@ -475,6 +479,15 @@ class Game {
       if (!mine) {
         // We got shot: the kill event handles the rest, this is the impact.
         this.renderer.shake(0.02);
+        this.renderer.hurt(0.35);
+        this.hud.damage();
+        const dx = msg.origin.x - this.local.eye.x;
+        const dz = msg.origin.z - this.local.eye.z;
+        const bearing = Math.atan2(-dx, -dz);
+        let rel = bearing - this.lookYaw;
+        while (rel > Math.PI) rel -= Math.PI * 2;
+        while (rel < -Math.PI) rel += Math.PI * 2;
+        this.hud.hitDirection(rel);
       }
     }
     if (!mine) {
@@ -493,10 +506,13 @@ class Game {
       this.renderer.punch(-0.035, 0);
       this.renderer.shake(0.014);
       this.hud.feedLine(`YOU KILLED ${this.net.opponentName}`, 'me');
+      this.renderer.shatter(msg.victimAt, SKINS[1 - me].color);
       this.hitstop = WEAPON.hitstop;
     } else if (msg.event.victim === me) {
       this.sfx.death();
       this.hud.damage();
+      this.renderer.hurt(0.9);
+      this.renderer.shatter(msg.victimAt, SKINS[me].color);
       const killerIdx = msg.event.killer === 1 - me ? 1 - me : -1;
       if (killerIdx >= 0) {
         this.killcam = { t: 0, killerPos: { ...this.remoteSim.pos }, victimPos: { ...msg.victimAt } };
@@ -595,6 +611,8 @@ class Game {
         glintIntensity: this.remoteView.glint,
         killcam: this.killcam,
         reducedFx: false,
+        groundLocal: this.groundUnder(this.local.pos, this.local.id),
+        groundRemote: this.remoteView.alive ? this.groundUnder(this.remoteView.pos, 1 - this.you) : null,
       });
       this.renderer.setRingColor(this.insideRing());
     } else if (this.menuOpen || this.resultsOpen || !this.started || state === 'idle') {
@@ -613,10 +631,31 @@ class Game {
         glintIntensity: 0,
         killcam: null,
         reducedFx: true,
+        groundLocal: this.groundUnder(this.local.pos, this.local.id),
+        groundRemote: null,
       });
     }
     this.renderer.render();
+    this.guardFrameRate(dt);
     requestAnimationFrame((t) => this.frame(t));
+  }
+
+  /** Keeps the frame budget honest on slower GPUs, and restores it when idle. */
+  private guardFrameRate(dt: number): void {
+    if (dt <= 0) return;
+    this.frameTimeEma += (dt - this.frameTimeEma) * 0.05;
+    this.qualityTimer += dt;
+    if (this.qualityTimer < 1.5) return;
+    this.qualityTimer = 0;
+    const slow = this.frameTimeEma > 1 / 52;
+    const fast = this.frameTimeEma < 1 / 58;
+    if (slow && this.quality > 0.6) {
+      this.quality = Math.max(0.6, this.quality - 0.12);
+      this.renderer.setQuality(this.quality);
+    } else if (fast && this.quality < 1) {
+      this.quality = Math.min(1, this.quality + 0.06);
+      this.renderer.setQuality(this.quality);
+    }
   }
 
   private updateLook(): void {
@@ -811,6 +850,7 @@ class Game {
       protect: this.protect > 0,
     });
     this.hud.setRing(this.ringActive(), this.ringRadius(), this.insideRing(), this.serverMatchTime);
+    this.hud.setTimer(this.serverMatchTime);
     this.hud.setNet(this.net.latency, this.net.state === 'open' ? 'ONLINE' : 'OFFLINE', this.net.state === 'open' ? 'ok' : 'bad');
     this.hud.setHint(performance.now() < this.hintUntil);
     if (this.ringActive() && !this.insideRing() && performance.now() - this.ringWarnSound > 1200) {
@@ -832,6 +872,12 @@ class Game {
 
   private insideRing(): boolean {
     return Math.hypot(this.local.pos.x - MATCH.ringCenter.x, this.local.pos.z - MATCH.ringCenter.z) <= this.ringRadius();
+  }
+
+  /** Ground height under a player, for their contact shadow. */
+  private groundUnder(pos: Vec3, id: number): number | null {
+    const hit = this.phys.raycast({ x: pos.x, y: pos.y, z: pos.z }, { x: 0, y: -1, z: 0 }, 40, id);
+    return hit ? hit.point.y : null;
   }
 
   private glintVisible(): boolean {
