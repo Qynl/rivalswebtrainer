@@ -395,7 +395,9 @@ export class Renderer {
         const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
         lamps.push(
           new THREE.Matrix4().compose(
-            new THREE.Vector3(b.x + Math.cos(a) * b.hx * 0.6, b.y + b.hy - 0.1, b.z + Math.sin(a) * b.hz * 0.6),
+            // Hung just below the underside, so they read from the void rather
+            // than being buried inside the slab.
+            new THREE.Vector3(b.x + Math.cos(a) * b.hx * 0.6, b.y - b.hy - 0.09, b.z + Math.sin(a) * b.hz * 0.6),
             new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -a),
             new THREE.Vector3(1, 1, 1),
           ),
@@ -486,6 +488,7 @@ export class Renderer {
       const shell = new THREE.MeshStandardMaterial({ color: 0x2b3038, roughness: 0.62, metalness: 0.25 });
       const plate = new THREE.MeshStandardMaterial({ color: 0x171b21, roughness: 0.55, metalness: 0.4 });
       const accent = new THREE.MeshStandardMaterial({ color: skin.color, emissive: color, emissiveIntensity: 0.35, roughness: 0.5, metalness: 0.2 });
+      const tan = new THREE.MeshStandardMaterial({ color: 0xa48b58, roughness: 0.74, metalness: 0.14 });
       const visorMat = new THREE.MeshStandardMaterial({ color: 0x0b0f14, emissive: color, emissiveIntensity: 1.4, roughness: 0.15, metalness: 0.6 });
 
       const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.26, 0.34, 4, 12), shell);
@@ -534,7 +537,7 @@ export class Renderer {
       }
 
       const rifle = new THREE.Group();
-      const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.12, 0.9), plate);
+      const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.12, 0.9), tan);
       rifle.add(receiver);
       const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.62, 6), plate);
       barrel.rotation.x = Math.PI / 2;
@@ -697,16 +700,19 @@ export class Renderer {
   private buildViewmodel(skinIndex: number): THREE.Group {
     const skin = SKINS[skinIndex];
     const g = new THREE.Group();
-    // Gunmetal plus a painted accent panel: reads as a real service rifle.
+    // Sand-painted furniture over dark steel: the warm gun body is the one
+    // large non-informational colour in view, and it keeps the first-person
+    // silhouette readable against dark interior walls.
     const gunmetal = new THREE.MeshStandardMaterial({ color: 0x2c3138, roughness: 0.46, metalness: 0.75 });
     const polymer = new THREE.MeshStandardMaterial({ color: 0x1b1e23, roughness: 0.82, metalness: 0.1 });
+    const sand = new THREE.MeshStandardMaterial({ color: 0xa48b58, roughness: 0.72, metalness: 0.15 });
     const accent = new THREE.MeshStandardMaterial({ color: skin.color, roughness: 0.5, metalness: 0.3, emissive: new THREE.Color(skin.color), emissiveIntensity: 0.12 });
-    const glove = new THREE.MeshStandardMaterial({ color: 0x3b3a36, roughness: 0.95, metalness: 0.02 });
+    const glove = new THREE.MeshStandardMaterial({ color: 0xb99455, roughness: 0.93, metalness: 0.02 });
     const sleeve = new THREE.MeshStandardMaterial({ color: 0x4a4d43, roughness: 0.96, metalness: 0.02 });
     const lance = skin.weapon === 'lance';
 
     // Receiver.
-    const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.13, 0.72), gunmetal);
+    const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.13, 0.72), sand);
     receiver.position.z = -0.4;
     g.add(receiver);
     const rail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.03, 0.6), polymer);
@@ -719,7 +725,7 @@ export class Renderer {
 
     // Handguard + barrel.
     const guardLen = lance ? 0.62 : 0.5;
-    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.09, guardLen), polymer);
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.09, guardLen), sand);
     guard.position.set(0, 0.01, -0.82 - guardLen * 0.3);
     g.add(guard);
     const barrelLen = lance ? 0.66 : 0.52;
