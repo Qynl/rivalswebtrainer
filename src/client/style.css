@@ -482,6 +482,37 @@ kbd {
   border-color: #f2e2b6;
 }
 
+/* Hook aim state, straight from the server-side raycast the claw would use:
+   nothing in reach, a surface, or the opponent's body. */
+#crosshair.hook.aim0 .ch.top,
+#crosshair.hook.aim0 .ch.bottom,
+#crosshair.hook.aim0 .ch.left,
+#crosshair.hook.aim0 .ch.right {
+  border-color: rgba(242, 237, 224, 0.28);
+}
+#crosshair.hook.aim0 .ch.dot {
+  background: rgba(242, 237, 224, 0.3);
+}
+#crosshair.hook.aim1 .ch.top,
+#crosshair.hook.aim1 .ch.bottom,
+#crosshair.hook.aim1 .ch.left,
+#crosshair.hook.aim1 .ch.right {
+  border-color: #ffe6ae;
+  box-shadow: 0 0 6px rgba(230, 178, 100, 0.5);
+}
+#crosshair.hook.aim2 .ch.top,
+#crosshair.hook.aim2 .ch.bottom,
+#crosshair.hook.aim2 .ch.left,
+#crosshair.hook.aim2 .ch.right {
+  border-color: var(--ember);
+  box-shadow: 0 0 9px rgba(232, 121, 90, 0.75);
+  transform: scale(1.25);
+}
+#crosshair.hook.aim2 .ch.dot {
+  background: var(--ember);
+  box-shadow: 0 0 8px rgba(232, 121, 90, 0.8);
+}
+
 #crosshair.scoped {
   opacity: 0;
 }

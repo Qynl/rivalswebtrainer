@@ -99,4 +99,25 @@ describe('hud', () => {
     expect(scope.classList.contains('on')).toBe(true);
     expect(document.getElementById('crosshair')?.classList.contains('scoped')).toBe(true);
   });
+
+  it('reads the claw target state on the crosshair', () => {
+    const crosshair = document.getElementById('crosshair') as HTMLElement;
+    const frame = (hookAim: 0 | 1 | 2): void =>
+      hud.frame({
+        speed: 0, scopeT: 0, hipSpread: 0, fireCooldown: 0, chain: 0,
+        alive: true, respawnIn: 0, protect: false, slot: 1,
+        hookFlying: false, hooked: false, hookAim,
+      });
+    frame(0);
+    expect(crosshair.classList.contains('aim0')).toBe(true);
+    frame(1);
+    expect(crosshair.classList.contains('aim0')).toBe(false);
+    expect(crosshair.classList.contains('aim1')).toBe(true);
+    frame(2);
+    expect(crosshair.classList.contains('aim1')).toBe(false);
+    expect(crosshair.classList.contains('aim2')).toBe(true);
+    // Back on the rifle the state clears, so it can never leak across slots.
+    hud.frame({ speed: 0, scopeT: 0, hipSpread: 0, fireCooldown: 0, chain: 0, alive: true, respawnIn: 0, protect: false, slot: 0, hookFlying: false, hooked: false });
+    expect(crosshair.classList.contains('aim2')).toBe(false);
+  });
 });

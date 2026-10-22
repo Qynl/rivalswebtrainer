@@ -66,6 +66,8 @@ class Game {
   private armory: Armory;
   /** Kills this match, for the coin and XP payout at the results screen. */
   private matchKills = 0;
+  /** What the claw would bite right now, mirrored from the world reticle. */
+  private hookAim: 0 | 1 | 2 = 0;
   private phys: Physics;
 
   private local: PlayerState = createPlayer(0, 0);
@@ -906,9 +908,11 @@ class Game {
   private updateGrappleAim(): void {
     if (!this.local.alive || this.local.slot !== 1 || this.local.hook.active) {
       this.renderer.setGrappleAim(null);
+      this.hookAim = 0;
       return;
     }
     const target = findGrappleTarget(this.phys, this.local.eye, lookOf(this.local), this.remoteSim, ARENA, this.local.id);
+    this.hookAim = target ? (target.target === 1 ? 2 : 1) : 0;
     this.renderer.setGrappleAim(target ? target.point : null, target?.target === 1);
   }
 
@@ -986,6 +990,7 @@ class Game {
       slot: this.local.slot,
       hookFlying: this.local.hook.active,
       hooked: this.local.grapple.active,
+      hookAim: this.hookAim,
     });
     this.hud.setWeaponLabel(this.local.slot === 1 ? 'GRAPNEL' : SKINS[this.you].weapon === 'lance' ? 'LANCE' : 'NEEDLE');
     this.hud.setRing(this.ringActive(), this.ringRadius(), this.insideRing(), this.serverMatchTime);

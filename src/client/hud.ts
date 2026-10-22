@@ -240,6 +240,8 @@ export class Hud {
     slot: 0 | 1;
     hookFlying: boolean;
     hooked: boolean;
+    /** What the claw would bite right now: 0 nothing, 1 a surface, 2 the enemy. */
+    hookAim?: 0 | 1 | 2;
   }): void {
     const spread = 8 + opts.hipSpread * 10 + Math.min(26, opts.speed * 0.4);
     this.crosshair.style.setProperty('--spread', `${spread.toFixed(1)}px`);
@@ -257,6 +259,9 @@ export class Hud {
     const grapnel = opts.slot === 1;
     this.crosshair.classList.toggle('hook', grapnel);
     this.crosshair.classList.toggle('hooked', grapnel && opts.hooked);
+    this.crosshair.classList.toggle('aim0', grapnel && (opts.hookAim ?? 0) === 0);
+    this.crosshair.classList.toggle('aim1', grapnel && opts.hookAim === 1);
+    this.crosshair.classList.toggle('aim2', grapnel && opts.hookAim === 2);
     this.slotRifle.classList.toggle('on', !grapnel);
     this.slotHook.classList.toggle('on', grapnel);
     if (grapnel) {

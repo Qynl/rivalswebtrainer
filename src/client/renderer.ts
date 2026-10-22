@@ -332,6 +332,7 @@ export class Renderer {
   private aimMark: THREE.Sprite | null = null;
   private aimTarget: { point: Vec3; onPlayer: boolean } | null = null;
   private moteAcc = 0;
+  private lastRemote: Vec3 | null = null;
   private readonly tint = new THREE.Color();
   private readonly warm = new THREE.Color(0xffcf8a);
   /** A short FOV punch: the lens equivalent of a flinch, used on hook catches. */
@@ -1654,9 +1655,12 @@ export class Renderer {
   hookFire(): void {
     this.hookKick = 1;
     this.punch(-0.03, 0.01);
+    // A puff of compressed air and a spray of brass chips leaving the crown.
+    const at = new THREE.Vector3(0.02, -0.02, -0.55).applyMatrix4(this.camera.matrixWorld);
+    this.particles.burst(at, 0xd8d2c0, 9, { speed: 2.2, size: 0.16, life: 0.32, gravity: 2, drag: 2 });
+    this.particles.burst(at, grappleSkin(this.look.grapple).trail, 5, { speed: 3.4, size: 0.1, life: 0.22, gravity: 6 });
   }
 
-  /** Sparks at the bite point. */
   /** Widens the lens for a beat. Positive reads as a jolt of speed. */
   fovPulse(deg: number): void {
     this.fovPunch = Math.min(14, this.fovPunch + deg);
@@ -1926,6 +1930,19 @@ export class Renderer {
 
       if (isRemote && remote.alive && remote.speed > 26) {
         this.particles.ember({ x: pos.x, y: pos.y, z: pos.z }, 0xd8d2c4, 0.2, 0.35);
+      }
+      if (isRemote) {
+        // A short ribbon behind a fast opponent: at 40 m a 1.8 m capsule moving
+        // at 30 m/s is nearly invisible, and the streak is what lets you read
+        // the swing and lead the shot. Both players get it, so it is fair.
+        const cur = { x: pos.x, y: pos.y + 0.85, z: pos.z };
+        if (this.lastRemote && remote.alive && remote.speed > 24) {
+          const d = Math.hypot(cur.x - this.lastRemote.x, cur.y - this.lastRemote.y, cur.z - this.lastRemote.z);
+          if (d > 0.35 && d < 12) {
+            this.beams.fire(this.lastRemote, cur, visual.color.getHex(), 0.62, 0.3);
+          }
+        }
+        this.lastRemote = cur;
       }
     }
 
