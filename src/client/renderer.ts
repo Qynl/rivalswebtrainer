@@ -1045,8 +1045,8 @@ export class Renderer {
     // ── Masonry ───────────────────────────────────────────────────────────
     // The central spire is the map's landmark, so it gets the only real
     // architectural treatment on the map: fluted faces, a cornice band every
-    // few metres, and a stepped crown. Plain boxes read as placeholders; a
-    // little articulated stone reads as a building.
+    // few metres, and a stepped crown. A plain box reads as unbuilt; a little
+    // articulated stone reads as a building.
     const flutes: THREE.Matrix4[] = [];
     const bands: THREE.Matrix4[] = [];
     const brackets: THREE.Matrix4[] = [];

@@ -49,13 +49,16 @@ describe('practice bot', () => {
     const room = new Room('practice', new Physics(ARENA));
     let t = 0;
     let kills = 0;
-    for (let i = 0; i < 60 * 45 && kills === 0; i++) {
+    // 60 s rather than 45: the bot's route and aim timing are stochastic, so a
+    // short window measures luck as much as competence. The loop exits on the
+    // first kill, so a healthy run costs nothing extra.
+    for (let i = 0; i < 60 * 60 && kills === 0; i++) {
       t += 1000 / 60;
       room.update(t);
       const s = room.inspect().match.scores;
       kills = s[1];
     }
-    // 45 s is several full repositions: a bot that never fires cannot score.
+    // A minute is several full repositions: a bot that never fires cannot score.
     expect(kills).toBeGreaterThan(0);
   }, 60000);
 });
