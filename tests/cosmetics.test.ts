@@ -162,7 +162,9 @@ describe('progress profile', () => {
       expect(r.anim.pulse).toBeGreaterThanOrEqual(0);
     }
     const shapes = new Set(KILL_EFFECTS.map((f) => f.shape));
-    expect(shapes.size).toBe(KILL_EFFECTS.length);
     for (const f of KILL_EFFECTS) expect(['spark', 'shard', 'petal', 'arc', 'star']).toContain(f.shape);
+    // The catalogue must use every geometry it has: a new effect that is only a
+    // recolour of an old one is not worth a price tag.
+    expect(shapes.size).toBe(5);
   });
 });
