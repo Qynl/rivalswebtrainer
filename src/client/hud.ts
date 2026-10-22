@@ -247,8 +247,8 @@ export class Hud {
     this.crosshair.style.setProperty('--spread', `${spread.toFixed(1)}px`);
     this.crosshair.classList.toggle('scoped', opts.scopeT > 0.72);
     this.crosshair.classList.toggle('dead', !opts.alive);
-    this.scope.style.opacity = String(smoothstep(0.55, 1, opts.scopeT));
-    this.scope.classList.toggle('on', opts.scopeT > 0.55);
+    this.scope.style.opacity = String(smoothstep(0.3, 1, opts.scopeT));
+    this.scope.classList.toggle('on', opts.scopeT > 0.3);
     this.speedval.textContent = String(Math.round(opts.speed));
     this.chainval.textContent = String(opts.chain);
     this.chainval.parentElement?.classList.toggle('hot', opts.chain > 0);

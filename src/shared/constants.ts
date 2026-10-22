@@ -83,38 +83,46 @@ export const GRAPPLE = {
   chainMaxStacks: 4,
   /** Tap shorter than this becomes a zip; holding past it becomes a swing. */
   zipTapTime: 0.19,
-  zipSpeed: 44,
+  zipSpeed: 48,
   /** Velocity convergence rate for the zip yank (1/s). */
-  zipDamping: 16,
+  zipDamping: 18,
   zipArrive: 4.5,
-  zipHop: 6.4,
-  /** Rope is a hard tether: outward velocity is projected away at the taut
-   *  point, then a soft spring adds weight without rubber-banding. */
-  swingSpring: 34,
-  swingDamp: 6.5,
+  zipHop: 7.2,
+  /**
+   * Rope is a hard tether: outward velocity is projected away at the taut
+   * point, and a stiff, critically damped spring takes up any stretch.
+   * The old 34/6.5 pair had a damping ratio of 0.56 — underdamped, so the
+   * rope bobbed like a bungee every time it loaded. 90/19 is ratio 1.0:
+   * it takes the load once and stops.
+   */
+  swingSpring: 90,
+  swingDamp: 19,
+  /** Metres per second the rope can be shortened (jump) or fed out (crouch). */
+  reelIn: 17,
+  reelOut: 13,
   /** Projection removes 92% of outward radial speed; the remaining 8% is
    *  what gives the rope its satisfying snap instead of feeling like a rail. */
   outwardProjection: 0.92,
-  swingSteer: 19,
+  swingSteer: 26,
   swingMaxSpeed: 68,
   /** Release boost: scaled by speed, so a fast swing is worth more. */
   releaseBoostSpeed: 0.2,
-  releaseBoostMin: 2.5,
+  releaseBoostMin: 1.6,
   releaseBoostMax: 11,
   releaseUp: 3.2,
-  minRopeLength: 6,
+  minRopeLength: 4.5,
   /** The hook is a projectile now: a visible claw crosses the gap before the
    *  rope bites. 170 m/s makes a 25 m hop land in about 0.15 s, which reads as
    *  instant but still lets you see the throw. */
-  hookSpeed: 170,
-  hookMaxTime: 0.5,
+  hookSpeed: 230,
+  hookMaxTime: 0.42,
   /** The claw forgives the last few degrees of a throw: inside this cone it
    *  curves onto the nearest pinion instead of sailing past it. It cannot
    *  invent a target you were not already pointing near, it is pure geometry
    *  (identical on both machines) and it is identical for both players. */
   assistDeg: 12,
   /** Convergence rate of that curve (1/s per tick). Low enough to see it bend. */
-  assistRate: 13,
+  assistRate: 16,
   /** Time of a "quick" click after the hook bites, before it becomes a swing. */
   /** Rope length blends so a moving opponent doesn't teleport-yank you. */
   opponentElastic: 0.9,
@@ -124,8 +132,9 @@ export const WEAPON = {
   /** One shot, then a slow bolt: every shot is a decision. */
   cycleTime: 1.15,
   hipSpreadDeg: 2.4,
-  scopeTime: 0.17,
-  unscopeTime: 0.12,
+  /** The zoom itself. 0.12 s is fast enough to feel like a reflex, not a wait. */
+  scopeTime: 0.12,
+  unscopeTime: 0.085,
   /** Vertical FOV. 70 v (≈100 h at 16:9) is the modern tactical-shooter
    *  frame; 34 v is a ~2.4x optic, so the scope genuinely reaches out. */
   scopedFov: 34,

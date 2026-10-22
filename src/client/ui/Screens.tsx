@@ -68,7 +68,7 @@ export function Menu(): React.JSX.Element {
           </div>
           <div>
             <kbd>SPACE</kbd>
-            <span>JUMP</span>
+            <span>JUMP · REEL IN</span>
           </div>
           <div>
             <kbd>E</kbd>
@@ -76,7 +76,7 @@ export function Menu(): React.JSX.Element {
           </div>
           <div>
             <kbd>C</kbd>
-            <span>SLIDE</span>
+            <span>SLIDE · FEED ROPE</span>
           </div>
           <div>
             <kbd>LMB</kbd>

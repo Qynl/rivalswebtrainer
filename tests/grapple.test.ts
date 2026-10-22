@@ -155,13 +155,106 @@ describe('grapple', () => {
       stepPlayer(p, { seq: 100 + i, keys: KEY.forward, yaw: p.yaw, pitch: p.pitch }, DT, phys, ROPE, null, events);
     }
     expect(p.grapple.chainTimer).toBe(0);
-    aim(p, { x: 0, y: 60, z: 20 });
-    const before = p.pos.y;
-    for (let i = 0; i < 3; i++) {
+    // Aim at whichever pinion is actually in reach from where the swing left
+    // us: the point of this test is the cooldown, not a fixed trajectory.
+    const reachable = ROPE.anchors
+      .map((a) => ({ a, d: Math.hypot(a.x - p.eye.x, a.y - p.eye.y, a.z - p.eye.z) }))
+      .filter((c) => c.d < GRAPPLE.range - 5)
+      .sort((x, y) => x.d - y.d)[0];
+    expect(reachable).toBeTruthy();
+    aim(p, reachable.a);
+    // The claw is a projectile, so give it the flight time to cross the gap.
+    for (let i = 0; i < 40 && !p.grapple.active; i++) {
       stepPlayer(p, { seq: 200 + i, keys: KEY.fire, yaw: p.yaw, pitch: p.pitch }, DT, phys, ROPE, null, events);
     }
-    expect(p.grapple.active || p.pos.y < before).toBe(true);
+    expect(p.grapple.active).toBe(true);
     expect(p.grapple.chain).toBe(0);
+  });
+
+  it('reels in on jump and feeds out on crouch, so the arc is yours to shape', async () => {
+    const phys = await makeOpenWorld(ROPE);
+    const swingWith = (keys: number): PlayerState => {
+      const p = airPlayer(-40, 70, 0);
+      aim(p, { x: 0, y: 90, z: 0 });
+      for (let i = 0; i < 60; i++) {
+        stepPlayer(p, { seq: i, keys: KEY.fire | keys, yaw: p.yaw, pitch: p.pitch }, DT, phys, ROPE, null, []);
+      }
+      return p;
+    };
+    const plain = swingWith(0);
+    const reeled = swingWith(KEY.jump);
+    // The rope is shorter, and the shorter rope has lifted you higher.
+    expect(reeled.grapple.length).toBeLessThan(plain.grapple.length - 3);
+    expect(reeled.pos.y).toBeGreaterThan(plain.pos.y + 1);
+    // Feeding line back out is the other half of the control.
+    const fed = swingWith(KEY.crouch);
+    expect(fed.grapple.length).toBeGreaterThan(plain.grapple.length + 1);
+  });
+
+  it('holds the rope like a rope: no bungee stretch on a loaded swing', async () => {
+    const phys = await makeOpenWorld(ROPE);
+    const p = airPlayer(-40, 70, 0);
+    aim(p, { x: 0, y: 90, z: 0 });
+    let attached = false;
+    let maxStretch = 0;
+    for (let i = 0; i < 150; i++) {
+      stepPlayer(p, { seq: i, keys: KEY.fire | KEY.forward, yaw: p.yaw, pitch: p.pitch }, DT, phys, ROPE, null, []);
+      if (p.grapple.active) {
+        attached = true;
+        const d = Math.hypot(p.pos.x - p.grapple.anchor.x, p.pos.y - p.grapple.anchor.y, p.pos.z - p.grapple.anchor.z);
+        maxStretch = Math.max(maxStretch, d - p.grapple.length);
+      }
+    }
+    expect(attached).toBe(true);
+    // A critically damped tether takes the load once; the old underdamped
+    // spring let it bounce out by metres, which is what read as "sloppy".
+    expect(maxStretch).toBeLessThan(1.2);
+  });
+
+  it('throws a claw that crosses 25 m in a tenth of a second', async () => {
+    const phys = await makeOpenWorld(ROPE);
+    const p = airPlayer(0, 61, 0);
+    aim(p, { x: 0, y: 90, z: 0 });
+    let ticks = 0;
+    for (let i = 0; i < 30 && !p.grapple.active; i++) {
+      stepPlayer(p, { seq: i, keys: KEY.fire, yaw: p.yaw, pitch: p.pitch }, DT, phys, ROPE, null, []);
+      ticks++;
+    }
+    expect(p.grapple.active).toBe(true);
+    // ~0.13 s from the click (the claw starts moving on the tick after it is
+    // thrown): instant to the hand, still visible in the air.
+    expect(ticks).toBeLessThanOrEqual(8);
+    expect(ticks * DT).toBeLessThan(0.15);
+  });
+
+  it('a release always throws you onward, even from a slow swing', async () => {
+    const phys = await makeOpenWorld(ROPE);
+    const p = airPlayer(-14, 82, 0);
+    aim(p, { x: 0, y: 90, z: 0 });
+    // Hold past the tap window: a tap is a zip, a hold is a swing.
+    for (let i = 0; i < 20; i++) {
+      stepPlayer(p, { seq: i, keys: KEY.fire, yaw: p.yaw, pitch: p.pitch }, DT, phys, ROPE, null, []);
+    }
+    expect(p.grapple.active).toBe(true);
+    expect(p.grapple.mode).toBe('swing');
+    // Find the tick the rope actually lets go and measure the impulse there,
+    // so the comparison is not diluted by the gravity of later ticks.
+    let before = 0;
+    let after = 0;
+    for (let i = 20; i < 26; i++) {
+      const wasActive = p.grapple.active;
+      before = p.vel.y;
+      stepPlayer(p, { seq: i, keys: 0, yaw: p.yaw, pitch: p.pitch }, DT, phys, ROPE, null, []);
+      if (wasActive && !p.grapple.active) {
+        after = p.vel.y;
+        break;
+      }
+    }
+    expect(p.grapple.active).toBe(false);
+    // Letting go of a loaded rope is a move, never a dead drop: it always adds
+    // upward velocity on top of whatever the pendulum had.
+    expect(after - before).toBeGreaterThan(2.5);
+    expect(Math.hypot(p.vel.x, p.vel.z)).toBeGreaterThan(2);
   });
 
   it('tap zips you to the point instead of swinging around it', async () => {

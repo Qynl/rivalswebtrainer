@@ -2692,9 +2692,15 @@ export class Renderer {
     // FOV: speed is the single strongest "feels fast" cue.
     const speedT = clamp(local.speed / 46, 0, 1);
     this.fovPunch *= Math.exp(-dt * 7);
-    const hipFov = WEAPON.baseFov + speedT * WEAPON.maxFovKick + this.fovPunch;
-    const targetFov = lerp(hipFov, WEAPON.scopedFov, smoothstep(0.25, 1, local.scopeT));
-    this.fov = lerp(this.fov, targetFov, 1 - Math.exp(-dt * 9));
+    // `scopeT` is already the ramp (0.12 s, stepped by the simulation). Smoothing
+    // it a second time here was the whole "scoping lags" complaint: 0.17 s of
+    // ramp plus a 0.11 s exponential on top of a smoothstep that ignored the
+    // first quarter of the travel. Now the lens follows the ramp directly, with
+    // only a two-frame filter to hide the 60 Hz steps.
+    const zoom = local.scopeT * local.scopeT * (3 - 2 * local.scopeT);
+    const hipFov = WEAPON.baseFov + (speedT * WEAPON.maxFovKick + this.fovPunch) * (1 - zoom);
+    const targetFov = lerp(hipFov, WEAPON.scopedFov, zoom);
+    this.fov = lerp(this.fov, targetFov, 1 - Math.exp(-dt * 45));
     if (Math.abs(this.camera.fov - this.fov) > 0.01) {
       this.camera.fov = this.fov;
       this.camera.updateProjectionMatrix();
@@ -3013,7 +3019,9 @@ export class Renderer {
       this.sweepMat.opacity = Math.sin(Math.PI * loop) * 0.85;
     }
 
-    const scopedNow = local.scopeT > 0.72;
+    // The weapon leaves the frame as the scope glass arrives, not two beats
+    // later: the two have to cross-fade or the zoom reads as a cut.
+    const scopedNow = local.scopeT > 0.42;
     this.viewmodel.visible = !scopedNow && !view.killcam && local.alive;
     for (const light of this.vmLights) light.visible = this.viewmodel.visible;
     this.weaponRecoil *= Math.exp(-dt * 11);

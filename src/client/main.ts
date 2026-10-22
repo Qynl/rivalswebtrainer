@@ -855,7 +855,10 @@ class Game {
       this.updateRemote();
       const gr = this.local.grapple;
       // Reel speed drives the grapnel whirr: a zip screams, a slow payout ticks.
-      const reel = this.local.hook.active ? 0.85 : gr.active ? (gr.mode === 'zip' ? 1 : 0.4) : 0;
+      // Reel speed drives the grapnel whirr: a zip screams, a payout ticks, and
+      // hauling yourself up the rope (jump) runs the winch hard.
+      const hauling = gr.active && gr.mode === 'swing' && (this.input.keys & KEY.jump) !== 0;
+      const reel = this.local.hook.active ? 0.85 : gr.active ? (gr.mode === 'zip' ? 1 : hauling ? 0.8 : 0.4) : 0;
       this.sfx.mix(this.local.speed, gr.active, this.local.alive, {
         grounded: this.local.grounded,
         reel,

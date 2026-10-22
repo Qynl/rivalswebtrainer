@@ -630,7 +630,10 @@ export function stepPlayer(
   if (g.active) g.hold += dt;
 
   // ── Jump / slide / dash ─────────────────────────────────────────────────
-  if ((pressed & KEY.jump) !== 0) p.jumpBuffer = MOVE.jumpBuffer;
+  // Jump is the reel key while a swing is loaded, so it must not also queue a
+  // buffered hop that fires the moment your feet touch down.
+  const reelingWithJump = g.active && g.mode === 'swing' && (held & KEY.jump) !== 0;
+  if ((pressed & KEY.jump) !== 0 && !reelingWithJump) p.jumpBuffer = MOVE.jumpBuffer;
 
   const crouchHeld = (held & KEY.crouch) !== 0;
   if (crouchHeld && p.grounded && !p.sliding && flatSpeed(p.vel) > MOVE.slideEnterSpeed) {
@@ -684,6 +687,17 @@ export function stepPlayer(
     if (dist > 1e-3) {
       const dhat = { x: delta.x / dist, y: delta.y / dist, z: delta.z / dist };
       const radial = dot(p.vel, dhat);
+      // ── Reel ─────────────────────────────────────────────────────────────
+      // Jump pulls you up the rope, crouch feeds it out. Without this a swing
+      // is a pendulum you can only watch: you cannot climb over a ledge, you
+      // cannot shorten a line to gain height on the release, and an anchor
+      // overhead can only ever drop you back where you started. It is the
+      // single biggest difference between "the rope moves me" and "I move".
+      if ((held & KEY.jump) !== 0) {
+        g.length = Math.max(GRAPPLE.minRopeLength, g.length - GRAPPLE.reelIn * dt);
+      } else if ((held & KEY.crouch) !== 0) {
+        g.length = Math.min(GRAPPLE.range, g.length + GRAPPLE.reelOut * dt);
+      }
       if (dist > g.length) {
         if (radial < 0) {
           // Pull outward velocity back to the rope: instant constraint.

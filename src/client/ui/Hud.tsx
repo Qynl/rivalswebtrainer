@@ -183,7 +183,7 @@ export function Hud(): React.JSX.Element {
       </div>
 
       <div id="hint">
-        1 RIFLE · 2 GRAPNEL · LMB FIRE / THROW · HOLD LMB TO SWING · SPACE JUMP · E DASH · C SLIDE
+        1 RIFLE · 2 GRAPNEL · LMB THROW · HOLD TO SWING · SPACE REEL IN · C FEED OUT · E DASH
       </div>
     </div>
   );

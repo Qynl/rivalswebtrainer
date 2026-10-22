@@ -618,7 +618,9 @@ kbd {
   align-items: center;
   justify-content: center;
   opacity: 0;
-  transition: opacity 0.08s linear;
+  /* The opacity is written every frame from the simulation, so the CSS
+     transition is only here to bridge dropped frames. */
+  transition: opacity 0.03s linear;
 }
 
 #scope svg {

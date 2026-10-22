@@ -81,6 +81,48 @@ describe('renderer', () => {
     }).not.toThrow();
   });
 
+  it('snaps the lens in with the scope, in well under a fifth of a second', () => {
+    const local = createPlayer(0, 0);
+    respawnPlayer(local, ARENA, 0);
+    const remote = createPlayer(1, 1);
+    respawnPlayer(remote, ARENA, 1);
+    const frame = (scopeT: number): void => {
+      local.scopeT = scopeT;
+      renderer.update(1 / 60, {
+        local,
+        localRope: { active: false, anchor: { x: 0, y: 0, z: 0 }, length: 0, mode: 'none' },
+        remote: {
+          pos: { ...remote.pos }, vel: { x: 0, y: 0, z: 0 }, grounded: true, scopeT: 0,
+          yaw: 0, pitch: 0, alive: false, sliding: false, scoped: false, glint: 0, speed: 0,
+          grapple: { active: false, mode: 'none', anchor: { x: 0, y: 0, z: 0 }, length: 0, target: 0 },
+          slot: 0, hook: { active: false, pos: { x: 0, y: 0, z: 0 } },
+        },
+        remoteRope: { active: false, anchor: { x: 0, y: 0, z: 0 }, length: 0, mode: 'none' },
+        ringRadius: 60,
+        ringActive: false,
+        scoped: 0,
+        glintVisible: false,
+        glintIntensity: 0,
+        killcam: null,
+        reducedFx: false,
+      });
+    };
+    frame(0);
+    const hip = renderer.camera.fov;
+    expect(hip).toBeGreaterThan(60);
+    // The simulation ramps scopeT in 0.12 s; the lens must be there with it,
+    // not another 0.3 s behind.
+    for (let i = 0; i < 9; i++) frame(i / 8);
+    frame(1);
+    frame(1);
+    frame(1);
+    expect(renderer.camera.fov).toBeLessThan(38);
+    frame(0);
+    frame(0);
+    frame(0);
+    expect(renderer.camera.fov).toBeGreaterThan(55);
+  });
+
   it('draws the first-person rifle and grapnel, not just builds them', () => {
     // Regression: the viewmodel hangs off the camera, and three.js only draws
     // what it can reach from the scene root. For a long time the weapon was
