@@ -195,7 +195,10 @@ export class Room {
       case 'input': {
         if (!msg.frame || typeof msg.frame.seq !== 'number') return;
         slot.queue.push(msg.frame);
-        if (slot.queue.length > 24) slot.queue.splice(0, slot.queue.length - 24);
+        // Keep a short headroom, never a second of history: stale frames are
+        // latency, and the drain in stepPlayers already fast-forwards through
+        // a burst. Anything older than 6 frames is dropped from the front.
+        if (slot.queue.length > 6) slot.queue.splice(0, slot.queue.length - 6);
         break;
       }
       case 'shot':
@@ -301,6 +304,22 @@ export class Room {
       }
       this.events.length = 0;
       stepPlayer(p, frame, dt, this.phys, ARENA, this.players[1 - i], this.events);
+      // ── Backlog drain ─────────────────────────────────────────────────────
+      // One queued frame per tick is only correct on a perfect network. A 60 Hz
+      // input stream always arrives in clumps, and every extra frame sitting in
+      // the queue is one tick of *permanent* input latency — which is exactly
+      // why the player who joined (and so is on the worse route) felt a step
+      // behind for the whole match. Any surplus is consumed in the same tick:
+      // each frame still advances this player by exactly one tick of movement,
+      // so nothing speeds up, the backlog simply empties.
+      let drained = 0;
+      while (slot.queue.length > 1 && drained < 3) {
+        const next = slot.queue.shift()!;
+        slot.lastInput = next;
+        slot.ack = next.seq;
+        stepPlayer(p, next, dt, this.phys, ARENA, this.players[1 - i], this.events);
+        drained++;
+      }
       // In the lobby there is no ring and no score, so falling just respawns.
       if (!live && p.pos.y < MATCH.voidY) {
         respawnPlayer(p, ARENA, i as 0 | 1);

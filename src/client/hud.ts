@@ -288,7 +288,9 @@ export class Hud {
   }
 
   setNet(ping: number, label: string, tone: 'ok' | 'warn' | 'bad'): void {
-    this.ping.textContent = `${Math.round(ping)} MS`;
+    // Round to 5 ms: a number that ticks on every frame reads as instability
+    // even when the connection is perfectly steady.
+    this.ping.textContent = `${Math.round(ping / 5) * 5} MS`;
     this.connection.textContent = label;
     this.connection.className = tone;
   }

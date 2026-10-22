@@ -89,10 +89,19 @@ class Game {
   private remotePrev: PlayerState = createPlayer(1, 1);
 
   private snapBuf: SnapBuf[] = [];
+  /** Adaptive interpolation delay, sized from measured snapshot jitter. */
+  private interpDelay = INTERP_DELAY;
+  /** Monotonic playback clock for remote interpolation, in server seconds. */
+  private playhead = 0;
+  private playheadValid = false;
+  private snapJitter = 0;
+  private lastSnapArrival = 0;
   private history: HistoryEntry[] = [];
   private seq = 0;
   private accumulator = 0;
   private lastFrame = 0;
+  /** Last rendered frame delta, used by the interpolation playback clock. */
+  private frameDt = 1 / 60;
   private events: SimEvent[] = [];
   private you: 0 | 1 = 0;
   private mode: 'duel' | 'practice' = 'practice';
@@ -305,6 +314,8 @@ class Game {
       this.hintUntil = performance.now() + 9000;
       this.resetLocalSpawn(this.you);
       this.snapBuf = [];
+      this.playheadValid = false;
+      this.lastSnapArrival = 0;
       this.history = [];
       this.killcam = null;
       if (msg.reconnected) {
@@ -341,6 +352,8 @@ class Game {
     this.net.onReconnected = () => {
       this.history = [];
       this.snapBuf = [];
+      this.playheadValid = false;
+      this.lastSnapArrival = 0;
       this.hud.toastMsg('RECONNECTED', 1800);
     };
   }
@@ -379,6 +392,8 @@ class Game {
     this.started = false;
     this.matchOver = false;
     this.snapBuf = [];
+    this.playheadValid = false;
+    this.lastSnapArrival = 0;
     this.history = [];
     this.killcam = null;
     this.remoteView.alive = false;
@@ -425,6 +440,27 @@ class Game {
   // ── Network handlers ─────────────────────────────────────────────────────
   private onSnapshot(snap: Snapshot): void {
     this.serverMatchTime = snap.match.time;
+    // ── Jitter measurement ──────────────────────────────────────────────────
+    // Snapshots are sent on a fixed 20 Hz cadence, so any deviation in their
+    // arrival spacing is network jitter. Sizing the interpolation buffer from
+    // the measurement (instead of a constant) is what makes a lossy or mobile
+    // connection play smoothly without adding a fixed delay for everyone else.
+    const arrival = performance.now() / 1000;
+    if (this.lastSnapArrival > 0) {
+      const gap = arrival - this.lastSnapArrival;
+      const dev = Math.abs(gap - 1 / 20);
+      // Fast attack, slow release: a bad patch is absorbed immediately, and
+      // the buffer only relaxes once the line has been quiet for a while.
+      this.snapJitter = dev > this.snapJitter ? this.snapJitter * 0.55 + dev * 0.45 : this.snapJitter * 0.94 + dev * 0.06;
+      this.snapJitter = clamp(this.snapJitter, 0, 0.25);
+    }
+    this.lastSnapArrival = arrival;
+    const wantedDelay = clamp(0.075 + this.snapJitter * 3.2, 0.075, 0.3);
+    // Grow at once, shrink gently: shrinking fast makes the picture stutter.
+    this.interpDelay = wantedDelay > this.interpDelay
+      ? this.interpDelay + (wantedDelay - this.interpDelay) * 0.5
+      : this.interpDelay + (wantedDelay - this.interpDelay) * 0.02;
+
     this.snapBuf.push({ time: snap.time, snap });
     while (this.snapBuf.length > 24) this.snapBuf.shift();
     const mine = snap.players[this.you];
@@ -656,6 +692,7 @@ class Game {
     const now = nowMs / 1000;
     const dt = this.lastFrame === 0 ? 0 : clamp(now - this.lastFrame, 0, 0.1);
     this.lastFrame = now;
+    if (dt > 0) this.frameDt = dt;
     const state = this.net.state;
     const playing = this.inMatch && this.started && !this.paused && !this.resultsOpen;
 
@@ -818,7 +855,7 @@ class Game {
       origin: { ...origin },
       dir,
       scoped,
-      aimTime: this.net.serverNow() - INTERP_DELAY,
+      aimTime: this.net.serverNow() - this.interpDelay,
     };
     markFired(this.local);
     this.local.scopeT = Math.max(0, this.local.scopeT - 0.35); // recoil breaks the scope
@@ -922,8 +959,27 @@ class Game {
 
   private updateRemote(): void {
     const buf = this.snapBuf;
-    if (buf.length === 0) return;
-    const target = this.net.serverNow() - INTERP_DELAY;
+    if (buf.length < 2) return;
+    // ── Playback clock ──────────────────────────────────────────────────────
+    // Advancing the playhead by the frame time and gently steering it toward
+    // "server now minus the buffer" is what removes the last source of visible
+    // stutter: rebasing straight onto each arriving snapshot smuggles every bit
+    // of network jitter into the remote player's motion.
+    const want = this.net.serverNow() - this.interpDelay;
+    if (!this.playheadValid) {
+      this.playhead = want;
+      this.playheadValid = true;
+    } else {
+      this.playhead += this.frameDt;
+      const err = want - this.playhead;
+      if (Math.abs(err) > 0.5) {
+        // Tab was suspended, or we reconnected: jump instead of gliding.
+        this.playhead = want;
+      } else {
+        this.playhead += err * 0.12;
+      }
+    }
+    const target = this.playhead;
     let a = buf[0];
     let b = buf[buf.length - 1];
     for (let i = 0; i < buf.length - 1; i++) {

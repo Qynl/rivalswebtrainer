@@ -290,4 +290,32 @@ describe('room: authority, kills and reconnect', () => {
     expect(match.scores[0]).toBe(1);
     expect(match.lastKill?.cause).toBe('void');
   });
+
+  it('drains a burst of input instead of queueing it forever', async () => {
+    // A 60 Hz stream arrives in clumps on any real network. Consuming one frame
+    // per tick leaves the rest queued, which is permanent input latency for
+    // that seat (and was the joiner's "always a step behind" feeling).
+    const room = await makeRoom('practice');
+    const a = fake();
+    room.join(a.ws, 'A');
+    advance(room, 10, 1000);
+    const before = room.inspect().players[0].pos.z;
+    for (let seq = 1; seq <= 12; seq++) {
+      room.setInput(0, { seq, keys: 0, yaw: 0, pitch: 0 });
+    }
+    // Three ticks must consume the surplus, not one frame per tick. Snapshots
+    // stream at 20 Hz, so the ack the client sees is what proves it.
+    a.inbox.length = 0;
+    room.update(1300);
+    room.update(1300 + 1000 / 60);
+    room.update(1300 + 2000 / 60);
+    const inboxAcks: number[] = [];
+    for (const m of a.inbox) {
+      if (m.t === 'snap') inboxAcks.push(m.snap.ack);
+    }
+    expect(inboxAcks.length).toBeGreaterThan(0);
+    expect(Math.max(...inboxAcks)).toBeGreaterThanOrEqual(4);
+    // And the player still moved like a player, not like a teleport.
+    expect(Math.abs(room.inspect().players[0].pos.z - before)).toBeLessThan(0.5);
+  });
 });

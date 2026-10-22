@@ -165,7 +165,10 @@ export class Net {
       case 'pong': {
         const p = this.pings.get(msg.id);
         if (p) {
-          this.latency = performance.now() - p.sent;
+          // Smooth the RTT: one lucky ping is not a better connection, and the
+          // raw number swings by 20 ms between samples on a stable line.
+          const rtt = performance.now() - p.sent;
+          this.latency = this.latency === 0 ? rtt : this.latency * 0.7 + rtt * 0.3;
           this.pings.delete(msg.id);
         }
         break;
