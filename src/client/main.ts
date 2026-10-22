@@ -75,6 +75,9 @@ class Game {
   private remoteSim: PlayerState = createPlayer(1, 1);
   private remoteView: RemoteView = {
     pos: { x: 0, y: 0, z: 0 },
+    vel: { x: 0, y: 0, z: 0 },
+    grounded: true,
+    scopeT: 0,
     yaw: 0,
     pitch: 0,
     alive: false,
@@ -610,6 +613,8 @@ class Game {
     if (!mine) {
       const sp = this.sfx.spatial(msg.origin, this.local.eye, this.lookYaw);
       this.sfx.shot(false, sp.pan, sp.distance);
+      // Their rifle moves, because a shot with no body behind it is a texture.
+      this.renderer.shotKick(1 - this.you);
       if (!msg.hit) this.nearMiss(msg);
     }
   }
@@ -953,6 +958,8 @@ class Game {
         case 'land': {
           this.sfx.land(e.strength);
           this.renderer.shake(0.004 + e.strength * 0.01);
+          // The rifle takes the impact a beat after the legs do.
+          this.renderer.landKick(e.strength);
           // Dust at the feet: a landing has to move the world, not just the lens.
           const g = this.groundUnder(this.local.pos, this.local.id);
           if (typeof g === 'number') this.renderer.landDust({ x: this.local.pos.x, y: g + 0.05, z: this.local.pos.z }, e.strength);
@@ -1088,6 +1095,13 @@ class Game {
     view.scoped = pb.scoped;
     view.glint = pb.glint;
     view.speed = pb.speed;
+    view.scopeT = pb.scopeT;
+    view.grounded = pb.grounded;
+    view.vel = {
+      x: lerp(pa.vel.x, pb.vel.x, f),
+      y: lerp(pa.vel.y, pb.vel.y, f),
+      z: lerp(pa.vel.z, pb.vel.z, f),
+    };
     view.grapple = {
       active: pb.grapple.active,
       mode: pb.grapple.mode,

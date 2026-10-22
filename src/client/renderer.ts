@@ -57,6 +57,10 @@ export interface RemoteView {
   scoped: boolean;
   glint: number;
   speed: number;
+  /** Vertical velocity and contact: the pose needs both to read as a jump. */
+  vel: Vec3;
+  grounded: boolean;
+  scopeT: number;
   grapple: { active: boolean; mode: 'none' | 'swing' | 'zip'; anchor: Vec3; length: number; target: 0 | 1 };
   /** Equipped item, so their hands match yours. */
   slot: 0 | 1;
@@ -102,12 +106,57 @@ const COL = {
   ring: 0xff8a3d,
 };
 
+/** The subset of player state the skeleton reads; local and remote both fit. */
+type PoseState = {
+  speed: number;
+  vel: Vec3;
+  grounded: boolean;
+  sliding: boolean;
+  yaw: number;
+  pitch: number;
+  slot: 0 | 1;
+  scopeT: number;
+  grapple: { active: boolean; mode: 'none' | 'swing' | 'zip' };
+  alive: boolean;
+};
+
+/** Initial facing for a seat, so the first frame does not read as a spin. */
+const skinIndexYaw = (i: number): number => (i === 0 ? 0 : Math.PI);
+
+/** Per-character animation memory: phase, eased poses, gesture timers. */
+interface PlayerAnim {
+  phase: number;
+  run: number;
+  air: number;
+  slide: number;
+  swing: number;
+  zip: number;
+  squash: number;
+  spawn: number;
+  alive: boolean;
+  kick: number;
+  swap: number;
+  slot: number;
+  wasGrounded: boolean;
+  lastVy: number;
+}
+
 interface PlayerVisual {
   group: THREE.Group;
+  /** Pelvis pivot: everything above the hips leans, ducks and breathes here. */
+  body: THREE.Group;
+  head: THREE.Group;
+  arms: THREE.Group[];
+  hips: THREE.Group[];
+  knees: THREE.Group[];
+  /** Both weapons hang off this, so kick, draw and swap share one transform. */
+  weapon: THREE.Group;
   torso: THREE.Mesh;
-  legs: THREE.Mesh[];
   visor: THREE.Mesh;
-  outline: THREE.Mesh;
+  anim: PlayerAnim;
+  /** Smoothed yaw rate, -1..1: cape sway and lean read the turn, not the aim. */
+  turn: number;
+  lastYaw: number;
   jetL: THREE.Sprite;
   jetR: THREE.Sprite;
   /** Thruster cones under the pack: solid geometry, not just a glow sprite. */
@@ -384,6 +433,8 @@ export class Renderer {
   private readyClaw: THREE.Object3D = new THREE.Object3D();
   private slotBlend = 0;
   private hookKick = 0;
+  /** Landing spring on the viewmodel: a dip and a rebound, not a wobble. */
+  private landSpring = 0;
   private hookHeads: THREE.Group[] = [];
   /** A bead that runs down the cable while the reels are turning. */
   private ropePulses: THREE.Sprite[] = [];
@@ -1097,50 +1148,122 @@ export class Renderer {
       const tan = new THREE.MeshStandardMaterial({ color: 0xa48b58, roughness: 0.74, metalness: 0.14 });
       const visorMat = new THREE.MeshStandardMaterial({ color: 0x0b0f14, emissive: color, emissiveIntensity: 1.4, roughness: 0.15, metalness: 0.6 });
 
+      // ── Rig ────────────────────────────────────────────────────────────────
+      // A real joint chain: pelvis → shoulders and neck, hip → knee. Every joint
+      // is a Group, so the whole animation is rotation, and each joint merges
+      // its own geometry per material — a full skeleton for two extra draws.
+      const body = new THREE.Group();
+      body.position.y = -0.14;
+      group.add(body);
+
+      /** Bakes a small stack of primitive parts into one mesh at a joint. */
+      const hinge = (
+        parts: { geo: THREE.BufferGeometry; x?: number; y?: number; z?: number; rx?: number; ry?: number; rz?: number }[],
+        mat: THREE.Material,
+      ): THREE.Mesh => {
+        const geos = parts.map((p) => {
+          const m = new THREE.Matrix4().compose(
+            new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0),
+            new THREE.Quaternion().setFromEuler(new THREE.Euler(p.rx ?? 0, p.ry ?? 0, p.rz ?? 0)),
+            new THREE.Vector3(1, 1, 1),
+          );
+          return p.geo.applyMatrix4(m);
+        });
+        const mesh = new THREE.Mesh(geos.length === 1 ? geos[0] : mergeGeometries(geos), mat);
+        mesh.castShadow = true;
+        return mesh;
+      };
+
       const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.26, 0.34, 4, 12), shell);
-      torso.position.y = 0.16;
+      torso.position.y = 0.3;
       torso.castShadow = true;
-      group.add(torso);
+      body.add(torso);
 
       const chest = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.34, 0.32), plate);
-      chest.position.set(0, 0.36, 0);
+      chest.position.set(0, 0.5, 0);
       chest.castShadow = true;
-      group.add(chest);
+      body.add(chest);
       const sash = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.06, 0.34), accent);
-      sash.position.set(0, 0.42, 0);
-      group.add(sash);
+      sash.position.set(0, 0.56, 0);
+      body.add(sash);
 
+      // Shoulder pads ride the torso: they are armour, not joints.
       for (const side of [-1, 1]) {
         const shoulder = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 6), plate);
-        shoulder.position.set(side * 0.3, 0.4, 0);
+        shoulder.position.set(side * 0.3, 0.54, 0);
         shoulder.castShadow = true;
-        group.add(shoulder);
-        const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.4, 3, 8), shell);
-        arm.position.set(side * 0.33, 0.13, -0.02);
-        arm.rotation.z = side * 0.16;
-        arm.castShadow = true;
-        group.add(arm);
+        body.add(shoulder);
       }
 
-      const head = new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 10), plate);
-      head.position.set(0, 0.66, 0);
-      head.castShadow = true;
-      group.add(head);
-      const visor = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.09, 0.12), visorMat);
-      visor.position.set(0, 0.66, -0.12);
-      group.add(visor);
-
-      const legs: THREE.Mesh[] = [];
+      // ── Arms ───────────────────────────────────────────────────────────────
+      // Upper arm, forearm and glove in one mesh, hinged at the shoulder: that
+      // is all a swing, a brace and a recoil need to read at rifle range.
+      const arms: THREE.Group[] = [];
       for (const side of [-1, 1]) {
-        const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.095, 0.48, 3, 8), shell);
-        leg.position.set(side * 0.12, -0.47, 0);
-        leg.castShadow = true;
-        legs.push(leg);
-        group.add(leg);
-        const boot = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.14, 0.28), plate);
-        boot.position.set(side * 0.12, -0.79, -0.04);
-        group.add(boot);
+        const arm = new THREE.Group();
+        arm.position.set(side * 0.3, 0.52, 0);
+        arm.rotation.z = side * 0.14;
+        body.add(arm);
+        arm.add(
+          hinge(
+            [
+              { geo: new THREE.CapsuleGeometry(0.078, 0.28, 3, 8), y: -0.2 },
+              { geo: new THREE.CapsuleGeometry(0.06, 0.2, 3, 8), y: -0.46, z: -0.07, rx: 0.28 },
+              { geo: new THREE.SphereGeometry(0.072, 8, 6), y: -0.6, z: -0.12 },
+            ],
+            shell,
+          ),
+        );
+        arms.push(arm);
       }
+
+      // ── Head ───────────────────────────────────────────────────────────────
+      // Its own pivot, because a duelist's head tracks the shot. A head welded
+      // to the chest is the single clearest tell that a model is a mannequin.
+      const head = new THREE.Group();
+      head.position.set(0, 0.8, 0);
+      body.add(head);
+      const skull = new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 10), plate);
+      skull.castShadow = true;
+      head.add(skull);
+      const visor = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.09, 0.12), visorMat);
+      visor.position.set(0, 0, -0.12);
+      head.add(visor);
+      const crest = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.1, 0.22), accent);
+      crest.position.set(0, 0.14, 0.01);
+      head.add(crest);
+
+      // ── Legs ───────────────────────────────────────────────────────────────
+      // Hip and knee per leg. The greave and the boot merge into one dark mesh:
+      // two materials on a shin is not worth a draw call at 60 m.
+      const hips: THREE.Group[] = [];
+      const knees: THREE.Group[] = [];
+      for (const side of [-1, 1]) {
+        const hip = new THREE.Group();
+        hip.position.set(side * 0.12, -0.14, 0);
+        group.add(hip);
+        hip.add(hinge([{ geo: new THREE.CapsuleGeometry(0.098, 0.26, 3, 8), y: -0.21 }], shell));
+        const knee = new THREE.Group();
+        knee.position.set(0, -0.4, 0);
+        hip.add(knee);
+        knee.add(
+          hinge(
+            [
+              { geo: new THREE.CapsuleGeometry(0.086, 0.22, 3, 8), y: -0.16 },
+              { geo: new THREE.BoxGeometry(0.17, 0.15, 0.3), y: -0.32, z: -0.05 },
+            ],
+            plate,
+          ),
+        );
+        hips.push(hip);
+        knees.push(knee);
+      }
+
+      // ── Weapon mount ───────────────────────────────────────────────────────
+      // One transform for both slots: drawing, kicking and swapping are the
+      // same three numbers, so they can never disagree.
+      const weapon = new THREE.Group();
+      body.add(weapon);
 
       // What the opponent is carrying has to be readable at rifle range: a
       // long rifle silhouette, or the stubby launcher with its drum of cable.
@@ -1170,30 +1293,30 @@ export class Renderer {
       part(new THREE.BoxGeometry(0.05, 0.16, 0.1), plate, 0, -0.16, -0.04);
       part(new THREE.BoxGeometry(0.05, 0.14, 0.08), plate, 0, -0.12, 0.16);
       part(new THREE.BoxGeometry(0.1, 0.02, 0.3), accent, 0, 0.065, -0.3);
-      rifle.position.set(0.2, 0.24, -0.36);
-      group.add(rifle);
+      rifle.position.set(0.2, 0.34, -0.36);
+      weapon.add(rifle);
 
       // Grapnel launcher in the same hands.
       const launcher = new THREE.Group();
       const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.09, 12), plate);
       drum.rotation.z = Math.PI / 2;
       launcher.add(drum);
-      const body = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.13, 0.42), tan);
-      body.position.z = -0.16;
-      launcher.add(body);
+      const bodyGeo = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.13, 0.42), tan);
+      bodyGeo.position.z = -0.16;
+      launcher.add(bodyGeo);
       const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.16, 10), accent);
       muzzle.rotation.x = Math.PI / 2;
       muzzle.position.z = -0.42;
       launcher.add(muzzle);
-      launcher.position.set(0.2, 0.24, -0.3);
+      launcher.position.set(0.2, 0.34, -0.3);
       launcher.visible = false;
-      group.add(launcher);
+      weapon.add(launcher);
 
       // Team-colour shoulder beacon: the readable "that is an enemy" cue.
       const beacon = new THREE.Sprite(this.makeGlowSpriteMaterial(skin.color, 0.55));
-      beacon.position.set(0, 0.36, 0.26);
+      beacon.position.set(0, 0.5, 0.26);
       beacon.scale.setScalar(1.1);
-      group.add(beacon);
+      body.add(beacon);
 
       // ── Thruster pack ────────────────────────────────────────────────────
       // Solid cones with an additive core: the sprite alone read as a smudge at
@@ -1212,23 +1335,23 @@ export class Renderer {
           }),
         );
         cone.rotation.x = Math.PI;
-        cone.position.set(side * 0.16, -0.96, 0.14);
+        cone.position.set(side * 0.16, -0.82, 0.14);
         cone.visible = false;
-        group.add(cone);
+        body.add(cone);
         thrust.push(cone);
         // The nozzle it comes out of, part of the silhouette.
         const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.07, 0.1, 10), plate);
-        nozzle.position.set(side * 0.16, -0.79, 0.14);
-        group.add(nozzle);
+        nozzle.position.set(side * 0.16, -0.65, 0.14);
+        body.add(nozzle);
       }
       // The pack itself, so the thrusters are attached to something.
       const pack = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.36, 0.14), plate);
-      pack.position.set(0, 0.3, 0.2);
+      pack.position.set(0, 0.44, 0.2);
       pack.castShadow = true;
-      group.add(pack);
+      body.add(pack);
       const packTrim = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.05, 0.15), accent);
-      packTrim.position.set(0, 0.24, 0.2);
-      group.add(packTrim);
+      packTrim.position.set(0, 0.38, 0.2);
+      body.add(packTrim);
 
       // ── Cape ─────────────────────────────────────────────────────────────
       // Four hinged panels hanging off the shoulders. Each lags the one above,
@@ -1241,17 +1364,17 @@ export class Renderer {
         metalness: 0.05,
         side: THREE.DoubleSide,
       });
-      let parent: THREE.Object3D = group;
+      let parent: THREE.Object3D = body;
       for (let i = 0; i < 4; i++) {
-        const hinge = new THREE.Group();
-        hinge.position.set(0, i === 0 ? 0.44 : -0.2, i === 0 ? 0.22 : 0);
+        const hingeGrp = new THREE.Group();
+        hingeGrp.position.set(0, i === 0 ? 0.58 : -0.2, i === 0 ? 0.22 : 0);
         const seg = new THREE.Mesh(new THREE.PlaneGeometry(0.46 - i * 0.035, 0.21), capeMat);
         seg.position.set(0, -0.105, 0.005);
         seg.castShadow = true;
-        hinge.add(seg);
-        parent.add(hinge);
-        cape.push(hinge as unknown as THREE.Mesh);
-        parent = hinge;
+        hingeGrp.add(seg);
+        parent.add(hingeGrp);
+        cape.push(hingeGrp as unknown as THREE.Mesh);
+        parent = hingeGrp;
       }
       // A team-coloured hem on the last panel: the cape is how you find the
       // enemy, so it carries the colour that means "enemy".
@@ -1260,19 +1383,21 @@ export class Renderer {
       parent.add(hem);
 
       const jetL = this.makeSprite(skin.color, 0.8);
-      jetL.position.set(-0.16, -0.88, 0.16);
-      group.add(jetL);
+      jetL.position.set(-0.16, -0.74, 0.16);
+      body.add(jetL);
       const jetR = this.makeSprite(skin.color, 0.8);
-      jetR.position.set(0.16, -0.88, 0.16);
-      group.add(jetR);
+      jetR.position.set(0.16, -0.74, 0.16);
+      body.add(jetR);
 
+      // The glint lives on the head, so it tracks the optic instead of the
+      // pelvis: if their body turns and their scope does not, the tell is wrong.
       const glintCore = this.makeSprite(0xfff4d6, 0.9);
-      glintCore.position.set(0, 0.66, -0.16);
+      glintCore.position.set(0, 0.02, -0.16);
       glintCore.visible = false;
-      group.add(glintCore);
+      head.add(glintCore);
       const lamp = this.makeSprite(skin.color, 0.55);
-      lamp.position.set(0, 0.66, -0.2);
-      group.add(lamp);
+      lamp.position.set(0, -0.02, -0.2);
+      head.add(lamp);
       const glintStreak = new THREE.Sprite(
         new THREE.SpriteMaterial({
           map: this.flare,
@@ -1283,28 +1408,28 @@ export class Renderer {
           depthWrite: false,
         }),
       );
-      glintStreak.position.set(0, 0.66, -0.16);
+      glintStreak.position.set(0, 0.02, -0.16);
       glintStreak.visible = false;
       // Squashed hard along one axis: a lens artefact, not a sun.
       glintStreak.scale.set(9, 0.32, 1);
-      group.add(glintStreak);
+      head.add(glintStreak);
 
       const glintHalo = this.makeSprite(0xffe0b0, 3.4);
-      glintHalo.position.set(0, 0.66, -0.16);
+      glintHalo.position.set(0, 0.02, -0.16);
       glintHalo.visible = false;
-      group.add(glintHalo);
+      head.add(glintHalo);
 
       const glintFlare = new THREE.Sprite(
         new THREE.SpriteMaterial({ map: this.flare, color: 0xffe6b8, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }),
       );
-      glintFlare.position.set(0, 0.66, -0.16);
+      glintFlare.position.set(0, 0.02, -0.16);
       glintFlare.visible = false;
-      group.add(glintFlare);
+      head.add(glintFlare);
 
-      // Everything on the body that never moves gets merged per material: the
+      // Everything on the torso that never moves gets merged per material: the
       // character is 20-odd little boxes, and merging them buys back the draw
-      // calls the cape, pack and thrusters cost. Animated parts are preserved.
-      mergeChildren(group, new Set<THREE.Object3D>([...legs, ...cape, ...thrust]));
+      // calls the joints, cape and thrusters cost. Animated parts are preserved.
+      mergeChildren(body, new Set<THREE.Object3D>([...cape, ...thrust]));
 
       const shadow = new THREE.Mesh(
         new THREE.PlaneGeometry(1.6, 1.6),
@@ -1317,10 +1442,32 @@ export class Renderer {
       this.scene.add(group);
       this.players.push({
         group,
+        body,
+        head,
+        arms,
+        hips,
+        knees,
+        weapon,
         torso,
-        legs,
         visor,
-        outline: chest,
+        turn: 0,
+        lastYaw: skinIndexYaw(i),
+        anim: {
+          phase: Math.random() * Math.PI * 2,
+          run: 0,
+          air: 0,
+          slide: 0,
+          swing: 0,
+          zip: 0,
+          squash: 0,
+          spawn: 0,
+          alive: true,
+          kick: 0,
+          swap: 0,
+          slot: 0,
+          wasGrounded: true,
+          lastVy: 0,
+        },
         jetL,
         jetR,
         thrust,
@@ -2141,6 +2288,11 @@ export class Renderer {
   }
 
   /** Cosmetic kick for the launcher; the sim already knows the hook is away. */
+  /** The knees take a landing; the rifle in your hands feels it too. */
+  landKick(strength: number): void {
+    this.landSpring = Math.max(this.landSpring, clamp(strength, 0, 1));
+  }
+
   hookFire(): void {
     this.hookKick = 1;
     this.punch(-0.03, 0.01);
@@ -2517,20 +2669,23 @@ export class Renderer {
       visual.group.visible = alive && (isLocal ? !!view.killcam : true);
       visual.group.position.set(pos.x, pos.y, pos.z);
       visual.group.rotation.y = (isLocal ? local.yaw : remote.yaw) + Math.PI;
-      const sliding = state.sliding;
-      visual.group.rotation.z = sliding ? 0.6 : 0;
+      // Roll and crouch live on the pelvis pivot: rotating the whole character
+      // about its ankles made a slide look like a fall.
+      visual.group.rotation.z = 0;
       // Their hands show the same kit they have equipped.
       const slot = isLocal ? local.slot : remote.slot;
       visual.rifle.visible = slot === 0;
       visual.launcher.visible = slot === 1;
       visual.group.rotation.x = 0;
 
-      const airborne = isLocal ? !local.grounded : !remote.alive ? false : true;
-      const pump = Math.sin(this.time * 11) * clamp((isLocal ? local.speed : remote.speed) / 16, 0, 1) * 0.5;
-      visual.legs[0].rotation.x = sliding ? -1.1 : airborne ? -0.4 : pump;
-      visual.legs[1].rotation.x = sliding ? -1.1 : airborne ? 0.2 : -pump;
+      // Skeleton: hips, knees, pelvis, neck, both arms and the weapon in one
+      // call. Every joint is eased toward its target, so a stance change is a
+      // motion rather than a snap, and the pose is frame-rate independent.
+      this.posePlayer(visual, state, dt);
 
-      const jetOn = isLocal ? !local.grounded && local.speed > 8 : remote.alive && (remote.speed > 20 || remote.grapple.active);
+      const jetOn = isLocal
+        ? !local.grounded && (local.speed > 8 || local.vel.y > 2)
+        : remote.alive && (remote.speed > 20 || remote.grapple.active);
       for (const jet of [visual.jetL, visual.jetR]) {
         jet.visible = jetOn;
         jet.material.opacity = jetOn ? 0.35 + Math.sin(this.time * 40) * 0.1 : 0;
@@ -2550,21 +2705,28 @@ export class Renderer {
       }
       // Cape: each panel lags the body and the panel above it, so speed opens it
       // out and stopping folds it back down. Cheap, and the single best motion
-      // read on a character seen from 60 m.
+      // read on a character seen from 60 m. The hem also swings with the turn
+      // rate, which is what makes a hard cut look like a hard cut.
       if (visual.cape.length) {
         const sp = clamp(state.speed / 30, 0, 1);
-        const flutter = Math.sin(this.time * 9) * 0.05;
+        const flutter = Math.sin(this.time * 9 + visual.anim.phase * 0.2) * 0.05;
+        const swingAir = visual.anim.swing;
         for (let c = 0; c < visual.cape.length; c++) {
           const panel = visual.cape[c];
           const lag = 0.06 * c;
           const base = -0.08 - (sp * 0.42 + c * 0.1) * (c === 0 ? 1 : 0.9);
-          // Rising air pushes the hem up; falling lets it trail.
-          const vy = isLocal ? local.vel.y : 0;
-          const lift = clamp(vy / 18, -1, 1) * 0.12;
+          // Rising air pushes the hem up; falling lets it trail. A swing pins
+          // the whole cape back because the body is moving with the cable.
+          const lift = clamp(state.vel.y / 18, -1, 1) * 0.12;
           panel.rotation.x = lerp(
             panel.rotation.x,
-            base - sp * 0.35 + flutter * (0.4 + c * 0.3) - lift + lag,
+            base - sp * 0.35 - swingAir * 0.35 + flutter * (0.4 + c * 0.3) - lift + lag,
             1 - Math.exp(-dt * 12),
+          );
+          panel.rotation.z = lerp(
+            panel.rotation.z,
+            clamp(visual.turn * (0.25 + c * 0.1), -0.4, 0.4),
+            1 - Math.exp(-dt * 9),
           );
         }
         visual.lamp.scale.setScalar(0.5 + Math.sin(this.time * 3 + (isLocal ? 0 : 2)) * 0.04);
@@ -2819,15 +2981,20 @@ export class Renderer {
     const insp = this.inspect * this.inspect * (3 - 2 * this.inspect);
     const inspWave = Math.sin(insp * Math.PI);
     const strafe = clamp((local.vel.x * Math.cos(local.yaw) - local.vel.z * Math.sin(local.yaw)) / 26, -1, 1);
+    // Landing: the spring runs down then back up, so the weapon dips under the
+    // impact and settles instead of bouncing off a fixed floor.
+    this.landSpring = Math.max(0, this.landSpring - dt * 3.4);
+    const spring = Math.sin(this.landSpring * Math.PI) * this.landSpring;
+    const slidePose = local.sliding ? 1 : 0;
     this.viewmodel.position.set(
-      0.22 + Math.sin(this.time * 4.2) * 0.003 + this.swayX - raise * 0.18 - sprint * 0.035 + strafe * 0.012,
-      -0.2 + bob + breathe + this.swayY - this.weaponKick * 0.025 - raise * 0.05 - sprint * 0.055 + air * 0.02 + inspWave * 0.03,
-      -0.1 + this.weaponRecoil * 0.14 + sprint * 0.05,
+      0.22 + Math.sin(this.time * 4.2) * 0.003 + this.swayX - raise * 0.18 - sprint * 0.035 + strafe * 0.012 + slidePose * 0.03,
+      -0.2 + bob + breathe + this.swayY - this.weaponKick * 0.025 - raise * 0.05 - sprint * 0.055 + air * 0.02 + inspWave * 0.03 - spring * 0.07 - slidePose * 0.045,
+      -0.1 + this.weaponRecoil * 0.14 + sprint * 0.05 - this.hookKick * 0.06,
     );
     this.viewmodel.rotation.set(
-      this.weaponRecoil * 0.18 + this.weaponKick * 0.06 - this.swayY * 0.6 + sprint * 0.11 - inspWave * 0.35,
+      this.weaponRecoil * 0.18 + this.weaponKick * 0.06 - this.swayY * 0.6 + sprint * 0.11 - inspWave * 0.35 - spring * 0.16 - this.hookKick * 0.1,
       -0.04 + Math.cos(this.time * 4.2) * 0.002 + this.swayX * 0.5 - inspWave * 0.5,
-      this.weaponRecoil * 0.05 + sprint * 0.22 + strafe * 0.06 + inspWave * 0.9,
+      this.weaponRecoil * 0.05 + sprint * 0.22 + strafe * 0.06 + inspWave * 0.9 + slidePose * 0.12,
     );
     if (this.muzzle.visible) {
       this.muzzle.material.opacity = Math.max(0, this.muzzle.material.opacity - dt * 8);
@@ -2892,6 +3059,154 @@ export class Renderer {
       local.scopeT > 0.7 ? 1 : 0,
       clamp(hurt, 0, 1),
     );
+  }
+
+  /**
+   * Poses one character.
+   *
+   * Everything is a weight between 0 and 1 (run, air, slide, swing, zip) and
+   * every joint is a lerp between the poses those weights select. That is what
+   * keeps the transitions continuous: there is no state machine that can snap,
+   * and a player who grapples mid-slide gets a blend, not a pop.
+   *
+   * All rates are per second and applied through `1 - exp(-dt * rate)`, so the
+   * timing is the same at 30 fps and at 240.
+   */
+  private posePlayer(v: PlayerVisual, s: PoseState, dt: number): void {
+    const a = v.anim;
+    const k = (rate: number): number => 1 - Math.exp(-dt * rate);
+
+    const yawRate = this.normalizeAngle(s.yaw - v.lastYaw) / Math.max(dt, 1e-4);
+    v.lastYaw = s.yaw;
+    v.turn = lerp(v.turn, clamp(yawRate * 0.14, -1, 1), k(7));
+
+    const runTarget = clamp((s.speed - 0.3) / 8, 0, 1) * (s.grounded ? 1 : 0);
+    a.run = lerp(a.run, runTarget, k(9));
+    a.slide = lerp(a.slide, s.sliding ? 1 : 0, k(13));
+    a.swing = lerp(a.swing, s.grapple.active && s.grapple.mode === 'swing' ? 1 : 0, k(7));
+    a.zip = lerp(a.zip, s.grapple.active && s.grapple.mode === 'zip' ? 1 : 0, k(9));
+    // Air eases in fast and out slow: leaves the ground hard, lands soft.
+    const airTarget = s.grounded ? 0 : 1;
+    a.air = lerp(a.air, airTarget, k(airTarget > a.air ? 14 : 7));
+
+    // Respawn: the body builds back up over a quarter second, so a player
+    // arriving in front of you never pops into existence.
+    if (s.alive && !a.alive) a.spawn = 1;
+    a.alive = s.alive;
+    a.spawn = Math.max(0, a.spawn - dt * 4.5);
+    if (a.spawn > 0) v.group.scale.setScalar(1 - a.spawn * a.spawn * 0.4);
+    else if (v.group.scale.x !== 1) v.group.scale.setScalar(1);
+
+    // Landing squash, scaled by the vertical speed carried into the floor.
+    // It is the cheapest weight you can add to a jump you did not hear.
+    if (s.grounded && !a.wasGrounded) a.squash = clamp(Math.abs(a.lastVy) / 18, 0, 1);
+    a.wasGrounded = s.grounded;
+    a.lastVy = s.vel.y;
+    a.squash *= Math.exp(-dt * 7);
+
+    // Gait phase advances with speed, not with wall clock: stride length stays
+    // constant and the feet stay planted while the ground scrolls past.
+    const step = clamp(s.speed / 2.4, 0, 1);
+    a.phase += dt * (5 + s.speed * 0.55) * step;
+    const amp = 0.92 * a.run;
+    const swing = a.swing;
+    const air = a.air;
+    const slide = a.slide;
+    const zip = a.zip;
+
+    // ── Legs ───────────────────────────────────────────────────────────────
+    let hipL = Math.sin(a.phase) * amp;
+    let hipR = Math.sin(a.phase + Math.PI) * amp;
+    let kneeL = -Math.max(0, Math.sin(a.phase - 1.0)) * (0.28 + 0.9 * a.run);
+    let kneeR = -Math.max(0, Math.sin(a.phase + Math.PI - 1.0)) * (0.28 + 0.9 * a.run);
+
+    // Air: split the legs and tuck the knees, the read every good platformer
+    // has used since the eighties.
+    hipL = lerp(hipL, 0.6, air);
+    hipR = lerp(hipR, -0.2, air);
+    kneeL = lerp(kneeL, -1.15, air);
+    kneeR = lerp(kneeR, -0.45, air);
+
+    // Slide: one leg out in front, the other folded under the body.
+    hipL = lerp(hipL, 1.3, slide);
+    hipR = lerp(hipR, 0.7, slide);
+    kneeL = lerp(kneeL, -0.12, slide);
+    kneeR = lerp(kneeR, -1.05, slide);
+
+    // Swing: legs trail behind and scissor with the pendulum.
+    const scissor = Math.sin(this.time * 3.1) * 0.22;
+    hipL = lerp(hipL, -0.52 + scissor, swing);
+    hipR = lerp(hipR, -0.26 - scissor, swing);
+    kneeL = lerp(kneeL, -0.9, swing);
+    kneeR = lerp(kneeR, -0.55, swing);
+
+    // Zip: streamlined, knees under the chest.
+    hipL = lerp(hipL, -0.18, zip);
+    hipR = lerp(hipR, -0.1, zip);
+    kneeL = lerp(kneeL, -0.55, zip);
+    kneeR = lerp(kneeR, -0.42, zip);
+
+    for (let i = 0; i < 2; i++) {
+      const side = i === 0 ? -1 : 1;
+      v.hips[i].rotation.x = i === 0 ? hipL : hipR;
+      v.knees[i].rotation.x = i === 0 ? kneeL : kneeR;
+      // A little splay in the air keeps the silhouette wide, which is what
+      // makes a falling player findable against a deck.
+      v.hips[i].rotation.z = side * (0.02 + air * 0.1 + slide * 0.18);
+      v.hips[i].rotation.y = side * a.run * 0.06;
+    }
+
+    // ── Pelvis, torso and head ─────────────────────────────────────────────
+    const lateral = clamp((s.vel.x * Math.cos(s.yaw) - s.vel.z * Math.sin(s.yaw)) / 22, -1, 1);
+    v.body.position.y = -0.14 - slide * 0.17 - a.squash * 0.11;
+    // Positive X leans the torso back, negative leans it into the run.
+    const breath = Math.sin(this.time * 1.5 + a.phase * 0.05) * 0.014 * (1 - a.run) * (1 - slide);
+    v.body.rotation.x = -0.1 * a.run - 0.26 * swing + 0.52 * slide - 0.1 * zip - a.squash * 0.1 + breath;
+    v.body.rotation.z = -lateral * (0.09 + 0.09 * swing) - v.turn * 0.12 + Math.sin(this.time * 1.2) * 0.012 * (1 - a.run);
+    // Shoulders counter-rotate against the hips: that is where a run's life
+    // comes from, and it costs one sin().
+    v.body.rotation.y = Math.sin(a.phase) * 0.08 * a.run;
+
+    // The head keeps the aim while the body does the work, and levels itself
+    // against the torso lean so the visor still points down the barrel.
+    v.head.rotation.x = clamp(s.pitch, -1.2, 1.2) - v.body.rotation.x * 0.75;
+    v.head.rotation.y = -v.body.rotation.y * 0.8 + (s.sliding ? 0.18 : 0);
+
+    // ── Arms ───────────────────────────────────────────────────────────────
+    // The grip is a cross-body hold on the rifle; running swings the arms
+    // against the legs, and a swing puts both hands up the cable.
+    const scope = clamp((s.scopeT - 0.35) / 0.65, 0, 1);
+    const counter = Math.sin(a.phase) * 0.4 * a.run;
+    const rightAim = 0.95 + scope * 0.16 + counter;
+    const leftAim = 1.16 + scope * 0.12 - counter;
+    const rightArm = lerp(lerp(rightAim, 2.3, swing), rightAim, zip);
+    const leftArm = lerp(lerp(leftAim, 1.85, swing), leftAim, zip);
+    v.arms[0].rotation.x = lerp(leftArm, -0.35, slide);
+    v.arms[1].rotation.x = lerp(rightArm, -0.3, slide);
+    // Splay: elbows out in the air, tucked in a slide.
+    v.arms[0].rotation.z = -0.14 - air * 0.42 - swing * 0.3 + slide * 0.25;
+    v.arms[1].rotation.z = 0.14 + air * 0.42 + swing * 0.3 - slide * 0.25;
+
+    // ── Weapon ─────────────────────────────────────────────────────────────
+    // Drawing is a physical motion: the item drops out of the hand and the new
+    // one is brought up, so the swap reads at 60 m as well as in first person.
+    if (a.slot !== s.slot) {
+      a.slot = s.slot;
+      a.swap = 1;
+    }
+    a.swap = Math.max(0, a.swap - dt * 3.4);
+    const swap = Math.sin(a.swap * Math.PI);
+    a.kick *= Math.exp(-dt * 13);
+    v.weapon.position.set(0, -swap * 0.5 - slide * 0.04, a.kick * 0.15);
+    v.weapon.rotation.set(a.kick * 0.2, swap * 0.35, swap * 0.4);
+    // Recoil also rocks the torso: a rifle with no shooter behind it is a prop.
+    v.body.rotation.x += a.kick * 0.07;
+  }
+
+  /** A rifle moving on a body: called for the shooter, whoever it is. */
+  shotKick(index: number): void {
+    const v = this.players[index];
+    if (v) v.anim.kick = Math.min(1, v.anim.kick + 0.85);
   }
 
   private normalizeAngle(a: number): number {
