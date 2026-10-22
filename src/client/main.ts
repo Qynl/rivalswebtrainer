@@ -1,0 +1,886 @@
+/**
+ * Client bootstrap: menu → match → results, prediction, interpolation, juice.
+ *
+ * Prediction: the local capsule runs the shared 1/60 s simulation. Every tick
+ * is recorded with the state *before* it. When a snapshot arrives, the server's
+ * ack identifies which tick the authority had simulated; if the predicted pose
+ * differs, we restore and replay the unacked inputs. So a swing is instant and
+ * still server-correct.
+ *
+ * Remote players are interpolated 100 ms in the past, which is also the pose
+ * the server rewinds to for lag compensation: what you see is what you hit.
+ */
+
+import { ARENA } from '../shared/arena.ts';
+import type { ShotMessage } from '../shared/combat.ts';
+import { glintVisibility, markFired, muzzleOffset, resolveShot, spreadShotDir } from '../shared/combat.ts';
+import { DT, INTERP_DELAY, MATCH, SKINS, WEAPON } from '../shared/constants.ts';
+import { clamp, dist, lerp, lookDir, smoothstep, type Vec3 } from '../shared/mathx.ts';
+import { initRapier, Physics } from '../shared/physics.ts';
+import type { PlayerSnap, ServerMsg, Snapshot } from '../shared/protocol.ts';
+import {
+  clonePlayerState,
+  createPlayer,
+  KEY,
+  lookOf,
+  respawnPlayer,
+  stepPlayer,
+  updateEye,
+  type InputFrame,
+  type PlayerState,
+  type SimEvent,
+} from '../shared/sim.ts';
+import { Sfx } from './audio.ts';
+import { Hud } from './hud.ts';
+import { Input } from './input.ts';
+import { Net, type ConnState } from './net.ts';
+import { Renderer, type RemoteView, type RopeView } from './renderer.ts';
+
+interface HistoryEntry {
+  seq: number;
+  frame: InputFrame;
+  before: PlayerState;
+}
+
+interface SnapBuf {
+  time: number;
+  snap: Snapshot;
+}
+
+const el = <T extends HTMLElement = HTMLElement>(id: string): T => document.getElementById(id) as T;
+const params = new URLSearchParams(location.search);
+
+class Game {
+  private canvas: HTMLCanvasElement;
+  private renderer: Renderer;
+  private hud = new Hud();
+  private sfx = new Sfx();
+  private input: Input;
+  private net = new Net();
+  private phys: Physics;
+
+  private local: PlayerState = createPlayer(0, 0);
+  /** Synthetic opponent used only for local prediction (grapple targeting). */
+  private remoteSim: PlayerState = createPlayer(1, 1);
+  private remoteView: RemoteView = {
+    pos: { x: 0, y: 0, z: 0 },
+    yaw: 0,
+    pitch: 0,
+    alive: false,
+    sliding: false,
+    scoped: false,
+    glint: 0,
+    speed: 0,
+    grapple: { active: false, mode: 'none', anchor: { x: 0, y: 0, z: 0 }, length: 0, target: 0 },
+  };
+  private remotePrev: PlayerState = createPlayer(1, 1);
+
+  private snapBuf: SnapBuf[] = [];
+  private history: HistoryEntry[] = [];
+  private seq = 0;
+  private accumulator = 0;
+  private lastFrame = 0;
+  private events: SimEvent[] = [];
+  private you: 0 | 1 = 0;
+  private mode: 'duel' | 'practice' = 'practice';
+  private inMatch = false;
+  private started = false;
+  private menuOpen = true;
+  private resultsOpen = false;
+  private paused = false;
+  private hitstop = 0;
+  private fireLatch = false;
+  private lookYaw = 0;
+  private lookPitch = 0;
+  private killcam: { t: number; killerPos: Vec3; victimPos: Vec3 } | null = null;
+  private respawnIn = 0;
+  private protect = 0;
+  private hintUntil = 0;
+  private lastScopeAt = 0;
+  private ringWarnSound = 0;
+  private matchOver = false;
+  private serverMatchTime = 0;
+  private lastPhase = '';
+  private chainAt = 0;
+  private prevEye: Vec3 = { x: 0, y: 0, z: 0 };
+
+  constructor() {
+    this.canvas = el<HTMLCanvasElement>('view');
+    this.renderer = new Renderer(this.canvas, ARENA);
+    this.phys = new Physics(ARENA);
+    this.input = new Input(this.canvas);
+    this.bindUi();
+    this.bindNet();
+    this.resetLocalSpawn(0);
+    this.hintUntil = performance.now() + 9000;
+    this.hud.showMenu(true);
+    this.hud.setMenuStatus('READY', 'ok');
+    const savedName = (() => {
+      try {
+        return localStorage.getItem('gg_name') ?? '';
+      } catch {
+        return '';
+      }
+    })();
+    if (savedName) el<HTMLInputElement>('callsign').value = savedName;
+    if (params.get('name')) el<HTMLInputElement>('callsign').value = params.get('name')!.slice(0, 14);
+    window.addEventListener('resize', () => this.renderer.resize());
+    // Debug handle: the headless client test drives and inspects the live game.
+    (window as unknown as { __gg?: Game }).__gg = this;
+    requestAnimationFrame((t) => this.frame(t));
+  }
+
+  // ── Setup ────────────────────────────────────────────────────────────────
+  private bindUi(): void {
+    const nameInput = el<HTMLInputElement>('callsign');
+    const joinDuel = el<HTMLButtonElement>('play-duel');
+    const joinBot = el<HTMLButtonElement>('play-bot');
+    const sens = el<HTMLInputElement>('sens');
+    const sens2 = el<HTMLInputElement>('sens2');
+    const vol = el<HTMLInputElement>('vol');
+    const vol2 = el<HTMLInputElement>('vol2');
+    const savedSens = Number(localStorage.getItem('gg_sens') ?? '1') || 1;
+    const savedVol = Number(localStorage.getItem('gg_vol') ?? '0.65');
+    sens.value = String(savedSens);
+    sens2.value = String(savedSens);
+    vol.value = String(savedVol);
+    vol2.value = String(savedVol);
+    this.input.sensitivity = 0.0021 * savedSens;
+    this.sfx.setVolume(savedVol);
+
+    const applySens = (v: number): void => {
+      this.input.sensitivity = 0.0021 * v;
+      sens.value = String(v);
+      sens2.value = String(v);
+      localStorage.setItem('gg_sens', String(v));
+    };
+    const applyVol = (v: number): void => {
+      this.sfx.setVolume(v);
+      vol.value = String(v);
+      vol2.value = String(v);
+      localStorage.setItem('gg_vol', String(v));
+    };
+    sens.oninput = () => applySens(Number(sens.value));
+    sens2.oninput = () => applySens(Number(sens2.value));
+    vol.oninput = () => applyVol(Number(vol.value));
+    vol2.oninput = () => applyVol(Number(vol2.value));
+
+    const start = (mode: 'duel' | 'practice'): void => {
+      this.sfx.unlock();
+      this.sfx.ui('click');
+      const name = (nameInput.value || 'PLAYER').trim().slice(0, 14).toUpperCase();
+      localStorage.setItem('gg_name', name);
+      this.mode = mode;
+      this.enterMatchScreen();
+      this.net.connect(name, mode);
+      this.hud.setMenuNote(mode === 'duel' ? 'SEARCHING FOR A DUEL…' : 'DEPLOYING SPECTER…');
+    };
+    joinDuel.onclick = () => start('duel');
+    joinBot.onclick = () => start('practice');
+    for (const b of [joinDuel, joinBot]) {
+      b.onmouseenter = () => {
+        this.sfx.unlock();
+        this.sfx.ui('hover');
+      };
+    }
+
+    el('result-menu').onclick = () => {
+      this.sfx.ui('back');
+      this.toMenu();
+    };
+    el('result-again').onclick = () => {
+      this.sfx.ui('click');
+      this.net.disconnectNow();
+      this.net.token = '';
+      this.leaveMatchState();
+      this.enterMatchScreen();
+      this.net.connect(this.net.playerName, this.mode);
+    };
+    el('pause-resume').onclick = () => this.resume();
+    el('pause-quit').onclick = () => {
+      this.sfx.ui('back');
+      this.net.leave();
+      this.toMenu();
+    };
+
+    this.input.onEscape = () => {
+      if (!this.inMatch || this.resultsOpen) return;
+      if (this.paused) this.resume();
+      else this.pauseGame();
+    };
+    this.input.onLockChange = (locked) => {
+      if (!locked && this.inMatch && !this.resultsOpen && !this.paused) this.pauseGame();
+    };
+    this.canvas.addEventListener('mousedown', () => {
+      this.sfx.unlock();
+      if (this.inMatch && !this.paused && !this.resultsOpen) this.input.requestLock();
+    });
+  }
+
+  private bindNet(): void {
+    this.net.onState = (s: ConnState) => this.onConnState(s);
+    this.net.onWelcome = (msg) => {
+      this.you = msg.you as 0 | 1;
+      this.local.id = this.you;
+      this.local.skin = this.you;
+      this.remoteSim.id = 1 - this.you;
+      this.remoteSim.skin = (1 - this.you) as 0 | 1;
+      this.renderer.setSkin(this.you);
+      this.hud.setWeaponLabel(SKINS[this.you].weapon === 'lance' ? 'LANCE' : 'NEEDLE');
+      this.hud.setScore(msg.match.scores[0], msg.match.scores[1], this.you, this.you === 0 ? msg.name : msg.opponentName, this.you === 0 ? msg.opponentName : msg.name);
+      this.inMatch = true;
+      this.resultsOpen = false;
+      this.matchOver = false;
+      this.hud.hideResults();
+      this.hud.showGame(true);
+      this.hud.showMenu(false);
+      this.hud.setMenuNote('');
+      this.input.requestLock();
+      this.hintUntil = performance.now() + 9000;
+      this.resetLocalSpawn(this.you);
+      this.snapBuf = [];
+      this.history = [];
+      this.killcam = null;
+      if (msg.reconnected) {
+        this.hud.toastMsg('RECONNECTED — MATCH RESUMED', 2600);
+        this.hud.feedLine('RECONNECTED', 'system');
+      } else {
+        this.hud.toastMsg(msg.mode === 'practice' ? 'PRACTICE: SPECTER' : 'DUEL ACCEPTED', 2000);
+      }
+      this.started = true;
+      this.lastPhase = msg.match.phase;
+    };
+    this.net.onWaiting = (text) => {
+      this.hud.toastMsg(text, 3200);
+      this.hud.setMenuNote(text);
+    };
+    this.net.onSnapshot = (snap) => this.onSnapshot(snap);
+    this.net.onShot = (msg) => this.onShotMsg(msg);
+    this.net.onKill = (msg) => this.onKillMsg(msg);
+    this.net.onOver = (msg) => this.onOverMsg(msg);
+    this.net.onInfo = (msg) => {
+      const mine = msg.text.includes(SKINS[this.you].name) || msg.text.startsWith(this.net.playerName);
+      this.hud.feedLine(msg.text, msg.kind === 'leave' || msg.kind === 'forfeit' ? 'them' : mine ? 'me' : 'system');
+    };
+    this.net.onOpponentLeft = (remaining) => {
+      this.hud.bannerText('OPPONENT DISCONNECTED', 'them', 2600);
+      this.hud.toastMsg(`OPPONENT DISCONNECTED — ${remaining}s TO RETURN`, 2600);
+      this.hud.feedLine('OPPONENT DISCONNECTED', 'them');
+      this.hud.setNet(this.net.latency, 'RECONNECTING', 'warn');
+    };
+    this.net.onOpponentBack = () => {
+      this.hud.bannerText('OPPONENT RETURNED', 'system', 1800);
+      this.hud.feedLine('OPPONENT RETURNED', 'system');
+    };
+    this.net.onReconnected = () => {
+      this.history = [];
+      this.snapBuf = [];
+      this.hud.toastMsg('RECONNECTED', 1800);
+    };
+  }
+
+  private onConnState(s: ConnState): void {
+    if (s === 'open') {
+      this.hud.setNet(this.net.latency, 'ONLINE', 'ok');
+    } else if (s === 'connecting') {
+      this.hud.setNet(0, 'CONNECTING', 'warn');
+    } else if (s === 'reconnecting') {
+      this.hud.setNet(this.net.latency, 'RECONNECTING', 'warn');
+      if (this.inMatch && !this.resultsOpen) this.hud.toastMsg('CONNECTION LOST — RECONNECTING…', 2400);
+    } else if (s === 'closed') {
+      this.hud.setNet(this.net.latency, 'OFFLINE', 'bad');
+      if (this.inMatch && !this.resultsOpen && !this.matchOver) {
+        this.hud.toastMsg('CONNECTION LOST', 2600);
+      }
+    }
+  }
+
+  // ── Screens ──────────────────────────────────────────────────────────────
+  private enterMatchScreen(): void {
+    this.menuOpen = false;
+    this.hud.showMenu(false);
+    this.hud.showGame(true);
+    this.hud.hideResults();
+    this.paused = false;
+    this.hud.showPause(false);
+    this.inMatch = true;
+    this.input.requestLock();
+  }
+
+  private leaveMatchState(): void {
+    this.inMatch = false;
+    this.started = false;
+    this.matchOver = false;
+    this.snapBuf = [];
+    this.history = [];
+    this.killcam = null;
+    this.remoteView.alive = false;
+    this.resultsOpen = false;
+    this.paused = false;
+    this.hud.showGame(false);
+  }
+
+  private toMenu(): void {
+    this.input.exitLock();
+    this.leaveMatchState();
+    this.net.disconnectNow();
+    this.menuOpen = true;
+    this.hud.hideResults();
+    this.hud.showPause(false);
+    this.hud.showMenu(true);
+    this.hud.setMenuStatus('READY', 'ok');
+    this.hud.setMenuNote('CLICK TO LOCK THE MOUSE · ESC FOR MENU');
+    this.sfx.stopAll();
+  }
+
+  private pauseGame(): void {
+    if (!this.inMatch || this.resultsOpen) return;
+    this.paused = true;
+    this.hud.showPause(true);
+    this.input.exitLock();
+  }
+
+  private resume(): void {
+    this.paused = false;
+    this.hud.showPause(false);
+    this.input.requestLock();
+  }
+
+  private resetLocalSpawn(slot: 0 | 1): void {
+    respawnPlayer(this.local, ARENA, slot);
+    this.lookYaw = this.local.yaw;
+    this.lookPitch = 0;
+    this.local.protect = 0;
+    this.accumulator = 0;
+    this.phys.setPosition(this.local.id, this.local.pos);
+  }
+
+  // ── Network handlers ─────────────────────────────────────────────────────
+  private onSnapshot(snap: Snapshot): void {
+    this.serverMatchTime = snap.match.time;
+    this.snapBuf.push({ time: snap.time, snap });
+    while (this.snapBuf.length > 24) this.snapBuf.shift();
+    const mine = snap.players[this.you];
+    const theirs = snap.players[1 - this.you];
+    if (!mine) return;
+    this.reconcile(mine, snap.ack);
+    this.respawnIn = mine.respawnIn;
+    this.protect = mine.protect;
+    this.remoteSim.pos = { ...theirs.pos };
+    this.remoteSim.alive = theirs.alive;
+    this.remoteSim.yaw = theirs.yaw;
+    this.remoteSim.pitch = theirs.pitch;
+    updateEye(this.remoteSim);
+
+    this.hud.setScore(snap.match.scores[0], snap.match.scores[1], this.you, this.net.playerName, this.net.opponentName);
+    if (snap.match.phase !== this.lastPhase) {
+      if (snap.match.phase === 'live' && this.lastPhase === 'warmup') {
+        this.hud.bannerText('FIGHT', 'me', 900);
+        this.sfx.ui('click');
+      }
+      this.lastPhase = snap.match.phase;
+    }
+    if (snap.match.phase === 'over' && !this.matchOver) {
+      this.matchOver = true;
+    }
+  }
+
+  private reconcile(serverSnap: PlayerSnap, ack: number): void {
+    if (!this.local.alive) {
+      // Respawn detection: the authority says we are back.
+      if (serverSnap.alive) {
+        this.applyServerState(serverSnap, true);
+        this.history = [];
+        this.killcam = null;
+        this.sfx.spawn();
+      }
+      return;
+    }
+    if (!serverSnap.alive) {
+      this.applyServerState(serverSnap, true);
+      this.history = [];
+      return;
+    }
+    const idx = this.history.findIndex((h) => h.seq === ack);
+    if (idx < 0) {
+      this.applyServerState(serverSnap, false);
+      return;
+    }
+    const predicted = this.history[idx].before;
+    const err = dist(predicted.pos, serverSnap.pos);
+    const stateMismatch =
+      predicted.alive !== serverSnap.alive ||
+      Math.abs(predicted.grapple.chain - serverSnap.grapple.chain) > 1 ||
+      (predicted.grapple.active && !serverSnap.grapple.active && predicted.grapple.mode === 'swing');
+    if (err > 0.09 || stateMismatch) {
+      this.applyServerState(serverSnap, false);
+      // Replay the inputs the authority has not consumed yet.
+      const keepYaw = this.lookYaw;
+      const keepPitch = this.lookPitch;
+      for (let i = idx + 1; i < this.history.length; i++) {
+        const entry = this.history[i];
+        this.events.length = 0;
+        stepPlayer(this.local, entry.frame, DT, this.phys, ARENA, this.remoteSim, this.events);
+      }
+      this.local.yaw = keepYaw;
+      this.local.pitch = keepPitch;
+      this.local.look = lookDir(this.lookYaw, this.lookPitch);
+      updateEye(this.local);
+      this.history.splice(0, idx + 1);
+    } else {
+      this.history.splice(0, idx + 1);
+    }
+  }
+
+  private applyServerState(s: PlayerSnap, hard: boolean): void {
+    this.local.pos = { ...s.pos };
+    this.local.vel = { ...s.vel };
+    this.local.alive = s.alive;
+    this.local.grounded = s.grounded;
+    this.local.sliding = s.sliding;
+    this.local.scopeT = s.scopeT;
+    this.local.scoped = s.scoped;
+    this.local.protect = s.protect;
+    this.local.exposure = s.exposure;
+    this.local.respawnIn = s.respawnIn;
+    this.local.grapple.active = s.grapple.active;
+    this.local.grapple.mode = s.grapple.mode;
+    this.local.grapple.anchor = { ...s.grapple.anchor };
+    this.local.grapple.length = s.grapple.length;
+    this.local.grapple.chain = s.grapple.chain;
+    this.local.grapple.target = s.grapple.target;
+    this.local.fireCooldown = Math.max(this.local.fireCooldown, 0);
+    if (hard) {
+      this.applyServerYaw(s.yaw, s.pitch);
+    }
+    updateEye(this.local);
+    this.phys.setPosition(this.local.id, this.local.pos);
+  }
+
+  private applyServerYaw(yaw: number, pitch: number): void {
+    this.lookYaw = yaw;
+    this.lookPitch = pitch;
+    this.local.yaw = yaw;
+    this.local.pitch = pitch;
+    this.local.look = lookDir(yaw, pitch);
+  }
+
+  private onShotMsg(msg: Extract<ServerMsg, { t: 'shot' }>): void {
+    const mine = msg.shooter === this.you;
+    const color = mine ? SKINS[this.you].color : SKINS[1 - this.you].color;
+    this.renderer.tracer(msg.origin, msg.end, color);
+    this.renderer.spark(msg.end, color, msg.hit ? 6 : 3);
+    if (msg.hit) {
+      this.hud.hitmarker(true);
+      if (!mine) {
+        // We got shot: the kill event handles the rest, this is the impact.
+        this.renderer.shake(0.02);
+      }
+    }
+    if (!mine) {
+      const sp = this.sfx.spatial(msg.origin, this.local.eye, this.lookYaw);
+      this.sfx.shot(false, sp.pan, sp.distance);
+    }
+  }
+
+  private onKillMsg(msg: Extract<ServerMsg, { t: 'kill' }>): void {
+    const me = this.you;
+    this.hud.setScore(msg.scores[0], msg.scores[1], me, this.net.playerName, this.net.opponentName);
+    if (msg.event.killer === me) {
+      this.hud.hitmarker(true);
+      this.hud.killBanner('ELIMINATED');
+      this.sfx.hitmarker(true);
+      this.renderer.punch(-0.035, 0);
+      this.renderer.shake(0.014);
+      this.hud.feedLine(`YOU KILLED ${this.net.opponentName}`, 'me');
+      this.hitstop = WEAPON.hitstop;
+    } else if (msg.event.victim === me) {
+      this.sfx.death();
+      this.hud.damage();
+      const killerIdx = msg.event.killer === 1 - me ? 1 - me : -1;
+      if (killerIdx >= 0) {
+        this.killcam = { t: 0, killerPos: { ...this.remoteSim.pos }, victimPos: { ...msg.victimAt } };
+        this.hud.killBanner(`KILLED BY ${this.net.opponentName}`);
+        this.hud.feedLine(`${this.net.opponentName} KILLED YOU`, 'them');
+      } else {
+        this.hud.killBanner(msg.event.cause === 'ring' ? 'CONSUMED BY THE RING' : 'LOST TO THE VOID');
+        this.hud.feedLine(msg.event.cause === 'ring' ? 'THE RING TOOK YOU' : 'YOU FELL', 'them');
+      }
+      this.renderer.shake(0.03);
+    } else {
+      this.hud.feedLine(`${this.net.opponentName} DIED`, 'system');
+    }
+    if (msg.phase === 'over') this.matchOver = true;
+  }
+
+  private onOverMsg(msg: Extract<ServerMsg, { t: 'over' }>): void {
+    this.matchOver = true;
+    this.resultsOpen = true;
+    this.input.exitLock();
+    const won = msg.winner === this.you;
+    const draw = msg.draw || msg.winner === null;
+    const title = draw ? 'DRAW' : won ? 'VICTORY' : 'DEFEAT';
+    const eyebrow = msg.forfeited !== null ? 'OPPONENT FORFEITED' : draw ? 'PERFECT STALEMATE' : won ? 'DUEL WON' : 'DUEL LOST';
+    const note = msg.forfeited !== null
+      ? 'THE SEAT WENT COLD. POINT AWARDED.'
+      : draw
+        ? 'BOTH DIED ON THE SAME FRAME. THE VOID KEEPS SCORE.'
+        : won
+          ? 'THE ROPE REMEMBERS.'
+          : 'WATCH THE GLINT. MOVE AFTER EVERY SHOT.';
+    this.hud.showResults({
+      title,
+      eyebrow,
+      score: `${msg.scores[this.you]} — ${msg.scores[1 - this.you]}`,
+      note,
+      win: won && !draw,
+    });
+    this.sfx.hitmarker(won);
+    if (won) this.hud.bannerText('VICTORY', 'me', 2400);
+    else if (!draw) this.hud.bannerText('DEFEAT', 'them', 2400);
+    this.inMatch = false;
+    this.hud.showGame(false);
+  }
+
+  // ── Loop ─────────────────────────────────────────────────────────────────
+  private frame(nowMs: number): void {
+    const now = nowMs / 1000;
+    const dt = this.lastFrame === 0 ? 0 : clamp(now - this.lastFrame, 0, 0.1);
+    this.lastFrame = now;
+    const state = this.net.state;
+    const playing = this.inMatch && this.started && !this.paused && !this.resultsOpen;
+
+    if (playing) {
+      this.updateLook();
+      this.accumulator += dt;
+      let steps = 0;
+      while (this.accumulator >= DT && steps < 6) {
+        this.tick(DT);
+        this.accumulator -= DT;
+        steps++;
+      }
+      if (this.accumulator > DT * 6) this.accumulator = 0;
+      this.updateRemote();
+      this.sfx.mix(this.local.speed, this.local.grapple.active, this.local.alive);
+      if (this.killcam) {
+        this.killcam.t += dt;
+        if (!this.local.alive && this.killcam.t > 5) this.killcam = null;
+      }
+      this.drawHud();
+      const frac = clamp(this.accumulator / DT, 0, 1);
+      // Hitstop freezes the picture, never the simulation.
+      const visDt = this.hitstop > 0 ? 0 : dt;
+      if (this.hitstop > 0) this.hitstop -= dt;
+      this.renderer.update(visDt, {
+        local: this.local,
+        eye: {
+          x: lerp(this.prevEye.x, this.local.eye.x, frac),
+          y: lerp(this.prevEye.y, this.local.eye.y, frac),
+          z: lerp(this.prevEye.z, this.local.eye.z, frac),
+        },
+        localRope: this.ropeOf(this.local),
+        remote: this.remoteView,
+        remoteRope: this.remoteView.grapple.active
+          ? {
+              active: true,
+              anchor: this.remoteView.grapple.anchor,
+              length: this.remoteView.grapple.length,
+              mode: this.remoteView.grapple.mode,
+            }
+          : { active: false, anchor: { x: 0, y: 0, z: 0 }, length: 0, mode: 'none' },
+        ringRadius: this.ringRadius(),
+        ringActive: this.ringActive(),
+        scoped: this.local.scopeT,
+        glintVisible: this.glintVisible(),
+        glintIntensity: this.remoteView.glint,
+        killcam: this.killcam,
+        reducedFx: false,
+      });
+      this.renderer.setRingColor(this.insideRing());
+    } else if (this.menuOpen || this.resultsOpen || !this.started || state === 'idle') {
+      this.renderer.orbit(dt);
+    } else {
+      // Paused: keep the last frame alive but frozen.
+      this.renderer.update(0, {
+        local: this.local,
+        localRope: this.ropeOf(this.local),
+        remote: this.remoteView,
+        remoteRope: { active: false, anchor: { x: 0, y: 0, z: 0 }, length: 0, mode: 'none' },
+        ringRadius: this.ringRadius(),
+        ringActive: this.ringActive(),
+        scoped: this.local.scopeT,
+        glintVisible: false,
+        glintIntensity: 0,
+        killcam: null,
+        reducedFx: true,
+      });
+    }
+    this.renderer.render();
+    requestAnimationFrame((t) => this.frame(t));
+  }
+
+  private updateLook(): void {
+    const sens = this.input.sensitivity * lerp(1, this.input.scopedSensitivity, smoothstep(0.5, 1, this.local.scopeT));
+    if (this.input.look.dx !== 0 || this.input.look.dy !== 0) {
+      this.lookYaw -= this.input.look.dx * sens;
+      this.lookPitch -= this.input.look.dy * sens;
+      this.lookPitch = clamp(this.lookPitch, -1.45, 1.45);
+      this.input.look.dx = 0;
+      this.input.look.dy = 0;
+    }
+    this.local.yaw = this.lookYaw;
+    this.local.pitch = this.lookPitch;
+    this.local.look = lookDir(this.lookYaw, this.lookPitch);
+    updateEye(this.local);
+    // Scope in/out click, once per transition.
+    if (Math.abs(this.local.scopeT - this.lastScopeAt) > 0.5) {
+      this.lastScopeAt = this.local.scopeT;
+      this.sfx.scope(this.local.scopeT > 0.5);
+    }
+  }
+
+  private tick(dt: number): void {
+    if (!this.started) return;
+    this.seq++;
+    const frame: InputFrame = { seq: this.seq, keys: this.input.keys, yaw: this.lookYaw, pitch: this.lookPitch };
+    this.history.push({ seq: this.seq, frame, before: clonePlayerState(this.local) });
+    if (this.history.length > 90) this.history.shift();
+    this.events.length = 0;
+    this.prevEye = { ...this.local.eye };
+    stepPlayer(this.local, frame, dt, this.phys, ARENA, this.remoteSim, this.events);
+    this.handleEvents();
+    this.net.sendInput(frame);
+    this.tryFire(this.input.takePressed());
+    // Local respawn clock (the server owns the real one).
+    if (!this.local.alive) this.local.respawnIn = Math.max(0, this.local.respawnIn - dt);
+    if (this.chainAt > 0 && performance.now() > this.chainAt) {
+      this.chainAt = 0;
+      this.hud.setHint(false);
+    }
+  }
+
+  private tryFire(pressed: number): void {
+    const held = (this.input.keys & KEY.fire) !== 0;
+    // A click shorter than one tick still counts: the press is latched.
+    const tapped = (pressed & KEY.fire) !== 0;
+    if (!held) this.fireLatch = false;
+    if (this.fireLatch && !tapped) return;
+    this.fireLatch = true;
+    if (!this.local.alive || this.local.fireCooldown > 0 || this.local.protect > 0) return;
+
+    const scoped = this.local.scopeT > 0.985;
+    const view = lookOf(this.local);
+    const dir = spreadShotDir(view, scoped, Math.random(), Math.random());
+    const origin = this.local.eye;
+    const shot: ShotMessage = {
+      seq: this.seq,
+      origin: { ...origin },
+      dir,
+      scoped,
+      aimTime: this.net.serverNow() - INTERP_DELAY,
+    };
+    markFired(this.local);
+    this.local.scopeT = Math.max(0, this.local.scopeT - 0.35); // recoil breaks the scope
+    this.local.scoped = this.local.scopeT > 0.985;
+    this.net.sendShot(shot);
+    this.renderer.recoil();
+    this.renderer.punch(0.012 + (scoped ? 0 : 0.008), (Math.random() - 0.5) * 0.006);
+    this.renderer.shake(scoped ? 0.008 : 0.013);
+    this.sfx.shot(true);
+    // Cosmetic prediction: a tracer from the muzzle and an impact spark.
+    const end = resolveShot(this.phys, origin, dir, { pos: this.remoteSim.pos, alive: this.remoteSim.alive }, this.local.id);
+    this.renderer.tracer(muzzleOffset(origin, dir), end.end, SKINS[this.you].color);
+    if (!end.hit) this.renderer.spark(end.end, 0x9df9ff, 3);
+  }
+
+  private handleEvents(): void {
+    for (const e of this.events) {
+      switch (e.type) {
+        case 'jump':
+          this.sfx.jump();
+          break;
+        case 'land':
+          this.sfx.land(e.strength);
+          this.renderer.shake(0.004 + e.strength * 0.01);
+          break;
+        case 'dash':
+          this.sfx.dash();
+          this.renderer.shake(0.01);
+          break;
+        case 'attach': {
+          const sp = this.sfx.spatial(this.local.grapple.anchor, this.local.eye, this.lookYaw);
+          this.sfx.attach(sp.distance, sp.pan * 0.4);
+          this.renderer.shake(0.014);
+          this.renderer.punch(-0.01, 0);
+          if (this.local.grapple.target === 1) this.hud.bannerText('HOOKED THE OPPONENT', 'me', 900);
+          break;
+        }
+        case 'zip':
+          this.sfx.zip();
+          break;
+        case 'release':
+          this.sfx.release(0.3);
+          break;
+        case 'boost':
+          this.sfx.release(e.strength);
+          this.renderer.shake(0.02 * e.strength);
+          this.renderer.punch(-0.018 * e.strength, 0);
+          break;
+        case 'chain':
+          this.sfx.chain(this.local.grapple.chain);
+          this.hud.bannerText(`CHAIN ×${this.local.grapple.chain}`, 'me', 700);
+          break;
+        case 'grappleMiss':
+          this.sfx.release(0);
+          break;
+        case 'grappleBreak':
+          this.sfx.release(0.15);
+          break;
+      }
+    }
+  }
+
+  private updateRemote(): void {
+    const buf = this.snapBuf;
+    if (buf.length === 0) return;
+    const target = this.net.serverNow() - INTERP_DELAY;
+    let a = buf[0];
+    let b = buf[buf.length - 1];
+    for (let i = 0; i < buf.length - 1; i++) {
+      if (buf[i].time <= target && buf[i + 1].time >= target) {
+        a = buf[i];
+        b = buf[i + 1];
+        break;
+      }
+      if (buf[i].time > target) {
+        a = buf[i];
+        b = buf[i];
+        break;
+      }
+    }
+    const span = b.time - a.time;
+    const f = span > 0.0001 ? clamp((target - a.time) / span, 0, 1) : 1;
+    const pa = a.snap.players[1 - this.you];
+    const pb = b.snap.players[1 - this.you];
+    if (!pa || !pb) return;
+    const pos = {
+      x: lerp(pa.pos.x, pb.pos.x, f),
+      y: lerp(pa.pos.y, pb.pos.y, f),
+      z: lerp(pa.pos.z, pb.pos.z, f),
+    };
+    const yaw = lerpAngle(pa.yaw, pb.yaw, f);
+    const pitch = lerp(pa.pitch, pb.pitch, f);
+    const view = this.remoteView;
+    view.pos = pos;
+    view.yaw = yaw;
+    view.pitch = pitch;
+    view.alive = pb.alive;
+    view.sliding = pb.sliding;
+    view.scoped = pb.scoped;
+    view.glint = pb.glint;
+    view.speed = pb.speed;
+    view.grapple = {
+      active: pb.grapple.active,
+      mode: pb.grapple.mode,
+      anchor: pb.grapple.anchor,
+      length: pb.grapple.length,
+      target: pb.grapple.target,
+    };
+    this.remotePrev.pos = { ...pos };
+    this.remotePrev.yaw = yaw;
+    this.remotePrev.pitch = pitch;
+    this.remotePrev.alive = pb.alive;
+    updateEye(this.remotePrev);
+    this.remoteSim.pos = { ...pos };
+    this.remoteSim.alive = pb.alive;
+    this.remoteSim.yaw = yaw;
+    this.remoteSim.pitch = pitch;
+  }
+
+  private drawHud(): void {
+    const scoped = this.local.scopeT > 0.5;
+    const hipSpread = scoped ? 0 : WEAPON.hipSpreadDeg;
+    this.hud.frame({
+      speed: this.local.speed,
+      scopeT: this.local.scopeT,
+      hipSpread,
+      fireCooldown: this.local.fireCooldown,
+      chain: this.local.grapple.chain,
+      alive: this.local.alive,
+      respawnIn: this.respawnIn,
+      protect: this.protect > 0,
+    });
+    this.hud.setRing(this.ringActive(), this.ringRadius(), this.insideRing(), this.serverMatchTime);
+    this.hud.setNet(this.net.latency, this.net.state === 'open' ? 'ONLINE' : 'OFFLINE', this.net.state === 'open' ? 'ok' : 'bad');
+    this.hud.setHint(performance.now() < this.hintUntil);
+    if (this.ringActive() && !this.insideRing() && performance.now() - this.ringWarnSound > 1200) {
+      this.ringWarnSound = performance.now();
+      this.sfx.ringWarn();
+    }
+  }
+
+  // ── Derived state ────────────────────────────────────────────────────────
+  private ringRadius(): number {
+    const s = this.snapBuf[this.snapBuf.length - 1];
+    return s ? s.snap.match.ringRadius : MATCH.ringRadiusStart;
+  }
+
+  private ringActive(): boolean {
+    const s = this.snapBuf[this.snapBuf.length - 1];
+    return s ? s.snap.match.ringActive : false;
+  }
+
+  private insideRing(): boolean {
+    return Math.hypot(this.local.pos.x - MATCH.ringCenter.x, this.local.pos.z - MATCH.ringCenter.z) <= this.ringRadius();
+  }
+
+  private glintVisible(): boolean {
+    if (!this.remoteView.alive) return false;
+    return glintVisibility(
+      this.remoteView.pos,
+      lookDir(this.remoteView.yaw, this.remoteView.pitch),
+      this.local.eye,
+    ) > 0.02;
+  }
+
+  private ropeOf(p: PlayerState): RopeView {
+    return {
+      active: p.grapple.active && p.grapple.mode !== 'none',
+      anchor: p.grapple.anchor,
+      length: p.grapple.length,
+      mode: p.grapple.mode,
+    };
+  }
+}
+
+function lerpAngle(a: number, b: number, t: number): number {
+  let d = (b - a) % (Math.PI * 2);
+  if (d > Math.PI) d -= Math.PI * 2;
+  if (d < -Math.PI) d += Math.PI * 2;
+  return a + d * t;
+}
+
+async function boot(): Promise<void> {
+  const status = document.getElementById('menu-status');
+  try {
+    await initRapier();
+  } catch {
+    if (status) {
+      status.textContent = 'PHYSICS FAILED TO INITIALISE';
+      status.className = 'bad';
+    }
+    return;
+  }
+  try {
+    new Game();
+  } catch (err) {
+    // No WebGL: say so on the menu instead of showing a black screen.
+    if (status) {
+      status.textContent = 'WEBGL UNAVAILABLE — ENABLE HARDWARE ACCELERATION';
+      status.className = 'bad';
+    }
+    console.error(err);
+  }
+}
+
+void boot();
