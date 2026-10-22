@@ -117,6 +117,40 @@ describe('client', () => {
     expect(errors).toEqual([]);
   }, 20000);
 
+  it('fires one round per click and never fires on its own', async () => {
+    const g = (window as unknown as { __gg: Record<string, any> }).__gg;
+    const canvas = document.getElementById('view') as HTMLCanvasElement;
+    const net = g.net as { sendShot: (s: unknown) => void };
+    const orig = net.sendShot.bind(net);
+    let shots = 0;
+    net.sendShot = (s: unknown): void => {
+      shots++;
+      orig(s);
+    };
+    // Wait out the bolt, then sit on an idle trigger. The old latch re-armed
+    // itself whenever the button was up, so the rifle fired every cycle.
+    await sleep(1400);
+    shots = 0;
+    await sleep(1300);
+    expect(shots).toBe(0);
+
+    // One click, one round — and holding the button down must not cycle it.
+    canvas.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true }));
+    await sleep(1500);
+    expect(shots).toBe(1);
+    canvas.dispatchEvent(new MouseEvent('mouseup', { button: 0, bubbles: true }));
+    await sleep(200);
+    expect(shots).toBe(1);
+
+    // The next click is a fresh round once the bolt is home.
+    canvas.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true }));
+    canvas.dispatchEvent(new MouseEvent('mouseup', { button: 0, bubbles: true }));
+    await sleep(300);
+    expect(shots).toBe(2);
+    net.sendShot = orig;
+    expect(errors).toEqual([]);
+  }, 20000);
+
   it('pauses on Escape, resumes, and leaves through the pause panel', async () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', bubbles: true }));
     await sleep(120);

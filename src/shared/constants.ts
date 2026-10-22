@@ -35,16 +35,22 @@ export const MOVE = {
   walkSpeed: 9.6,
   groundAccel: 115,
   /** Exponential ground drag while above walk speed. */
-  groundFriction: 11,
-  slideFriction: 2.4,
+  groundFriction: 4.5,
+  slideFriction: 1.0,
   airAccel: 30,
   /** Air steering is capped so swinging beats running, but you never feel stuck. */
   airMaxSpeed: 24,
   jumpSpeed: 10.7,
   coyoteTime: 0.12,
   jumpBuffer: 0.12,
-  slideEnterSpeed: 11.5,
+  /** Below full sprint: crouching at a run has to slide, or the move is dead
+   *  weight outside of grapple landings. */
+  slideEnterSpeed: 8.6,
   slideMaxTime: 1.8,
+  /** Slide dies when it stops being a move, not when it stops being fast. */
+  slideExitSpeed: 4.0,
+  /** Kick on entry so a crouch at a run reads as committing, not braking. */
+  slideBoost: 1.4,
   /** Landing at speed slides; landing slowly just sticks. */
   slideJumpBonus: 1.12,
   crouchSpeed: 5.2,

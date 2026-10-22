@@ -107,36 +107,43 @@ describe('movement feel', () => {
     expect(leftAt).toBeGreaterThan(0);
     expect(maxVy).toBeGreaterThan(5); // the late jump still fired
 
-    // Buffer: press jump 0.1 s before touching down and it fires on landing.
+    // Buffer: a press inside the last 0.12 s of a fall fires the moment the
+    // feet touch the slab, so landing and jumping read as one motion.
     const b = spawn(0);
     place(b, 0, DECK + 3, 0, 0);
-    let tick = 0;
-    let landed = false;
-    drive(phys, b, {
-      ticks: 60,
+    let pressAt = -1;
+    const buffered = drive(phys, b, {
+      ticks: 90,
       keys: (i) => {
-        if (!b.grounded) tick = i;
-        // Press as we come down, well before contact, and hold it.
-        return i >= 12 ? KEY.jump : 0;
-      },
-      onTick: () => {
-        if (b.grounded && !landed) landed = true;
+        if (pressAt < 0 && b.pos.y < DECK + 1.25) pressAt = i;
+        return pressAt >= 0 && i >= pressAt && i <= pressAt + 1 ? KEY.jump : 0;
       },
     });
-    expect(landed).toBe(true);
-    void tick;
-    // It must have left the ground again after landing (re-hopped).
-    let hops = 0;
-    let wasGrounded = true;
-    drive(phys, b, {
-      ticks: 120,
-      keys: () => KEY.jump,
-      onTick: () => {
-        if (wasGrounded && !b.grounded) hops++;
-        wasGrounded = b.grounded;
-      },
-    });
-    expect(hops).toBeGreaterThan(1);
+    expect(pressAt).toBeGreaterThan(0);
+    expect(buffered.events.filter((e) => e.type === 'jump').length).toBe(1);
+
+    // One press, one hop. Holding the button must not turn into a bunnyhop,
+    // otherwise every landing in the game fires a jump you did not ask for.
+    const held = drive(phys, b, { ticks: 150, keys: () => KEY.jump });
+    expect(held.events.filter((e) => e.type === 'jump').length).toBe(1);
+  });
+
+  it('walks on flat ground without bouncing or dropping contact', async () => {
+    const phys = await makePadWorld();
+    const p = onDeck();
+    drive(phys, p, { ticks: 20, keys: () => 0 });
+    const run = drive(phys, p, { ticks: 120, keys: () => KEY.forward });
+    // Nothing should report a landing once the feet are down.
+    expect(run.events.filter((e) => e.type === 'land').length).toBe(0);
+    // A pixel of sink is fine; a centimetre of pop is a visible bounce.
+    const tail = run.ys.slice(-60);
+    const spread = Math.max(...tail) - Math.min(...tail);
+    expect(spread).toBeLessThan(0.005);
+    expect(tail.every((y) => y > DECK)).toBe(true);
+    // And speed settles exactly on the walk speed rather than oscillating.
+    const speeds = run.speeds.slice(-30);
+    expect(Math.max(...speeds) - Math.min(...speeds)).toBeLessThan(0.01);
+    expect(run.speeds[run.speeds.length - 1]).toBeCloseTo(MOVE.walkSpeed, 1);
   });
 
   it('dashes with a cooldown and no frame-rate dependence in the step itself', async () => {

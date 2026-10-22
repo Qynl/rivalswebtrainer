@@ -446,19 +446,23 @@ export function stepPlayer(
   if (g.active) g.hold += dt;
 
   // ── Jump / slide / dash ─────────────────────────────────────────────────
-  const jumpHeld = (held & KEY.jump) !== 0;
   if ((pressed & KEY.jump) !== 0) p.jumpBuffer = MOVE.jumpBuffer;
-  if (jumpHeld && p.grounded) p.jumpBuffer = Math.max(p.jumpBuffer, 0.02);
 
   const crouchHeld = (held & KEY.crouch) !== 0;
   if (crouchHeld && p.grounded && !p.sliding && flatSpeed(p.vel) > MOVE.slideEnterSpeed) {
     p.sliding = true;
     p.slideTime = 0;
+    const hs = flatSpeed(p.vel);
+    if (hs > 1e-3) {
+      const k = (hs + MOVE.slideBoost) / hs;
+      p.vel.x *= k;
+      p.vel.z *= k;
+    }
   }
   if (p.sliding) {
     p.slideTime += dt;
     if (!crouchHeld && p.slideTime > 0.28) p.sliding = false;
-    if (flatSpeed(p.vel) < 5.5 || p.slideTime > MOVE.slideMaxTime || !p.grounded) p.sliding = false;
+    if (flatSpeed(p.vel) < MOVE.slideExitSpeed || p.slideTime > MOVE.slideMaxTime || !p.grounded) p.sliding = false;
   }
 
   if ((pressed & KEY.dash) !== 0 && p.dashCooldown === 0) {
@@ -556,6 +560,12 @@ export function stepPlayer(
   }
 
   // ── Acceleration, gravity ───────────────────────────────────────────────
+  // Standing on something means the floor already holds you up. Integrating
+  // gravity into a grounded move would press the capsule into the surface and
+  // let Rapier's de-penetration kick it back out — that is the stutter and the
+  // dead stop you feel when a slide crosses a slab seam.
+  const stick = p.grounded && p.vel.y <= 0;
+  if (stick) p.vel.y = 0;
   if (!zipping) {
     if (g.active && g.mode === 'swing') {
       // Air control is handled by the tangent pump above; gravity still bites.
@@ -573,23 +583,30 @@ export function stepPlayer(
       }
       if (wishLen > 1e-6) {
         const max = p.keys & KEY.crouch ? MOVE.crouchSpeed : MOVE.walkSpeed;
-        const target = mul(wish, Math.min(max, Math.max(hs, max)));
+        // Steer at whatever speed you already carry: holding forward turns a
+        // fast slide instead of stamping on the brakes.
+        const target = mul(wish, Math.max(hs, max));
         const dvx = clamp(target.x - p.vel.x, -MOVE.groundAccel * dt, MOVE.groundAccel * dt);
         const dvz = clamp(target.z - p.vel.z, -MOVE.groundAccel * dt, MOVE.groundAccel * dt);
         p.vel.x += dvx;
         p.vel.z += dvz;
       }
-      p.vel.y -= MOVE.gravity * dt;
+      if (!stick) p.vel.y -= MOVE.gravity * dt;
     } else if (p.grounded && p.sliding) {
       const decay = Math.exp(-MOVE.slideFriction * dt);
       p.vel.x *= decay;
       p.vel.z *= decay;
-      if (wishLen > 1e-6) {
-        // Bend the slide: 22% of normal ground authority.
-        p.vel.x += wish.x * MOVE.groundAccel * 0.22 * dt;
-        p.vel.z += wish.z * MOVE.groundAccel * 0.22 * dt;
+      // Bend the slide: 22% of normal ground authority, steering only. Pushing
+      // along the wish vector added speed every tick and turned a slide into a
+      // free rocket, so the target keeps the speed you entered with.
+      const hs = flatSpeed(p.vel);
+      if (wishLen > 1e-6 && hs > 1e-3) {
+        const dvx = clamp(wish.x * hs - p.vel.x, -MOVE.groundAccel * 0.22 * dt, MOVE.groundAccel * 0.22 * dt);
+        const dvz = clamp(wish.z * hs - p.vel.z, -MOVE.groundAccel * 0.22 * dt, MOVE.groundAccel * 0.22 * dt);
+        p.vel.x += dvx;
+        p.vel.z += dvz;
       }
-      p.vel.y -= MOVE.gravity * dt;
+      if (!stick) p.vel.y -= MOVE.gravity * dt;
     } else {
       if (wishLen > 1e-6) {
         const hs = flatSpeed(p.vel);
@@ -612,22 +629,43 @@ export function stepPlayer(
 
   // ── Integrate ───────────────────────────────────────────────────────────
   const delta = mul(p.vel, dt);
+  // Standing still needs a flat sweep. Pushing gravity into the sweep presses
+  // the capsule into the slab, and the controller's push-back reports a bogus
+  // contact normal that launches the player a centimetre into the air — the
+  // bounce you could see and hear as a stream of tiny landings.
+  if (stick) delta.y = 0;
   const fallSpeed = -p.vel.y;
   const move = phys.move(p.id, p.pos, delta);
   const actual = sub(move.pos, p.pos);
   p.pos = move.pos;
   p.wasGrounded = p.grounded;
-  p.grounded = move.grounded;
+  // A grounded player is re-confirmed by a downward probe instead of by the
+  // sweep, so standing still is rock solid and stepping off is immediate.
+  p.grounded = move.grounded || (stick && phys.groundContact(move.pos));
   p.coyote = p.grounded ? MOVE.coyoteTime : Math.max(0, p.coyote - dt);
 
-  // Kill velocity into whatever we hit; keep the tangential part.
+  // Kill velocity into whatever we hit; keep the tangential part. Floor and
+  // ceiling contacts are ignored here — the controller already resolved them,
+  // and their normals (which can arrive tilted while autostep is feeling for a
+  // step) would otherwise convert forward speed into lift.
+  const preHS = flatSpeed(p.vel);
+  const preVY = p.vel.y;
   for (const n of move.normals) {
+    if (Math.abs(n.y) > 0.7) continue;
     const into = dot(p.vel, n);
     if (into < 0) {
       p.vel.x -= n.x * into;
       p.vel.y -= n.y * into;
       p.vel.z -= n.z * into;
     }
+  }
+  // A contact may only take momentum away. Never let one hand it back.
+  if (p.vel.y > 0 && preVY <= 0) p.vel.y = 0;
+  const postHS = flatSpeed(p.vel);
+  if (postHS > preHS && postHS > 1e-6) {
+    const k = preHS / postHS;
+    p.vel.x *= k;
+    p.vel.z *= k;
   }
 
   if (p.grounded && p.vel.y < 0) p.vel.y = 0;
@@ -641,7 +679,7 @@ export function stepPlayer(
       p.slideTime = 0;
     }
   }
-  if (p.grounded && p.sliding && flatSpeed(p.vel) < 5.5) p.sliding = false;
+  if (p.grounded && p.sliding && flatSpeed(p.vel) < MOVE.slideExitSpeed) p.sliding = false;
 
   // Zip that is being blocked by geometry must let go instead of hanging.
   if (zipping && len(actual) < len(delta) * 0.35 && len(delta) > 1e-4) {

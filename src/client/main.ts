@@ -89,7 +89,8 @@ class Game {
   private resultsOpen = false;
   private paused = false;
   private hitstop = 0;
-  private fireLatch = false;
+  /** Forgiving window so a click that lands mid-bolt still fires. */
+  private fireBuffer = 0;
   private lookYaw = 0;
   private lookPitch = 0;
   private killcam: { t: number; killerPos: Vec3; victimPos: Vec3 } | null = null;
@@ -689,7 +690,7 @@ class Game {
     stepPlayer(this.local, frame, dt, this.phys, ARENA, this.remoteSim, this.events);
     this.handleEvents();
     this.net.sendInput(frame);
-    this.tryFire(this.input.takePressed());
+    this.tryFire(this.input.takePressed(), dt);
     // Local respawn clock (the server owns the real one).
     if (!this.local.alive) this.local.respawnIn = Math.max(0, this.local.respawnIn - dt);
     if (this.chainAt > 0 && performance.now() > this.chainAt) {
@@ -698,14 +699,15 @@ class Game {
     }
   }
 
-  private tryFire(pressed: number): void {
-    const held = (this.input.keys & KEY.fire) !== 0;
-    // A click shorter than one tick still counts: the press is latched.
-    const tapped = (pressed & KEY.fire) !== 0;
-    if (!held) this.fireLatch = false;
-    if (this.fireLatch && !tapped) return;
-    this.fireLatch = true;
+  private tryFire(pressed: number, dt: number): void {
+    // One click, one bullet: the trigger is edge-triggered, never held. A press
+    // is buffered for a moment so clicking just before the bolt closes still
+    // fires, which is what the shot after a fast reload should feel like.
+    if ((pressed & KEY.fire) !== 0) this.fireBuffer = 0.16;
+    else this.fireBuffer = Math.max(0, this.fireBuffer - dt);
+    if (this.fireBuffer <= 0) return;
     if (!this.local.alive || this.local.fireCooldown > 0 || this.local.protect > 0) return;
+    this.fireBuffer = 0;
 
     const scoped = this.local.scopeT > 0.985;
     const view = lookOf(this.local);

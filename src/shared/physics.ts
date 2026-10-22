@@ -101,6 +101,19 @@ export class Physics {
     return { pos: out, grounded: this.controller.computedGrounded(), normals };
   }
 
+  /**
+   * Is there a standable surface under `pos`? Used to keep the grounded flag
+   * stable while the capsule is standing still: a horizontal-only sweep gives
+   * the controller nothing to press into, so it reports "airborne" and the
+   * player flickers between walk and fall physics every other tick.
+   */
+  groundContact(pos: Vec3): boolean {
+    const ray = new RAPIER.Ray(pos, { x: 0, y: -1, z: 0 });
+    const reach = PLAYER.halfHeight + PLAYER.radius + 0.1;
+    const hit = this.world.castRay(ray, reach, true, undefined, undefined, undefined, undefined, this.isWorldCollider);
+    return hit !== null;
+  }
+
   raycast(origin: Vec3, dir: Vec3, maxToi: number, excludeId?: number): RayHit | null {
     const ray = new RAPIER.Ray(origin, dir);
     const hit = this.world.castRayAndGetNormal(
