@@ -264,23 +264,32 @@ function buildGrapnel(metalHex: number, shape: 'tri' | 'quad' | 'twin' | 'ring' 
     emissiveIntensity: 1.4,
   });
 
-  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.028, 0.3, 10), steel);
-  shaft.rotation.x = Math.PI / 2;
-  shaft.position.z = -0.1;
-  root.add(shaft);
+  // Every part that never moves relative to the head is baked into one mesh per
+  // material, so a claw in the hand and a claw in flight cost four draws, not
+  // eleven. Only the flukes stay separate, because they hinge.
+  const still: { mat: THREE.Material; geos: THREE.BufferGeometry[] }[] = [];
+  const addStill = (
+    geo: THREE.BufferGeometry,
+    mat: THREE.Material,
+    pos: { x?: number; y?: number; z?: number } = {},
+    rot: { x?: number; y?: number; z?: number } = {},
+  ): void => {
+    geo.applyMatrix4(
+      new THREE.Matrix4().compose(
+        new THREE.Vector3(pos.x ?? 0, pos.y ?? 0, pos.z ?? 0),
+        new THREE.Quaternion().setFromEuler(new THREE.Euler(rot.x ?? 0, rot.y ?? 0, rot.z ?? 0)),
+        new THREE.Vector3(1, 1, 1),
+      ),
+    );
+    const slot = still.find((s) => s.mat === mat);
+    if (slot) slot.geos.push(geo);
+    else still.push({ mat, geos: [geo] });
+  };
 
-  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.014, 5, 12), brass);
-  collar.position.z = -0.02;
-  root.add(collar);
-
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.012, 5, 12), brass);
-  ring.position.z = 0.09;
-  root.add(ring);
-
-  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.11, 8), dark);
-  nose.rotation.x = -Math.PI / 2;
-  nose.position.z = -0.3;
-  root.add(nose);
+  addStill(new THREE.CylinderGeometry(0.05, 0.028, 0.3, 10), steel, { z: -0.1 }, { x: Math.PI / 2 });
+  addStill(new THREE.TorusGeometry(0.05, 0.014, 5, 12), brass, { z: -0.02 });
+  addStill(new THREE.TorusGeometry(0.045, 0.012, 5, 12), brass, { z: 0.09 });
+  addStill(new THREE.ConeGeometry(0.04, 0.11, 8), dark, { z: -0.3 }, { x: -Math.PI / 2 });
 
   // A hot core in the throat of the head. It is the one part of the claw that
   // reads at any distance, and it is tinted by the kit's trail colour.
@@ -317,11 +326,18 @@ function buildGrapnel(metalHex: number, shape: 'tri' | 'quad' | 'twin' | 'ring' 
       fluke.add(barb);
     }
     if (shape === 'quad') {
-      // A stabiliser vane between the needles: it spins in flight.
-      const vane = new THREE.Mesh(new THREE.PlaneGeometry(0.03, 0.06), steel);
-      vane.position.set(0, 0.02, -0.05);
-      vane.rotation.x = -Math.PI / 2;
-      fluke.add(vane);
+      // A stabiliser vane between the needles: it spins in flight, and it is
+      // steel like the arm, so it bakes into the same draw.
+      const vane = new THREE.PlaneGeometry(0.03, 0.06);
+      vane.applyMatrix4(
+        new THREE.Matrix4().compose(
+          new THREE.Vector3(0, 0.02, -0.05),
+          new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0)),
+          new THREE.Vector3(1, 1, 1),
+        ),
+      );
+      fluke.add(new THREE.Mesh(mergeGeometries([arm.geometry, vane]), steel));
+      fluke.remove(arm);
     }
     hinge.add(fluke);
     root.add(hinge);
@@ -329,15 +345,17 @@ function buildGrapnel(metalHex: number, shape: 'tri' | 'quad' | 'twin' | 'ring' 
 
   if (shape === 'ring') {
     // The cage: two brass hoops straddling the flukes, purely ornamental.
-    for (const z of [-0.19, -0.3]) {
-      const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.085, 0.007, 5, 20), brass);
-      hoop.position.z = z;
-      root.add(hoop);
-    }
+    for (const z of [-0.19, -0.3]) addStill(new THREE.TorusGeometry(0.085, 0.007, 5, 20), brass, { z });
     const cage = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.008, 5, 18), lit);
     cage.position.z = -0.24;
     cage.rotation.x = Math.PI / 2;
     root.add(cage);
+  }
+
+  for (const group of still) {
+    const mesh = new THREE.Mesh(group.geos.length === 1 ? group.geos[0] : mergeGeometries(group.geos), group.mat);
+    mesh.castShadow = true;
+    root.add(mesh);
   }
 
   if (heavy) root.scale.setScalar(1.12);
@@ -377,7 +395,7 @@ function shadeBlocks(geo: THREE.BufferGeometry): void {
  * person models are ~90 little parts; merged they cost a dozen draw calls,
  * which is the difference between a crisp viewmodel and a stutter.
  */
-function mergeChildren(group: THREE.Group, preserve: Set<THREE.Object3D> = new Set()): void {
+function mergeChildren(group: THREE.Object3D, preserve: Set<THREE.Object3D> = new Set()): void {
   const byMat = new Map<THREE.Material, THREE.BufferGeometry[]>();
   for (const child of [...group.children]) {
     if (preserve.has(child) || !(child as THREE.Mesh).isMesh) continue;
@@ -2292,8 +2310,10 @@ export class Renderer {
     gSleeveL.rotation.set(1.3, 0, -0.4);
     grapnel.add(gSleeveL);
 
-    // Cull the static parts down to one mesh per material (the bolt, spool and
-    // the cradle claw stay separate because they animate).
+    // Cull the static parts down to one mesh per material (the bolt and the
+    // cradle claw stay separate because they animate). The spool only ever
+    // turns as a unit, so its own parts merge too.
+    mergeChildren(this.spool, new Set());
     mergeChildren(ready, new Set());
     mergeChildren(rifle, new Set<THREE.Object3D>([this.boltGroup, this.handRig]));
     mergeChildren(grapnel, new Set<THREE.Object3D>([this.spool, ready]));
@@ -2305,6 +2325,12 @@ export class Renderer {
     this.grapnelModel = grapnel;
     this.slotBlend = skinIndex === -1 ? 0 : this.slotBlend;
 
+    // The viewmodel never casts: it sits inside the camera, so its shadow would
+    // only ever be a smear on the deck behind you — and every caster in the
+    // scene is drawn a second time into the sun's shadow map.
+    container.traverse((o) => {
+      (o as THREE.Mesh).castShadow = false;
+    });
     container.position.set(0.2, -0.19, -0.1);
     container.scale.setScalar(1.06);
     container.rotation.y = -0.06;
@@ -3495,8 +3521,12 @@ export class Renderer {
     this.post.setState(this.time, 0, 0, 0);
   }
 
+  /** Frames presented so far — a stable denominator for the draw-call budget. */
+  frames = 0;
+
   render(): void {
     this.post.render();
+    this.frames++;
   }
 
   setRingColor(inside: boolean): void {
