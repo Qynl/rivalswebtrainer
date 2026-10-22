@@ -641,20 +641,24 @@ class Game {
     requestAnimationFrame((t) => this.frame(t));
   }
 
-  /** Keeps the frame budget honest on slower GPUs, and restores it when idle. */
+  /**
+   * Keeps the frame budget honest on slower GPUs. Resolution changes cost a
+   * render-target reallocation, so they happen rarely, never drop below 0.75
+   * (soft is worse than 55 fps), and pause while the picture is frozen.
+   */
   private guardFrameRate(dt: number): void {
-    if (dt <= 0) return;
+    if (dt <= 0 || this.hitstop > 0) return;
     this.frameTimeEma += (dt - this.frameTimeEma) * 0.05;
     this.qualityTimer += dt;
-    if (this.qualityTimer < 1.5) return;
+    if (this.qualityTimer < 2.5) return;
     this.qualityTimer = 0;
-    const slow = this.frameTimeEma > 1 / 52;
+    const slow = this.frameTimeEma > 1 / 50;
     const fast = this.frameTimeEma < 1 / 58;
-    if (slow && this.quality > 0.6) {
-      this.quality = Math.max(0.6, this.quality - 0.12);
+    if (slow && this.quality > 0.75) {
+      this.quality = Math.max(0.75, this.quality - 0.1);
       this.renderer.setQuality(this.quality);
     } else if (fast && this.quality < 1) {
-      this.quality = Math.min(1, this.quality + 0.06);
+      this.quality = Math.min(1, this.quality + 0.05);
       this.renderer.setQuality(this.quality);
     }
   }
