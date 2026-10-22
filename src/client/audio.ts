@@ -451,6 +451,12 @@ export class Sfx {
     if (this.hum) {
       this.hum.gain.gain.setTargetAtTime(swinging ? 0.05 : 0.0001, t, 0.06);
     }
+    // The arena drone is the bed the whole mix sits on. It ducks when you are
+    // dead or in the menu and comes back with the next life, so `stopAll` can
+    // never leave the game permanently silent.
+    if (this.drone) {
+      this.drone.gain.gain.setTargetAtTime(alive ? 0.05 : 0.012, t, 0.4);
+    }
     if (this.scrape) {
       const sliding = alive && !!extra.sliding;
       const speedK = clamp(sp / 9, 0.2, 1);
