@@ -36,6 +36,8 @@ import {
   signTexture,
   aimRingTexture,
   cloudTexture,
+  chevronTexture,
+  namePlateTexture,
   scorchTexture,
   streakTexture,
   sweepTexture,
@@ -606,6 +608,73 @@ export class Renderer {
       inst.instanceMatrix.needsUpdate = true;
       if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
       inst.receiveShadow = true;
+      this.scene.add(inst);
+    }
+
+    // ── Sunlit trim + ledge chevrons ──────────────────────────────────────
+    // A thin, bright top edge on every deck catches the low sun and draws the
+    // silhouette of each platform. Chelseas at the rim point back to safety,
+    // which is the map teaching the same lesson the ring does.
+    const trim: THREE.Matrix4[] = [];
+    for (const b of this.arena.blocks) {
+      if (b.kind !== 'deck') continue;
+      trim.push(
+        new THREE.Matrix4().compose(
+          new THREE.Vector3(b.x, b.y + b.hy + 0.008, b.z),
+          new THREE.Quaternion(),
+          new THREE.Vector3(b.hx * 2 + 0.05, 0.016, b.hz * 2 + 0.05),
+        ),
+      );
+    }
+    if (trim.length) {
+      const trimMat = new THREE.MeshStandardMaterial({
+        color: 0xefe8d6,
+        roughness: 0.55,
+        metalness: 0.12,
+        emissive: 0x2a2418,
+        emissiveIntensity: 0.4,
+      });
+      const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), trimMat, trim.length);
+      trim.forEach((m, i) => inst.setMatrixAt(i, m));
+      inst.instanceMatrix.needsUpdate = true;
+      inst.receiveShadow = true;
+      this.scene.add(inst);
+    }
+
+    const chevrons: THREE.Matrix4[] = [];
+    const chevMat = new THREE.MeshBasicMaterial({
+      map: chevronTexture(),
+      transparent: true,
+      opacity: 0.75,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -3,
+    });
+    for (const b of this.arena.blocks) {
+      if (b.kind !== 'deck' || b.hx < 3 || b.hz < 3) continue;
+      const y = b.y + b.hy + 0.02;
+      const w = Math.min(2.6, Math.min(b.hx, b.hz) * 0.5);
+      const edge: [number, number, number][] = [
+        [b.x, b.z - b.hz + w * 0.9, 0],
+        [b.x, b.z + b.hz - w * 0.9, Math.PI],
+        [b.x - b.hx + w * 0.9, b.z, Math.PI / 2],
+        [b.x + b.hx - w * 0.9, b.z, -Math.PI / 2],
+      ];
+      for (const [x, z, rot] of edge) {
+        chevrons.push(
+          new THREE.Matrix4().compose(
+            new THREE.Vector3(x, y, z),
+            new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, rot)),
+            new THREE.Vector3(w, w, 1),
+          ),
+        );
+      }
+    }
+    if (chevrons.length) {
+      const inst = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), chevMat, chevrons.length);
+      chevrons.forEach((m, i) => inst.setMatrixAt(i, m));
+      inst.instanceMatrix.needsUpdate = true;
+      inst.renderOrder = 1;
       this.scene.add(inst);
     }
 
@@ -1640,6 +1709,17 @@ export class Renderer {
     this.gunOrnament = gs.anim.orbit === 'none' ? null : new Ornament(gs.anim.orbit, gs.trim, 1);
     if (this.gunOrnament) rifle.add(this.gunOrnament.group);
 
+    // Name plate on the stock: the skin says what it is, in its own colour.
+    {
+      const plate = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.052, 0.014),
+        new THREE.MeshBasicMaterial({ map: namePlateTexture(gs.name, `#${gs.trim.toString(16).padStart(6, '0')}`), transparent: true }),
+      );
+      plate.position.set(0.0262, 0.005, 0.075);
+      plate.rotation.y = Math.PI / 2;
+      rifle.add(plate);
+    }
+
     // Hands: right on the grip, left under the handguard.
     const handR = box(0.075, 0.1, 0.13, glove, 0.004, -0.135, -0.03);
     handR.rotation.x = -0.3;
@@ -1778,7 +1858,16 @@ export class Renderer {
   hookHit(pos: Vec3): void {
     const trail = grappleSkin(this.look.grapple).trail;
     this.particles.burst(pos, trail, 16, { speed: 6, size: 0.12, life: 0.35, gravity: 8 });
+    // A bite has weight: stone chips and a puff of dust off the surface.
+    this.particles.burst(pos, 0xbdb6a6, 10, { speed: 2.6, size: 0.3, life: 0.6, gravity: 4, drag: 2.2 });
     this.waves.spawn(pos, trail, 2.4, 0.3);
+    this.fx.impact(pos, null, trail);
+  }
+
+  /** Kills punch the lens: a hard FOV kick that decays over half a second. */
+  killPunch(): void {
+    this.fovPulse(9);
+    this.shake(0.05);
   }
 
   /**

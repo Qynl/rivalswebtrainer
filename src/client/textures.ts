@@ -652,3 +652,55 @@ export function sweepTexture(): THREE.Texture {
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
+
+/**
+ * A stencilled name plate for the rifle: the skin's own name, worn into the
+ * stock. It is the one place a cosmetic says what it is, and it only exists in
+ * the viewmodel, so it cannot affect anyone else's read of the duel.
+ */
+export function namePlateTexture(label: string, accent = '#d8b063'): THREE.Texture {
+  const w = 256;
+  const h = 64;
+  const [c, ctx] = canvas(w, h);
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = 'rgba(18, 20, 22, 0.55)';
+  ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(3, 3, w - 6, h - 6);
+  ctx.fillStyle = accent;
+  ctx.font = 'bold 26px ui-monospace, SFMono-Regular, Menlo, monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label.toUpperCase().slice(0, 12), w / 2, h / 2 + 1);
+  // Wear: knock speckles out of the paint so it reads as stencilled, not printed.
+  const img = ctx.getImageData(0, 0, w, h);
+  for (let i = 0; i < img.data.length; i += 8) {
+    if (img.data[i + 3] > 0 && Math.random() < 0.22) img.data[i + 3] *= 0.35;
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/** A chevron painted on the deck near a ledge, pointing back to safety. */
+export function chevronTexture(): THREE.Texture {
+  const size = 128;
+  const [c, ctx] = canvas(size, size);
+  ctx.clearRect(0, 0, size, size);
+  ctx.strokeStyle = 'rgba(217, 178, 63, 0.85)';
+  ctx.lineWidth = 13;
+  ctx.lineCap = 'butt';
+  for (let i = 0; i < 3; i++) {
+    const y = 22 + i * 32;
+    ctx.beginPath();
+    ctx.moveTo(20, y + 20);
+    ctx.lineTo(size / 2, y);
+    ctx.lineTo(size - 20, y + 20);
+    ctx.stroke();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}

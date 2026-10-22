@@ -608,6 +608,7 @@ class Game {
     if (msg.event.killer === me) {
       this.hud.hitmarker(true);
       this.hud.killBanner(`ELIMINATED  +${ECONOMY.killCoins} ◆`);
+      this.renderer.killPunch();
       this.sfx.hitmarker(true);
       this.renderer.punch(-0.035, 0);
       this.renderer.shake(0.014);

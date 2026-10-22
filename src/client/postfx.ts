@@ -98,16 +98,37 @@ const GradeShader = {
       // Fine grain: keeps large flat surfaces from banding.
       col += (hash(uv * uResolution + uTime * 40.0) - 0.5) * 0.014;
 
-      // Sun: a warm halo and a thin anamorphic streak when the disc is on
-      // screen. No sprites, no extra pass: it is the grade pass doing double
-      // duty, and it only ever costs a few instructions.
+      // Sun: a warm halo, a thin anamorphic streak, and shafts.
+      // The shafts are a six-tap march from the pixel toward the sun through
+      // the already-graded frame: bright samples (sky, sunlit concrete) smear
+      // into the shadowed geometry between them. That is the whole trick of
+      // crepuscular rays, and doing it here costs no extra pass.
       if (uSunVis > 0.001) {
         vec2 sp = uv - uSun;
         sp.x *= uResolution.x / max(1.0, uResolution.y);
         float sd = length(sp);
         float halo = exp(-sd * 6.5) * 0.2 + exp(-sd * 2.2) * 0.06;
         float streak = exp(-abs(sp.y) * 150.0) * exp(-abs(sp.x) * 1.8) * 0.16;
+
+        vec2 toSun = uSun - uv;
+        vec3 shafts = vec3(0.0);
+        float weight = 0.0;
+        for (int i = 1; i <= 6; i++) {
+          float t = float(i) / 6.0;
+          vec2 sampleUv = uv + toSun * t * 0.55;
+          vec3 s = texture2D(tDiffuse, sampleUv).rgb;
+          float l = dot(s, vec3(0.2126, 0.7152, 0.0722));
+          // Only genuinely bright geometry feeds a shaft: a grey wall must not
+          // smear, or every shadow turns into fog.
+          float w = smoothstep(0.62, 1.0, l) * (1.0 - t * 0.7);
+          shafts += s * w;
+          weight += w;
+        }
+        shafts /= max(weight, 0.0001);
+        // Masked off the centre so the sun itself is not a white smear.
+        float shaftMask = smoothstep(0.05, 0.5, sd) * (1.0 - smoothstep(0.75, 1.4, sd));
         col += vec3(1.0, 0.87, 0.68) * uSunVis * (halo + streak);
+        col += shafts * uSunVis * shaftMask * min(1.0, weight * 0.55) * 0.55;
       }
 
       // Kill flash: a hot centre bloom that dies out fast. It is the frame the
