@@ -72,6 +72,12 @@ export interface GrappleSkin {
   trail: number;
   /** How the claw reads in flight: a lit core, a shed stream, or both. */
   anim: SkinAnim;
+  /**
+   * Claw silhouette. Cosmetics may change the shape of the head — it is the
+   * same projectile with the same reach and the same bite — but never its size
+   * class or its hit geometry.
+   */
+  clawShape: 'tri' | 'quad' | 'twin' | 'ring';
 }
 
 export interface KillEffect {
@@ -209,6 +215,7 @@ export const GRAPPLE_SKINS: GrappleSkin[] = [
     spool: 0x2a2d33,
     trail: 0xffe0a8,
     anim: { sweep: 0, pulse: 0.4, glow: 0.3, orbit: 'none' },
+    clawShape: 'tri',
   }),
   rope({
     id: 'steel',
@@ -222,6 +229,7 @@ export const GRAPPLE_SKINS: GrappleSkin[] = [
     spool: 0x3a3f45,
     trail: 0xd8e6f2,
     anim: { sweep: 0.9, pulse: 0, glow: 0.4, orbit: 'none' },
+    clawShape: 'quad',
   }),
   rope({
     id: 'ember',
@@ -235,6 +243,7 @@ export const GRAPPLE_SKINS: GrappleSkin[] = [
     spool: 0x33211a,
     trail: 0xffa860,
     anim: { sweep: 1.6, pulse: 1.6, glow: 0.9, orbit: 'coil' },
+    clawShape: 'twin',
   }),
   rope({
     id: 'glacier',
@@ -248,6 +257,7 @@ export const GRAPPLE_SKINS: GrappleSkin[] = [
     spool: 0x6d7b88,
     trail: 0xc9ecff,
     anim: { sweep: 1.1, pulse: 0.5, glow: 0.6, orbit: 'shards' },
+    clawShape: 'quad',
   }),
   rope({
     id: 'abyss',
@@ -261,6 +271,7 @@ export const GRAPPLE_SKINS: GrappleSkin[] = [
     spool: 0x101817,
     trail: 0x74e0cf,
     anim: { sweep: 0.6, pulse: 0.9, glow: 0.7, orbit: 'coil' },
+    clawShape: 'twin',
   }),
   rope({
     id: 'gilded',
@@ -274,6 +285,7 @@ export const GRAPPLE_SKINS: GrappleSkin[] = [
     spool: 0x3d2f14,
     trail: 0xffd88a,
     anim: { sweep: 2.1, pulse: 0.7, glow: 1.2, orbit: 'ring' },
+    clawShape: 'ring',
   }),
 ];
 

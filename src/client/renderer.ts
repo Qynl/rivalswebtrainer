@@ -191,11 +191,18 @@ function mergeGeometries(geos: THREE.BufferGeometry[]): THREE.BufferGeometry {
  * The claw. A tapered shaft, a shackle ring and three hinged flukes that snap
  * shut the instant the hook bites — the shape is what sells the throw.
  */
-function buildGrapnel(metalHex: number): THREE.Group {
+function buildGrapnel(metalHex: number, shape: 'tri' | 'quad' | 'twin' | 'ring' = 'tri', glow = 0xffe0a8): THREE.Group {
   const root = new THREE.Group();
   const steel = new THREE.MeshStandardMaterial({ color: 0x4a4e55, roughness: 0.38, metalness: 0.85 });
   const brass = new THREE.MeshStandardMaterial({ color: metalHex, roughness: 0.34, metalness: 0.9 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x1d2024, roughness: 0.7, metalness: 0.4 });
+  const lit = new THREE.MeshStandardMaterial({
+    color: glow,
+    roughness: 0.2,
+    metalness: 0.6,
+    emissive: new THREE.Color(glow),
+    emissiveIntensity: 1.4,
+  });
 
   const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.028, 0.3, 10), steel);
   shaft.rotation.x = Math.PI / 2;
@@ -215,32 +222,68 @@ function buildGrapnel(metalHex: number): THREE.Group {
   nose.position.z = -0.3;
   root.add(nose);
 
-  // Three flukes on a common hinge line: they fold back in flight and bite
-  // outward on contact.
-  for (let i = 0; i < 3; i++) {
+  // A hot core in the throat of the head. It is the one part of the claw that
+  // reads at any distance, and it is tinted by the kit's trail colour.
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 6), lit);
+  core.position.z = -0.12;
+  core.name = 'hookcore';
+  root.add(core);
+
+  // The silhouette is the skin: three slim flukes, four needle flukes, two
+  // heavy barbed hooks, or the three-fluke head caged in a gold ring.
+  const count = shape === 'quad' ? 4 : shape === 'twin' ? 2 : 3;
+  const heavy = shape === 'twin';
+  for (let i = 0; i < count; i++) {
     const hinge = new THREE.Group();
     hinge.name = `hinge${i}`;
-    hinge.rotation.z = (i / 3) * Math.PI * 2;
+    const base = (i / count) * Math.PI * 2;
+    hinge.userData.baseAngle = base;
+    hinge.rotation.z = base;
     const fluke = new THREE.Group();
     fluke.position.z = -0.16;
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.026, 0.15), steel);
-    arm.position.z = -0.075;
+    const armLen = heavy ? 0.15 : shape === 'quad' ? 0.18 : 0.15;
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(heavy ? 0.036 : 0.026, heavy ? 0.034 : 0.026, armLen), steel);
+    arm.position.z = -armLen / 2;
     fluke.add(arm);
-    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.021, 0.09, 6), brass);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(heavy ? 0.028 : 0.021, heavy ? 0.12 : 0.09, 6), brass);
     tip.rotation.x = -Math.PI / 2;
-    tip.position.z = -0.175;
+    tip.position.z = -armLen - (heavy ? 0.05 : 0.03);
     fluke.add(tip);
+    if (heavy) {
+      // A barb behind the point, so the heavy head looks like it holds.
+      const barb = new THREE.Mesh(new THREE.ConeGeometry(0.014, 0.05, 5), dark);
+      barb.rotation.set(-Math.PI / 2, 0, 0);
+      barb.position.set(0, 0.022, -armLen - 0.005);
+      fluke.add(barb);
+    }
+    if (shape === 'quad') {
+      // A stabiliser vane between the needles: it spins in flight.
+      const vane = new THREE.Mesh(new THREE.PlaneGeometry(0.03, 0.06), steel);
+      vane.position.set(0, 0.02, -0.05);
+      vane.rotation.x = -Math.PI / 2;
+      fluke.add(vane);
+    }
     hinge.add(fluke);
     root.add(hinge);
   }
+
+  if (shape === 'ring') {
+    // The cage: two brass hoops straddling the flukes, purely ornamental.
+    for (const z of [-0.19, -0.3]) {
+      const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.085, 0.007, 5, 20), brass);
+      hoop.position.z = z;
+      root.add(hoop);
+    }
+    const cage = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.008, 5, 18), lit);
+    cage.position.z = -0.24;
+    cage.rotation.x = Math.PI / 2;
+    root.add(cage);
+  }
+
+  if (heavy) root.scale.setScalar(1.12);
   return root;
 }
 
-/**
- * Bakes a cheap ambient-occlusion read into the merged block geometry: tops
- * catch the sun, sides fall off, undersides go dark, and everything picks up a
- * little more light the higher it sits. One extra attribute, no extra pass.
- */
 function shadeBlocks(geo: THREE.BufferGeometry): void {
   const pos = geo.getAttribute('position');
   const nrm = geo.getAttribute('normal');
@@ -265,6 +308,8 @@ function shadeBlocks(geo: THREE.BufferGeometry): void {
   }
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 }
+
+
 
 
 /**
@@ -1095,7 +1140,10 @@ export class Renderer {
       halo.visible = false;
       this.scene.add(halo);
       this.biteHalos.push(halo);
-      const head = buildGrapnel(i === 0 ? grappleSkin(DEFAULT_LOADOUT.grapple).claw : 0xc9a86a);
+      // Both heads are built from the issue kit and recoloured/re-shaped when a
+      // player's look arrives, so the pool is fixed at two objects for ever.
+      const issue = grappleSkin(DEFAULT_LOADOUT.grapple);
+      const head = buildGrapnel(issue.claw, issue.clawShape, issue.trail);
       // A hot little halo rides with the claw while it is in the air, so a
       // throw stays visible against the sky at any range.
       const spark = new THREE.Sprite(
@@ -1105,6 +1153,7 @@ export class Renderer {
       spark.name = 'hookspark';
       head.add(spark);
       head.visible = false;
+      head.userData.clawShape = issue.clawShape;
       this.scene.add(head);
       this.hookHeads.push(head);
     }
@@ -1787,7 +1836,7 @@ export class Renderer {
     grapnel.add(box(0.09, 0.02, 0.05, polymer, 0, -0.075, -0.13));
 
     // The resting claw, cradled and ready.
-    const ready = buildGrapnel(gr.claw);
+    const ready = buildGrapnel(gr.claw, gr.clawShape, gr.trail);
     ready.scale.setScalar(0.55);
     ready.position.set(0, 0.035, -0.52);
     grapnel.add(ready);
@@ -1922,14 +1971,37 @@ export class Renderer {
       visual.kitPanel.color.setHex(gs.panel);
       visual.kitTrim.color.setHex(gs.trim);
     }
-    const head = this.hookHeads[1 - this.localIndex];
+    const index = 1 - this.localIndex;
+    let head = this.hookHeads[index];
     if (head) {
+      // The silhouette is the skin, so a change of kit swaps the whole head. It
+      // happens at most once per match, on the frame their look arrives.
+      const spark = head.getObjectByName('hookspark');
+      if (head.userData.clawShape !== gr.clawShape) {
+        this.scene.remove(head);
+        head.traverse((o) => {
+          const mesh = o as THREE.Mesh;
+          if (mesh.isMesh) mesh.geometry.dispose();
+        });
+        head = buildGrapnel(gr.claw, gr.clawShape, gr.trail);
+        head.userData.clawShape = gr.clawShape;
+        head.visible = false;
+        if (spark) head.add(spark);
+        this.scene.add(head);
+        this.hookHeads[index] = head;
+      }
       head.traverse((o) => {
         const mesh = o as THREE.Mesh;
         if (!mesh.isMesh) return;
         const mat = mesh.material as THREE.MeshStandardMaterial;
         if (mat && mat.metalness !== undefined && mat.metalness > 0.5) mat.color.setHex(gr.claw);
       });
+      const core = head.getObjectByName('hookcore') as THREE.Mesh | undefined;
+      if (core) {
+        const mat = core.material as THREE.MeshStandardMaterial;
+        mat.color.setHex(gr.trail);
+        mat.emissive.setHex(gr.trail);
+      }
     }
   }
 
@@ -2576,10 +2648,11 @@ export class Renderer {
     const open = this.hookClaw[index];
     head.children.forEach((child) => {
       if (child.name.startsWith('hinge')) {
-        const i = Number(child.name.slice(5));
-        child.rotation.z = ((i / 3) * Math.PI * 2);
+        // Base angle comes from the head itself: the fluke count is part of the
+        // skin, so it cannot be derived from an index here.
+        child.rotation.z = (child.userData.baseAngle as number) ?? 0;
         const fluke = child.children[0];
-        if (fluke) fluke.rotation.x = -0.15 - open * 0.85;
+        if (fluke) fluke.rotation.x = -0.15 - open * 0.95;
       }
     });
     head.rotateZ(flight ? dt * 9 : 0);

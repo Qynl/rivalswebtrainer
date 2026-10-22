@@ -42,11 +42,25 @@ function preview(c: Cosmetic): string {
   }
   if (c.kind === 'grapple') {
     const s = c as GrappleSkin;
+    // The preview draws the claw the skin actually has: three slim flukes,
+    // four needles, two heavy barbs or the caged head. Buying a silhouette is
+    // the point, so the card has to show it.
+    const flukes =
+      s.clawShape === 'quad'
+        ? `<path d="M126 38 l15 -16 M126 38 l17 -6 M126 38 l17 6 M126 38 l15 16" stroke="${hex(s.claw)}" stroke-width="3.4" stroke-linecap="round"/>`
+        : s.clawShape === 'twin'
+          ? `<path d="M126 38 l20 -15 M126 38 l20 15" stroke="${hex(s.claw)}" stroke-width="7" stroke-linecap="round"/>`
+          : `<path d="M126 38 l16 -14 M126 38 h20 M126 38 l16 14" stroke="${hex(s.claw)}" stroke-width="5" stroke-linecap="round"/>`;
+    const cage =
+      s.clawShape === 'ring'
+        ? `<ellipse cx="140" cy="38" rx="9" ry="19" fill="none" stroke="${hex(s.claw)}" stroke-width="1.6" opacity="0.85"/>`
+        : '';
     return `<svg viewBox="0 0 200 74" aria-hidden="true">
       <circle cx="72" cy="38" r="17" fill="none" stroke="${hex(s.rope)}" stroke-width="3"/>
       <circle cx="72" cy="38" r="7" fill="${hex(s.spool)}"/>
       <path d="M92 38 h34" stroke="${hex(s.rope)}" stroke-width="3"/>
-      <path d="M126 38 l16 -14 M126 38 h20 M126 38 l16 14" stroke="${hex(s.claw)}" stroke-width="5" stroke-linecap="round"/>
+      ${flukes}${cage}
+      <circle cx="140" cy="38" r="3" fill="${hex(s.trail)}"/>
       <rect x="30" y="30" width="26" height="16" rx="4" fill="${hex(s.body)}"/>
       <circle cx="150" cy="24" r="3" fill="${hex(s.trail)}" opacity="0.9"/>
       <circle cx="158" cy="52" r="2" fill="${hex(s.trail)}" opacity="0.6"/>
