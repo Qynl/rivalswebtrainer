@@ -704,3 +704,45 @@ export function chevronTexture(): THREE.Texture {
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
+
+/**
+ * Lens grime: a handful of soft smudges and micro-scratches in screen space.
+ * Real optics are never clean, and a spec of dust catching a muzzle flash is
+ * most of what separates a photograph from a render.
+ */
+export function lensDirtTexture(): THREE.Texture {
+  const size = 512;
+  const [c, ctx] = canvas(size, size);
+  ctx.clearRect(0, 0, size, size);
+  // Smudges.
+  for (let i = 0; i < 26; i++) {
+    const x = Math.random() * size;
+    const y = Math.random() * size;
+    const r = 6 + Math.random() * 46;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    const a = 0.03 + Math.random() * 0.07;
+    g.addColorStop(0, `rgba(255, 252, 246, ${a})`);
+    g.addColorStop(0.7, `rgba(255, 250, 240, ${a * 0.35})`);
+    g.addColorStop(1, 'rgba(255, 250, 240, 0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Hairline scratches.
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+  for (let i = 0; i < 14; i++) {
+    ctx.lineWidth = 0.6 + Math.random() * 0.8;
+    ctx.beginPath();
+    const x = Math.random() * size;
+    const y = Math.random() * size;
+    const a = Math.random() * Math.PI;
+    const len = 20 + Math.random() * 110;
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
+    ctx.stroke();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}

@@ -603,7 +603,47 @@ class Game {
     if (!mine) {
       const sp = this.sfx.spatial(msg.origin, this.local.eye, this.lookYaw);
       this.sfx.shot(false, sp.pan, sp.distance);
+      if (!msg.hit) this.nearMiss(msg);
     }
+  }
+
+  /**
+   * A supersonic round passing close enough to break the air.
+   *
+   * Distance is measured to the *segment*, not to the muzzle or the impact, so
+   * a shot that cracks past your head at 2 m from a shooter 60 m away registers
+   * even though both of its endpoints are far off. Purely cosmetic: it fires
+   * after the server has already resolved the shot, and it can never change a
+   * hit.
+   */
+  private nearMiss(msg: Extract<ServerMsg, { t: 'shot' }>): void {
+    const eye = this.local.eye;
+    const ax = msg.origin.x;
+    const ay = msg.origin.y;
+    const az = msg.origin.z;
+    const bx = msg.end.x;
+    const by = msg.end.y;
+    const bz = msg.end.z;
+    const dx = bx - ax;
+    const dy = by - ay;
+    const dz = bz - az;
+    const len2 = dx * dx + dy * dy + dz * dz;
+    if (len2 < 1e-3) return;
+    let t = ((eye.x - ax) * dx + (eye.y - ay) * dy + (eye.z - az) * dz) / len2;
+    t = clamp(t, 0, 1);
+    const cx = ax + dx * t;
+    const cy = ay + dy * t;
+    const cz = az + dz * t;
+    const miss = Math.hypot(eye.x - cx, eye.y - cy, eye.z - cz);
+    const radius = 5.5;
+    if (miss > radius) return;
+    const closeness = 1 - miss / radius;
+    const point = { x: cx, y: cy, z: cz };
+    this.renderer.nearMiss(point, closeness);
+    const sp = this.sfx.spatial(point, eye, this.lookYaw);
+    this.sfx.crack(closeness, sp.pan);
+    // A physical flinch, not a damage flash: the whole picture jolts a hair.
+    this.renderer.punch((Math.random() - 0.5) * 0.02 * closeness, (Math.random() - 0.5) * 0.03 * closeness);
   }
 
   private onKillMsg(msg: Extract<ServerMsg, { t: 'kill' }>): void {
@@ -621,7 +661,11 @@ class Game {
       this.matchKills += 1;
       this.hud.coinPopup(ECONOMY.killCoins);
       const fx = killEffect(this.progress.state.loadout.effect);
-      this.renderer.killBurst(msg.victimAt, fx.id, 1);
+      this.renderer.killBurst(msg.victimAt, fx.id, 1, {
+        x: msg.victimAt.x - this.local.eye.x,
+        y: msg.victimAt.y - this.local.eye.y,
+        z: msg.victimAt.z - this.local.eye.z,
+      });
       this.sfx.killFx(fx.sound);
       this.hitstop = WEAPON.hitstop;
     } else if (msg.event.victim === me) {
@@ -630,7 +674,13 @@ class Game {
       this.renderer.hurt(0.9);
       this.renderer.shatter(msg.victimAt, SKINS[me].color);
       // The effect that killed you is the killer's, so you learn what to buy.
-      if (this.remoteView.look) this.renderer.killBurst(msg.victimAt, this.remoteView.look.effect, 0.8);
+      if (this.remoteView.look) {
+        this.renderer.killBurst(msg.victimAt, this.remoteView.look.effect, 0.8, {
+          x: this.local.eye.x - msg.victimAt.x,
+          y: this.local.eye.y - msg.victimAt.y,
+          z: this.local.eye.z - msg.victimAt.z,
+        });
+      }
       const killerIdx = msg.event.killer === 1 - me ? 1 - me : -1;
       if (killerIdx >= 0) {
         this.killcam = { t: 0, killerPos: { ...this.remoteSim.pos }, victimPos: { ...msg.victimAt } };

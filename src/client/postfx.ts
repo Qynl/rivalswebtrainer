@@ -23,6 +23,10 @@ const GradeShader = {
     uFlashColor: { value: new THREE.Color(0xffd27a) },
     uSun: { value: new THREE.Vector2(0.5, 0.5) },
     uSunVis: { value: 0 },
+    uDirt: { value: null as THREE.Texture | null },
+    uHasDirt: { value: 0 },
+    uKill: { value: 0 },
+    uKillColor: { value: new THREE.Color(0xffd27a) },
     uResolution: { value: new THREE.Vector2(1, 1) },
   },
   vertexShader: /* glsl */ `
@@ -42,6 +46,10 @@ const GradeShader = {
     uniform vec3 uFlashColor;
     uniform vec2 uSun;
     uniform float uSunVis;
+    uniform sampler2D uDirt;
+    uniform float uHasDirt;
+    uniform float uKill;
+    uniform vec3 uKillColor;
     uniform vec2 uResolution;
     varying vec2 vUv;
 
@@ -95,6 +103,15 @@ const GradeShader = {
       float scopeMask = 1.0 - smoothstep(0.36, 0.4, r);
       col = mix(col, col * scopeMask, uScope);
 
+      // Lens grime: fixed in screen space, so it reads as the optic rather than
+      // as the world. Only the bright parts of the frame pick it up, which is
+      // exactly how dust on a lens behaves.
+      if (uHasDirt > 0.5) {
+        float dirt = texture2D(uDirt, vUv).r;
+        float lumaD = dot(col, vec3(0.2126, 0.7152, 0.0722));
+        col += vec3(1.0, 0.96, 0.9) * dirt * smoothstep(0.55, 1.0, lumaD) * 0.55;
+      }
+
       // Fine grain: keeps large flat surfaces from banding.
       col += (hash(uv * uResolution + uTime * 40.0) - 0.5) * 0.014;
 
@@ -131,6 +148,18 @@ const GradeShader = {
         col += shafts * uSunVis * shaftMask * min(1.0, weight * 0.55) * 0.55;
       }
 
+      // Kill shock: a ring leaving the centre of the screen, then a short
+      // desaturation of the middle. The world ring is in 3D; this is the one
+      // that hits the player's eyes, and it is what makes a kill feel landed.
+      if (uKill > 0.001) {
+        float kt = 1.0 - uKill;
+        float ringR = mix(0.05, 0.78, kt);
+        float ring = smoothstep(0.035, 0.0, abs(r - ringR)) * uKill;
+        float lumaK = dot(col, vec3(0.2126, 0.7152, 0.0722));
+        col = mix(col, vec3(lumaK) * 1.05, uKill * 0.28 * smoothstep(0.5, 0.05, r));
+        col += uKillColor * ring * 0.5;
+      }
+
       // Kill flash: a hot centre bloom that dies out fast. It is the frame the
       // kill lands on, and it has to read through the scope without whiting out
       // the target you are already tracking.
@@ -153,8 +182,14 @@ export class PostFX {
   private renderer: THREE.WebGLRenderer;
   private baseResolution = new THREE.Vector2(1, 1);
 
-  constructor(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera) {
+  constructor(
+    renderer: THREE.WebGLRenderer,
+    scene: THREE.Scene,
+    camera: THREE.Camera,
+    dirt: THREE.Texture | null = null,
+  ) {
     this.renderer = renderer;
+    void dirt;
     const size = renderer.getDrawingBufferSize(new THREE.Vector2());
     const target = new THREE.WebGLRenderTarget(Math.max(1, size.x), Math.max(1, size.y), {
       type: THREE.HalfFloatType,
@@ -168,6 +203,10 @@ export class PostFX {
     this.bloom = new UnrealBloomPass(new THREE.Vector2(Math.max(1, size.x / 2), Math.max(1, size.y / 2)), 0.32, 0.72, 1.05);
     this.composer.addPass(this.bloom);
     this.grade = new ShaderPass(GradeShader);
+    // Per-pass: a shader pass clones its uniforms, so the texture has to be set
+    // on this instance rather than on the shared definition.
+    this.grade.uniforms.uDirt.value = dirt;
+    this.grade.uniforms.uHasDirt.value = dirt ? 1 : 0;
     this.composer.addPass(this.grade);
     this.composer.addPass(new OutputPass());
     this.composer.setPixelRatio(renderer.getPixelRatio());
@@ -187,12 +226,19 @@ export class PostFX {
   }
 
   private flashAmt = 0;
+  private killAmt = 0;
   private flashColor = new THREE.Color(0xffd27a);
 
   /** Screen position of the sun in UV space, and how visible it is (0..1). */
   setSun(uv: THREE.Vector2, visibility: number): void {
     (this.grade.uniforms.uSun.value as THREE.Vector2).copy(uv);
     this.grade.uniforms.uSunVis.value = visibility;
+  }
+
+  /** A kill's screen-space shock ring, in the effect's colour. */
+  killShock(color: number): void {
+    this.killAmt = 1;
+    (this.grade.uniforms.uKillColor.value as THREE.Color).setHex(color);
   }
 
   /** A brief full-frame flash in a given colour. Used on kills only. */
@@ -209,6 +255,8 @@ export class PostFX {
     this.grade.uniforms.uHurt.value = hurt;
     this.flashAmt = Math.max(0, this.flashAmt - 1 / 60 * 2.4);
     this.grade.uniforms.uFlash.value = this.flashAmt;
+    this.killAmt = Math.max(0, this.killAmt - 1 / 60 * 1.7);
+    this.grade.uniforms.uKill.value = this.killAmt;
     (this.grade.uniforms.uFlashColor.value as THREE.Color).copy(this.flashColor);
   }
 

@@ -37,6 +37,7 @@ import {
   aimRingTexture,
   cloudTexture,
   chevronTexture,
+  lensDirtTexture,
   namePlateTexture,
   scorchTexture,
   streakTexture,
@@ -396,11 +397,30 @@ export class Renderer {
   /** The spire's rotating warning beacon: the map's one moving landmark. */
   private beaconSweep: THREE.Group | null = null;
   private beaconLamp: THREE.Sprite | null = null;
+  /** Slow fog banks drifting through the void below the decks. */
+  private fogBanks: {
+    mesh: THREE.InstancedMesh;
+    speed: number;
+    phase: number;
+    baseY: number;
+    size: number;
+    radius: number;
+    tint: number;
+  }[] = [];
+  private fogBank: THREE.InstancedMesh | null = null;
+  private fogBankCount = 0;
+  private fogMatrix = new THREE.Matrix4();
+  private fogQuat = new THREE.Quaternion();
+  private fogScale = new THREE.Vector3();
+  private fogPos = new THREE.Vector3();
+  private fogLook = new THREE.Matrix4();
+  private fogAim = new THREE.Vector3();
   private ropeMoteAcc = [0, 0];
   private readonly sunDir = new THREE.Vector3(-0.46, 0.62, -0.62).normalize();
   private readonly sunScreen = new THREE.Vector2(0.5, 0.5);
   private readonly sunProbe = new THREE.Vector3();
   private readonly camForward = new THREE.Vector3();
+  private readonly camForwardWorld = new THREE.Vector3(0, 0, -1);
   /** 1 → 0 while the weapon is being turned over after a skin change. */
   private inspect = 0;
   private readonly tint = new THREE.Color();
@@ -547,7 +567,7 @@ export class Renderer {
     this.impactLight = new THREE.PointLight(0xffdca8, 0, 26, 2);
     this.scene.add(this.impactLight);
 
-    this.post = new PostFX(this.renderer, this.scene, this.camera);
+    this.post = new PostFX(this.renderer, this.scene, this.camera, lensDirtTexture());
     this.resize();
   }
 
@@ -808,6 +828,43 @@ export class Renderer {
         new THREE.LineBasicMaterial({ color: 0x9aa2aa, transparent: true, opacity: 0.55 }),
       );
       this.scene.add(stays);
+    }
+
+    // ── Weather in the void ───────────────────────────────────────────────
+    // The arena floats over a cloud sea; between the two there was nothing.
+    // A dozen huge soft billboards drifting on their own currents fill that
+    // gap. Instanced, so the whole weather system is one draw call, and it
+    // never enters the play space: the lowest deck is at y≈20, the highest bank
+    // at y≈4, so nothing here can hide a player.
+    const fogTex = cloudTexture();
+    this.fogBankCount = 14;
+    this.fogBank = new THREE.InstancedMesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.MeshBasicMaterial({
+        map: fogTex,
+        transparent: true,
+        opacity: 0.16,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        fog: true,
+        vertexColors: false,
+      }),
+      this.fogBankCount,
+    );
+    this.fogBank.frustumCulled = false;
+    this.fogBank.renderOrder = -1;
+    this.scene.add(this.fogBank);
+    for (let i = 0; i < this.fogBankCount; i++) {
+      const a = (i / this.fogBankCount) * Math.PI * 2 + i * 0.37;
+      this.fogBanks.push({
+        mesh: this.fogBank,
+        speed: 0.9 + ((i * 13) % 7) * 0.25,
+        phase: a,
+        baseY: -10 - ((i * 23) % 5) * 13,
+        size: 150 + ((i * 53) % 9) * 26,
+        radius: 60 + ((i * 31) % 7) * 24,
+        tint: i % 3 === 0 ? 0xdfe9f2 : 0xf4f6f8,
+      });
     }
 
     // Cables strung between neighbouring pinions: these are the lines you will
@@ -2000,6 +2057,31 @@ export class Renderer {
     this.fx.impact(pos, null, trail);
   }
 
+  /**
+   * A round cracking past the camera: a short white streak along the round's
+   * own line plus a hot point at the closest approach. It is the visual half of
+   * the crack sound, and it is what makes being shot *at* feel different from
+   * being shot.
+   */
+  nearMiss(point: Vec3, closeness: number): void {
+    const k = clamp(closeness, 0, 1);
+    this.particles.burst(point, 0xe8f4ff, Math.round(8 + 14 * k), {
+      speed: 6 + 10 * k,
+      size: 0.1 + 0.1 * k,
+      life: 0.18 + 0.1 * k,
+      gravity: 0,
+      drag: 3,
+    });
+    this.beams.fire(point, {
+      x: point.x - this.camForwardWorld.x * (2 + 6 * k),
+      y: point.y - this.camForwardWorld.y * (2 + 6 * k),
+      z: point.z - this.camForwardWorld.z * (2 + 6 * k),
+    }, 0xffffff, 0.05 + 0.06 * k, 0.09);
+    this.fovPulse(1.6 * k);
+    this.shake(0.004 + 0.012 * k);
+    this.post.flash(0xdceeff, 0.03 + 0.05 * k);
+  }
+
   /** Kills punch the lens: a hard FOV kick that decays over half a second. */
   killPunch(): void {
     this.fovPulse(9);
@@ -2093,8 +2175,18 @@ export class Renderer {
   }
 
   /** Their kill, dressed in their effect. */
-  killBurst(at: Vec3, effectId: string, scale = 1): void {
+  killBurst(at: Vec3, effectId: string, scale = 1, dir?: Vec3): void {
     const fx = killEffect(effectId);
+    if (dir) {
+      // A shock plate square to the shot: it is the one piece of the burst that
+      // tells you *which way* the round came from, at a glance, from any angle.
+      const n = { x: dir.x, y: dir.y, z: dir.z };
+      const len = Math.hypot(n.x, n.y, n.z) || 1;
+      n.x /= len;
+      n.y /= len;
+      n.z /= len;
+      this.fx.rings.spawn(at, fx.ring, 0.6, 7.5 * scale, 0.5, n);
+    }
     // Particulate haze under every effect shape: the geometry does the reading,
     // the particles do the heat.
     this.particles.burst(at, fx.burst, Math.round(26 * scale), { speed: 9 * scale, size: 0.16, life: 0.5, gravity: 10 });
@@ -2103,6 +2195,7 @@ export class Renderer {
     this.waves.spawn(at, fx.burst, 1.6 * scale, 0.28);
     this.fx.kill(at, fx.shape, { burst: fx.burst, ring: fx.ring, motes: fx.motes }, scale);
     this.post.flash(fx.ring, 0.12 * scale);
+    this.post.killShock(fx.ring);
   }
 
   private rebuildViewmodel(): void {
@@ -2260,6 +2353,7 @@ export class Renderer {
     this.camera.rotation.set(0, 0, 0);
     this.camera.rotateY(yaw);
     this.camera.rotateX(pitch);
+    this.camForwardWorld.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
 
     const lateral = local.vel.x * Math.cos(local.yaw) - local.vel.z * Math.sin(local.yaw);
     const swingRoll = local.grapple.active && local.grapple.mode === 'swing' ? -lateral * 0.0019 : 0;
@@ -2452,6 +2546,27 @@ export class Renderer {
     }
     if (this.floaters) this.floaters.rotation.y = this.time * 0.008;
     if (this.beaconSweep) this.beaconSweep.rotation.y = this.time * 0.22;
+    if (this.fogBank && this.fogBanks.length) {
+      for (let i = 0; i < this.fogBanks.length; i++) {
+        const f = this.fogBanks[i];
+        // Rotating slowly about the spire rather than translating: the banks
+        // keep their distance, so no seam ever slides through the camera.
+        const a = f.phase + this.time * 0.006 * f.speed;
+        this.fogPos.set(
+          Math.cos(a) * f.radius,
+          f.baseY + Math.sin(this.time * 0.12 + i) * 1.6,
+          Math.sin(a) * f.radius,
+        );
+        // Face the middle of the arena, then lean: they read as strata.
+        this.fogAim.set(0, this.fogPos.y + 6, 0);
+        this.fogLook.lookAt(this.fogPos, this.fogAim, THREE.Object3D.DEFAULT_UP);
+        this.fogQuat.setFromRotationMatrix(this.fogLook);
+        this.fogScale.set(f.size, f.size * 0.55, 1);
+        this.fogMatrix.compose(this.fogPos, this.fogQuat, this.fogScale);
+        this.fogBank.setMatrixAt(i, this.fogMatrix);
+      }
+      this.fogBank.instanceMatrix.needsUpdate = true;
+    }
     if (this.beaconLamp) {
       const blink = Math.pow(Math.max(0, Math.sin(this.time * 1.6)), 6);
       this.beaconLamp.material.opacity = 0.35 + blink * 0.6;

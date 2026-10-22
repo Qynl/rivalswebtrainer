@@ -6,6 +6,8 @@
  * so a firefight never allocates.
  */
 
+import { clamp } from '../shared/mathx.ts';
+
 import * as THREE from 'three';
 import type { Vec3 } from '../shared/mathx.ts';
 
@@ -199,24 +201,53 @@ export class Particles {
 // ── Tracer beams ───────────────────────────────────────────────────────────
 
 const BEAM_VERT = /* glsl */ `
+uniform vec3 uStart;
+uniform vec3 uEnd;
+uniform float uWidth;
+uniform float uProgress;
+uniform float uTail;
 varying vec2 vUv;
+varying float vFade;
 void main() {
   vUv = uv;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  // A world-space billboard: the ribbon is rebuilt as a strip along the shot
+  // and widened toward the camera, so it is never edge-on and never pops when
+  // you strafe across it. This is the single biggest difference between a
+  // tracer that reads as a beam of light and one that reads as a cardboard cut.
+  vec3 dir = normalize(uEnd - uStart);
+  vec3 axis = normalize(cross(dir, normalize(cameraPosition - uStart)));
+  float head = uProgress;
+  float tail = max(0.0, uProgress - uTail);
+  float t = mix(tail, head, uv.y);
+  vec3 p = mix(uStart, uEnd, t);
+  // Fat at the head, hairline at the tail: a bullet is a point, not a bar.
+  float taper = smoothstep(0.0, 0.75, uv.y) * (0.35 + 0.65 * uv.y);
+  p += axis * (uv.x - 0.5) * uWidth * taper;
+  // Nudge toward the camera a hair so a shot that skims a wall does not
+  // z-fight the concrete.
+  p += normalize(cameraPosition - p) * 0.05;
+  vFade = 1.0 - smoothstep(0.82, 1.0, uv.y) * 0.55;
+  gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
 }
 `;
 
 const BEAM_FRAG = /* glsl */ `
 varying vec2 vUv;
+varying float vFade;
 uniform vec3 uColor;
 uniform float uOpacity;
+uniform float uTime;
 void main() {
   float across = 1.0 - abs(vUv.x - 0.5) * 2.0;
-  across = pow(clamp(across, 0.0, 1.0), 2.0);
-  float along = smoothstep(0.0, 0.65, vUv.y) * (0.25 + 0.75 * smoothstep(0.0, 0.08, 1.0 - vUv.y));
-  float head = pow(vUv.y, 6.0) * 1.6;
-  float a = (across * along + head) * uOpacity;
-  gl_FragColor = vec4(uColor * (1.0 + head), a);
+  float core = pow(clamp(across, 0.0, 1.0), 3.0);
+  float glow = pow(clamp(across, 0.0, 1.0), 0.9) * 0.45;
+  // Heat along the length: white-hot at the head, ember at the tail.
+  float heat = smoothstep(0.35, 1.0, vUv.y);
+  // A little shimmer so a long shot does not look like a decal that was placed.
+  float flicker = 0.92 + 0.08 * sin(uTime * 90.0 + vUv.y * 24.0);
+  float a = (core * (0.35 + heat * 1.35) + glow) * uOpacity * vFade * flicker;
+  vec3 col = mix(uColor, vec3(1.0), core * heat * 0.85);
+  gl_FragColor = vec4(col * (1.0 + heat * 1.2), clamp(a, 0.0, 1.0));
 }
 `;
 
@@ -224,25 +255,39 @@ interface Beam {
   mesh: THREE.Mesh;
   mat: THREE.ShaderMaterial;
   life: number;
+  maxLife: number;
+  from: THREE.Vector3;
+  to: THREE.Vector3;
+  /** Seconds the bolt takes to cross the whole shot. */
+  travel: number;
+  /** Fraction of the shot that is lit at once (the tail). */
+  tail: number;
 }
 
 export class Beams {
   readonly group = new THREE.Group();
   private pool: Beam[] = [];
-  private up = new THREE.Vector3(0, 1, 0);
-  private q = new THREE.Quaternion();
-  private dir = new THREE.Vector3();
+  private time = 0;
 
-  constructor(count = 12) {
+  constructor(count = 14) {
     const geo = new THREE.PlaneGeometry(1, 1);
-    geo.translate(0, 0.5, 0);
     for (let i = 0; i < count; i++) {
       const mat = new THREE.ShaderMaterial({
-        uniforms: { uColor: { value: new THREE.Color(0xffffff) }, uOpacity: { value: 0 } },
+        uniforms: {
+          uStart: { value: new THREE.Vector3() },
+          uEnd: { value: new THREE.Vector3() },
+          uWidth: { value: 0.3 },
+          uProgress: { value: 0 },
+          uTail: { value: 0.2 },
+          uColor: { value: new THREE.Color(0xffffff) },
+          uOpacity: { value: 0 },
+          uTime: { value: 0 },
+        },
         vertexShader: BEAM_VERT,
         fragmentShader: BEAM_FRAG,
         transparent: true,
         depthWrite: false,
+        depthTest: true,
         blending: THREE.AdditiveBlending,
         side: THREE.DoubleSide,
       });
@@ -251,35 +296,60 @@ export class Beams {
       mesh.frustumCulled = false;
       mesh.renderOrder = 6;
       this.group.add(mesh);
-      this.pool.push({ mesh, mat, life: 0 });
+      this.pool.push({
+        mesh,
+        mat,
+        life: 0,
+        maxLife: 1,
+        from: new THREE.Vector3(),
+        to: new THREE.Vector3(),
+        travel: 0.06,
+        tail: 0.35,
+      });
     }
   }
 
-  fire(from: Vec3, to: Vec3, color: number, width = 0.42, life = 0.32): void {
+  /**
+   * Fires a bolt along a segment. It is deliberately slower than a bullet: at
+   * 900 m/s a 60 m tracer is on screen for one frame. Stretching it over ~70 ms
+   * with a 20 m tail is the difference between "a flash" and "a shot you can
+   * read, flinch at, and use to find the shooter".
+   */
+  fire(from: Vec3, to: Vec3, color: number, width = 0.42, life = 0.3): void {
     let slot = this.pool.find((b) => b.life <= 0);
     if (!slot) slot = this.pool.reduce((a, b) => (a.life < b.life ? a : b));
-    this.dir.set(to.x - from.x, to.y - from.y, to.z - from.z);
-    const len = this.dir.length();
-    if (len < 0.01) return;
-    this.dir.multiplyScalar(1 / len);
+    const len = Math.hypot(to.x - from.x, to.y - from.y, to.z - from.z);
+    if (len < 0.3) return;
     const b = slot;
-    b.mesh.position.set(from.x, from.y, from.z);
-    this.q.setFromUnitVectors(this.up, this.dir);
-    b.mesh.quaternion.copy(this.q);
-    b.mesh.scale.set(width, len, 1);
+    b.from.set(from.x, from.y, from.z);
+    b.to.set(to.x, to.y, to.z);
+    b.travel = clamp(len / 900, 0.025, 0.085);
+    b.tail = clamp(22 / Math.max(1, len), 0.06, 0.85);
+    b.maxLife = b.travel + life;
+    b.life = b.maxLife;
+    const u = b.mat.uniforms;
+    (u.uStart.value as THREE.Vector3).copy(b.from);
+    (u.uEnd.value as THREE.Vector3).copy(b.to);
+    u.uWidth.value = width;
+    u.uTail.value = b.tail;
+    u.uProgress.value = 0;
+    u.uOpacity.value = 1;
+    (u.uColor.value as THREE.Color).setHex(color);
     b.mesh.visible = true;
-    b.mat.uniforms.uColor.value.setHex(color);
-    b.mat.uniforms.uOpacity.value = 1;
-    b.life = life;
-    b.mesh.userData.life = life;
   }
 
   update(dt: number): void {
+    this.time += dt;
     for (const b of this.pool) {
       if (b.life <= 0) continue;
       b.life -= dt;
-      const k = Math.max(0, b.life / (b.mesh.userData.life as number));
-      b.mat.uniforms.uOpacity.value = k;
+      const elapsed = b.maxLife - b.life;
+      const u = b.mat.uniforms;
+      // The bolt crosses in `travel`, then the ribbon fades where it stopped.
+      u.uProgress.value = clamp(elapsed / b.travel, 0, 1);
+      const after = elapsed - b.travel;
+      u.uOpacity.value = after <= 0 ? 1 : clamp(1 - after / Math.max(0.02, b.maxLife - b.travel), 0, 1);
+      u.uTime.value = this.time;
       if (b.life <= 0) b.mesh.visible = false;
     }
   }

@@ -203,6 +203,15 @@ export class Sfx {
     }
   }
 
+  /** The snap of a round going past your head. Height is the near-miss. */
+  crack(closeness: number, pan = 0): void {
+    const k = Math.max(0.1, Math.min(1, closeness));
+    // Two parts: the flat supersonic slap, then the doppler chirp as it leaves.
+    this.noiseBurst(0.05, 0.5 * k, { freq: 5200, q: 1.4, type: 'highpass', pan, sweepTo: 1800 });
+    this.tone(1300, 0.09, 'sawtooth', 0.07 * k, { slideTo: 520, pan });
+    this.noiseBurst(0.22, 0.16 * k, { freq: 700, q: 0.8, type: 'bandpass', pan, sweepTo: 240, when: 0.03 });
+  }
+
   hitmarker(kill: boolean): void {
     this.tone(880, 0.07, 'square', 0.16, { slideTo: 1320 });
     if (kill) {

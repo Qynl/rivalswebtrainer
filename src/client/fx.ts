@@ -532,6 +532,17 @@ export class Fx implements KillFxApi {
       this.decals.add(at, normal, 0.55, 10);
       this.rings.spawn(at, color, 0.1, 1.4, 0.18, normal);
       this.shards.burst(at, 0x9aa4ae, 5, { speed: 5, size: 0.1, life: 0.5, gravity: 16, drag: 2 });
+      // Concrete explodes in two fractions: a fast chip cone and a slow dust
+      // plume that lifts off the wall and hangs. The plume is what makes a miss
+      // legible from 60 m, where individual chips are sub-pixel.
+      this.petals.burst(at, 0xd6cfc0, 7, {
+        speed: 1.6,
+        size: 0.42,
+        life: 1.15,
+        gravity: -1.1,
+        drag: 2.6,
+        flatten: 0.5,
+      });
     }
     this.shards.burst(at, color, 4, { speed: 7, size: 0.1, life: 0.32, gravity: 18, drag: 2 });
   }
