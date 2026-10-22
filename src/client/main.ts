@@ -493,7 +493,7 @@ class Game {
     if (snap.match.phase !== this.lastPhase) {
       if (snap.match.phase === 'live' && this.lastPhase === 'warmup') {
         this.hud.bannerText('FIGHT', 'me', 900);
-        this.sfx.ui('click');
+        this.sfx.fightStart();
       }
       this.lastPhase = snap.match.phase;
     }
@@ -751,7 +751,9 @@ class Game {
       window.setTimeout(() => this.sfx.ui('reward'), 260);
     }
     this.refreshProfile();
-    this.sfx.hitmarker(won);
+    // The match stinger replaces the hitmarker: the result deserves its own
+    // music instead of a louder version of a shot landing.
+    this.sfx.matchEnd(won, draw);
     if (won) this.hud.bannerText('VICTORY', 'me', 2400);
     else if (!draw) this.hud.bannerText('DEFEAT', 'them', 2400);
     this.inMatch = false;

@@ -178,6 +178,10 @@ describe('audio', () => {
       sfx.ringWarn();
       for (const k of ['hover', 'click', 'back', 'buy', 'equip', 'level', 'reward'] as const) sfx.ui(k);
       sfx.chain(2);
+      sfx.fightStart();
+      sfx.matchEnd(true, false);
+      sfx.matchEnd(false, false);
+      sfx.matchEnd(false, true);
       sfx.stopAll();
     }).not.toThrow();
   });

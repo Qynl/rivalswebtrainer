@@ -502,6 +502,37 @@ export class Sfx {
 
   // ── Weapon ───────────────────────────────────────────────────────────────
 
+  /** The bell: a swell that says the shields are down. */
+  fightStart(): void {
+    this.tone(98, 0.9, 'sine', 0.24, { slideTo: 130, attack: 0.18, send: 0.4, curve: 1.8 });
+    this.tone(196, 1.1, 'triangle', 0.1, { attack: 0.24, send: 0.5 });
+    this.tone(294, 1.2, 'sine', 0.06, { when: 0.16, attack: 0.2, send: 0.5 });
+    this.noiseBurst(0.9, 0.08, { freq: 900, q: 0.6, sweepTo: 260, attack: 0.3, send: 0.5 });
+    // One clean, low impact on the beat: the round has started.
+    this.noiseBurst(0.22, 0.2, { freq: 2200, q: 0.8, sweepTo: 500, when: 0.5, send: 0.4 });
+  }
+
+  /**
+   * The end of a duel. A win gets a rising triad and a sub; a loss gets the
+   * same shape inverted and a long dark tail. A draw sits between, unresolved.
+   */
+  matchEnd(won: boolean, draw: boolean): void {
+    const root = draw ? 330 : won ? 392 : 262;
+    const steps = draw ? [0, 5, 0] : won ? [0, 4, 7, 12] : [0, -3, -5, -12];
+    steps.forEach((st, i) => {
+      const f = root * Math.pow(2, st / 12);
+      this.tone(f, 1.5, 'sine', 0.12, { when: i * 0.13, attack: 0.02, send: 0.6, curve: 1.6 });
+      this.tone(f * 2, 1.2, 'triangle', 0.04, { when: i * 0.13 + 0.02, send: 0.55 });
+    });
+    if (won) {
+      this.tone(98, 2.2, 'sine', 0.22, { slideTo: 65, send: 0.35, curve: 1.3 });
+      this.noiseBurst(1.6, 0.07, { freq: 3200, q: 0.7, sweepTo: 700, attack: 0.05, send: 0.7 });
+    } else if (!draw) {
+      this.tone(65, 2.4, 'sine', 0.26, { slideTo: 44, send: 0.4, curve: 1.2 });
+      this.noiseBurst(2.2, 0.05, { freq: 700, q: 0.5, sweepTo: 160, attack: 0.4, send: 0.7 });
+    }
+  }
+
   /**
    * The rifle. Five layers, which is what a gunshot actually is:
    * 1. the crack, 2. the body at the bore frequency, 3. the sub you feel,
