@@ -65,6 +65,8 @@ class Game {
   private net: Transport = new Net();
   /** Set while a remote connection is being attempted and nothing has answered. */
   private fallbackTimer: number | null = null;
+  /** Sticky for the session: this page has no server, stop probing for one. */
+  private offlineMode = false;
   /** Coins, level and equipped cosmetics. Local to this browser on purpose. */
   private progress = Progress.load();
   private armory: Armory;
@@ -208,7 +210,7 @@ class Game {
       localStorage.setItem('gg_name', name);
       this.mode = mode;
       this.enterMatchScreen();
-      this.connectRemote(name, mode);
+      this.startTransport(name, mode);
       this.hud.setMenuNote(mode === 'duel' ? 'SEARCHING FOR A DUEL…' : 'DEPLOYING SPECTER…');
     };
     joinDuel.onclick = () => start('duel');
@@ -250,7 +252,7 @@ class Game {
       this.net.token = '';
       this.leaveMatchState();
       this.enterMatchScreen();
-      this.net.connect(this.net.playerName, this.mode);
+      this.startTransport(this.net.playerName, this.mode);
     };
     el('pause-resume').onclick = () => this.resume();
     el('pause-quit').onclick = () => {
@@ -400,7 +402,17 @@ class Game {
     }
   }
 
+  /** One entry point for every "start playing" action, rematch included. */
+  private startTransport(name: string, mode: 'duel' | 'practice'): void {
+    if (this.offlineMode) {
+      this.goOffline(name);
+      return;
+    }
+    this.connectRemote(name, mode);
+  }
+
   private connectRemote(name: string, mode: 'duel' | 'practice'): void {
+    this.offlineMode = false;
     const remote = new Net();
     remote.url = this.serverUrl();
     this.bindTransport(remote);
@@ -416,6 +428,7 @@ class Game {
   }
 
   private goOffline(name: string): void {
+    this.offlineMode = true;
     const local = new LocalNet();
     this.bindTransport(local);
     this.mode = 'practice';

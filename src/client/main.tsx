@@ -10,13 +10,20 @@
 import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { App } from './ui/App.tsx';
+import { Boundary } from './ui/Boundary.tsx';
 import { bootGame } from './main.ts';
 import './style.css';
 
 const host = document.getElementById('root');
 if (host) {
   const root = createRoot(host);
-  flushSync(() => root.render(<App />));
+  flushSync(() =>
+    root.render(
+      <Boundary>
+        <App />
+      </Boundary>,
+    ),
+  );
   void bootGame();
 } else {
   document.body.innerHTML = '<p style="font:14px monospace;color:#e8b25c;padding:24px">MISSING #root</p>';
