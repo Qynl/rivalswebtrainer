@@ -1314,6 +1314,12 @@ export class Renderer {
       launcher.visible = false;
       weapon.add(launcher);
 
+      // Both weapons merge down to one mesh per material: at rifle range the
+      // silhouette is what matters, and eleven little boxes per rifle is eleven
+      // draw calls for something 40 m away.
+      mergeChildren(rifle);
+      mergeChildren(launcher);
+
       // Team-colour shoulder beacon: the readable "that is an enemy" cue.
       const beacon = new THREE.Sprite(this.makeGlowSpriteMaterial(skin.color, 0.55));
       beacon.position.set(0, 0.5, 0.26);

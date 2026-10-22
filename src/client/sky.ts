@@ -186,21 +186,49 @@ export function buildSky(): SkyKit {
   towerMesh.instanceMatrix.needsUpdate = true;
   group.add(towerMesh);
 
-  // Debris slabs hanging in the air near the arena: the reason it feels high.
+  // Slabs of the old world hanging in the air near the arena: the reason it
+  // feels high. One instanced mesh instead of twenty-two: each slab keeps its
+  // own size, tumble and bob through its instance matrix, and the whole field
+  // costs a single draw call.
   const debrisMat = new THREE.MeshStandardMaterial({ color: 0xb9b7ae, roughness: 0.92, metalness: 0.03 });
-  const debris: { mesh: THREE.Mesh; spin: number; base: THREE.Vector3; phase: number }[] = [];
-  for (let i = 0; i < 22; i++) {
+  const slabCount = 22;
+  const slabGeo = new THREE.IcosahedronGeometry(1, 0);
+  const slabs = new THREE.InstancedMesh(slabGeo, debrisMat, slabCount);
+  slabs.frustumCulled = false;
+  const debris: {
+    base: THREE.Vector3;
+    scale: THREE.Vector3;
+    rot: THREE.Euler;
+    spin: number;
+    phase: number;
+  }[] = [];
+  for (let i = 0; i < slabCount; i++) {
     const a = Math.random() * Math.PI * 2;
     const r = 95 + Math.random() * 130;
-    const geo = new THREE.IcosahedronGeometry(3 + Math.random() * 8, 0);
-    geo.scale(1.5 + Math.random(), 0.22 + Math.random() * 0.3, 1.5 + Math.random());
-    const mesh = new THREE.Mesh(geo, debrisMat);
-    const base = new THREE.Vector3(Math.cos(a) * r, rand(-70, 60), Math.sin(a) * r);
-    mesh.position.copy(base);
-    mesh.rotation.set(rand(0, 3), rand(0, 3), rand(0, 3));
-    debris.push({ mesh, spin: rand(-0.06, 0.06), base, phase: Math.random() * 6 });
-    group.add(mesh);
+    const size = 3 + Math.random() * 8;
+    debris.push({
+      base: new THREE.Vector3(Math.cos(a) * r, rand(-70, 60), Math.sin(a) * r),
+      scale: new THREE.Vector3(
+        size * (1.5 + Math.random()),
+        size * (0.22 + Math.random() * 0.3),
+        size * (1.5 + Math.random()),
+      ),
+      rot: new THREE.Euler(rand(0, 3), rand(0, 3), rand(0, 3)),
+      spin: rand(-0.06, 0.06),
+      phase: Math.random() * 6,
+    });
   }
+  const slabMatrix = new THREE.Matrix4();
+  const slabQuat = new THREE.Quaternion();
+  const slabPos = new THREE.Vector3();
+  // Place them before the first frame, or 22 slabs sit on the origin for one.
+  debris.forEach((d, i) => {
+    slabQuat.setFromEuler(d.rot);
+    slabMatrix.compose(d.base, slabQuat, d.scale);
+    slabs.setMatrixAt(i, slabMatrix);
+  });
+  slabs.instanceMatrix.needsUpdate = true;
+  group.add(slabs);
 
   const sun = new THREE.DirectionalLight(0xfff2dd, 2.6);
   sun.position.copy(sunDir.clone().multiplyScalar(200));
@@ -211,10 +239,15 @@ export function buildSky(): SkyKit {
     (cloudSea.material as THREE.ShaderMaterial).uniforms.uTime.value = t;
     // The dome tracks the camera so the far plane never clips it.
     group.position.set(camera.position.x * 0.9, 0, camera.position.z * 0.9);
-    for (const d of debris) {
-      d.mesh.rotation.y += d.spin * dt;
-      d.mesh.position.y = d.base.y + Math.sin(t * 0.22 + d.phase) * 2.4;
+    for (let i = 0; i < debris.length; i++) {
+      const d = debris[i];
+      d.rot.y += d.spin * dt;
+      slabQuat.setFromEuler(d.rot);
+      slabPos.set(d.base.x, d.base.y + Math.sin(t * 0.22 + d.phase) * 2.4, d.base.z);
+      slabMatrix.compose(slabPos, slabQuat, d.scale);
+      slabs.setMatrixAt(i, slabMatrix);
     }
+    slabs.instanceMatrix.needsUpdate = true;
   };
 
   return { group, sun, update };
