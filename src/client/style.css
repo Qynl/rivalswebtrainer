@@ -1565,3 +1565,24 @@ button.ghost:hover {
 .armory-foot .note.warn {
   color: var(--ember);
 }
+
+/* Paid kill: a small coin that floats up from the reticle. */
+.coinpop {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 54px);
+  transform: translate(-50%, 0);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  color: var(--gold);
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85);
+  pointer-events: none;
+  animation: coinpop 1.05s ease-out forwards;
+}
+
+@keyframes coinpop {
+  0% { opacity: 0; transform: translate(-50%, 6px) scale(0.9); }
+  18% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -38px) scale(1); }
+}

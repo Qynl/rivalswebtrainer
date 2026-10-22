@@ -106,6 +106,15 @@ export class Hud {
     this.pause.classList.add('hidden');
   }
 
+  /** A small "+25 ◆" that floats up from the crosshair on a paid kill. */
+  coinPopup(amount: number): void {
+    const node = document.createElement('div');
+    node.className = 'coinpop';
+    node.textContent = `+${amount} ◆`;
+    this.root.appendChild(node);
+    window.setTimeout(() => node.remove(), 1100);
+  }
+
   /** Re-open the results screen (after the armory, for instance). */
   showResultsOnly(): void {
     this.results.classList.remove('hidden');

@@ -34,6 +34,7 @@ import {
   panelTexture,
   signTexture,
   cloudTexture,
+  deckStencilTexture,
   patternTexture,
 } from './textures.ts';
 
@@ -663,6 +664,28 @@ export class Renderer {
       new THREE.PointsMaterial({ color: 0xffffff, size: 0.12, transparent: true, opacity: 0.35, depthWrite: false }),
     );
     this.scene.add(this.floaters);
+
+    // Deck stencils: a numeral per big platform, flat on the concrete. They
+    // double as landmarks — "he is on 02" is a callout the map can support.
+    const decks = this.arena.blocks.filter((b) => b.kind === 'deck' && b.hx >= 5 && b.hz >= 5).slice(0, 6);
+    decks.forEach((b, i) => {
+      const label = String(i + 1).padStart(2, '0');
+      const mat = new THREE.MeshStandardMaterial({
+        map: deckStencilTexture(label),
+        transparent: true,
+        roughness: 0.9,
+        metalness: 0,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -3,
+      });
+      const size = Math.min(b.hx, b.hz) * 1.35;
+      const plane = new THREE.Mesh(new THREE.PlaneGeometry(size, size), mat);
+      plane.rotation.x = -Math.PI / 2;
+      plane.position.set(b.x, b.y + b.hy + 0.03, b.z);
+      plane.renderOrder = 1;
+      this.scene.add(plane);
+    });
 
     // The void gets a floor. A sea of cloud far below the kill line turns
     // looking down from a high deck into a view instead of an empty fog bank.
@@ -1449,8 +1472,9 @@ export class Renderer {
 
   /** Sparks at the bite point. */
   hookHit(pos: Vec3): void {
-    this.particles.burst(pos, 0xffe0a8, 16, { speed: 6, size: 0.12, life: 0.35, gravity: 8 });
-    this.waves.spawn(pos, 0xe6b264, 2.4, 0.3);
+    const trail = grappleSkin(this.look.grapple).trail;
+    this.particles.burst(pos, trail, 16, { speed: 6, size: 0.12, life: 0.35, gravity: 8 });
+    this.waves.spawn(pos, trail, 2.4, 0.3);
   }
 
   /**

@@ -335,7 +335,7 @@ export function signTexture(label: string, accent = '#c8b273'): THREE.Texture {
   ctx.restore();
   // Paint loss over the stencil.
   const img = ctx.getImageData(0, 0, w, h);
-  for (let i = 0; i < img.data.length; i += 4) {
+  for (let i = 0; i < img.data.length; i += 16) {
     if (img.data[i + 3] > 0 && Math.random() < 0.22) img.data[i + 3] *= 0.25;
   }
   ctx.putImageData(img, 0, 0);
@@ -474,6 +474,44 @@ export function patternTexture(pattern: string): THREE.Texture | null {
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(2, 2);
+  tex.anisotropy = 4;
+  return tex;
+}
+
+/**
+ * Deck stencils: a big worn numeral and a service arc, transparent so it can be
+ * laid flat on the concrete. Gives each platform an identity and a landmark.
+ */
+export function deckStencilTexture(label: string): THREE.Texture {
+  const size = 512;
+  const [c, ctx] = canvas(size, size);
+  ctx.clearRect(0, 0, size, size);
+
+  ctx.strokeStyle = 'rgba(232, 214, 168, 0.5)';
+  ctx.lineWidth = 10;
+  ctx.beginPath();
+  ctx.arc(size / 2, size / 2, size * 0.38, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.fillStyle = 'rgba(240, 228, 198, 0.62)';
+  ctx.font = 'bold 210px ui-sans-serif, system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, size / 2, size / 2 - 6);
+
+  ctx.font = 'bold 34px ui-monospace, monospace';
+  ctx.fillStyle = 'rgba(240, 228, 198, 0.42)';
+  ctx.fillText('GLINTSPIRE', size / 2, size / 2 + 128);
+
+  // Wear: punch holes in the paint so it reads as stencilled on old concrete.
+  const img = ctx.getImageData(0, 0, size, size);
+  for (let i = 0; i < img.data.length; i += 16) {
+    if (img.data[i + 3] > 0 && Math.random() < 0.3) img.data[i + 3] *= 0.3;
+  }
+  ctx.putImageData(img, 0, 0);
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
   return tex;
 }

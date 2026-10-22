@@ -575,6 +575,7 @@ class Game {
       this.hud.feedLine(`YOU KILLED ${this.net.opponentName}`, 'me');
       this.renderer.shatter(msg.victimAt, SKINS[1 - me].color);
       this.matchKills += 1;
+      this.hud.coinPopup(ECONOMY.killCoins);
       const fx = killEffect(this.progress.state.loadout.effect);
       this.renderer.killBurst(msg.victimAt, fx.id, 1);
       this.sfx.killFx(fx.sound);
@@ -635,6 +636,9 @@ class Game {
     if (rewardLevel) rewardLevel.textContent = `LV ${payout.after.level}`;
     if (rewardLevelNote) {
       rewardLevelNote.textContent = payout.after.level > payout.before.level ? `LEVEL UP +${payout.bonus}` : 'LEVEL';
+    }
+    if (payout.after.level > payout.before.level) {
+      this.hud.bannerText(`LEVEL ${payout.after.level}`, 'me', 2600);
     }
     this.refreshProfile();
     this.sfx.hitmarker(won);
