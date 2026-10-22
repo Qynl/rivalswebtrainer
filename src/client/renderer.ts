@@ -3210,17 +3210,21 @@ export class Renderer {
     // ── Arms ───────────────────────────────────────────────────────────────
     // The grip is a cross-body hold on the rifle; running swings the arms
     // against the legs, and a swing puts both hands up the cable.
+    // The right arm bends at the elbow onto the grip; the left reaches out
+    // along the handguard. Both are one rotation per axis, but they converge on
+    // the weapon, which is what separates "holding a rifle" from "arms up".
     const scope = clamp((s.scopeT - 0.35) / 0.65, 0, 1);
     const counter = Math.sin(a.phase) * 0.4 * a.run;
-    const rightAim = 0.95 + scope * 0.16 + counter;
-    const leftAim = 1.16 + scope * 0.12 - counter;
+    const rightAim = 0.74 + scope * 0.18 + counter;
+    const leftAim = 1.22 + scope * 0.1 - counter;
     const rightArm = lerp(lerp(rightAim, 2.3, swing), rightAim, zip);
     const leftArm = lerp(lerp(leftAim, 1.85, swing), leftAim, zip);
     v.arms[0].rotation.x = lerp(leftArm, -0.35, slide);
     v.arms[1].rotation.x = lerp(rightArm, -0.3, slide);
-    // Splay: elbows out in the air, tucked in a slide.
-    v.arms[0].rotation.z = -0.14 - air * 0.42 - swing * 0.3 + slide * 0.25;
-    v.arms[1].rotation.z = 0.14 + air * 0.42 + swing * 0.3 - slide * 0.25;
+    // Across the body on the grip; elbows out and wide in the air, tucked in a
+    // slide, both hands up the cable in a swing.
+    v.arms[0].rotation.z = lerp(0.3, -0.45, air) + swing * 0.22 - slide * 0.2;
+    v.arms[1].rotation.z = lerp(-0.1, 0.45, air) - swing * 0.22 + slide * 0.2;
 
     // ── Weapon ─────────────────────────────────────────────────────────────
     // Drawing is a physical motion: the item drops out of the hand and the new
