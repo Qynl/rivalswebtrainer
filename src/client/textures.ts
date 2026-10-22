@@ -343,3 +343,47 @@ export function signTexture(label: string, accent = '#c8b273'): THREE.Texture {
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
+
+/**
+ * A sea of cloud far below the arena. Without it the void reads as an empty
+ * fog bank; with it the map reads as being high up, which is the whole pitch.
+ */
+export function cloudTexture(): THREE.Texture {
+  const size = 512;
+  const [c, ctx] = canvas(size, size);
+  ctx.fillStyle = 'rgba(0,0,0,0)';
+  ctx.fillRect(0, 0, size, size);
+  // Soft banks of vapour, densest in the middle of each tile.
+  for (let i = 0; i < 190; i++) {
+    const x = Math.random() * size;
+    const y = Math.random() * size;
+    const r = 26 + Math.random() * 96;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    const bright = 232 + Math.random() * 22;
+    g.addColorStop(0, `rgba(${bright},${bright + 3},${bright + 8},${0.1 + Math.random() * 0.22})`);
+    g.addColorStop(0.55, `rgba(${bright - 26},${bright - 22},${bright - 14},0.08)`);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  // Wrap the edges so the tile blends into its neighbours.
+  const img = ctx.getImageData(0, 0, size, size);
+  const w = size;
+  const data = img.data;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const fx = Math.min(1, Math.min(x, w - 1 - x) / 48);
+      const fy = Math.min(1, Math.min(y, size - 1 - y) / 48);
+      const k = Math.max(fx, fy);
+      const i = (y * size + x) * 4 + 3;
+      data[i] = data[i] * k;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(9, 9);
+  tex.anisotropy = 4;
+  return tex;
+}

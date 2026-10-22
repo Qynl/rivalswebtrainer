@@ -32,6 +32,7 @@ import {
   metalTexture,
   panelTexture,
   signTexture,
+  cloudTexture,
 } from './textures.ts';
 
 export interface RemoteView {
@@ -618,6 +619,49 @@ export class Renderer {
       new THREE.PointsMaterial({ color: 0xffffff, size: 0.12, transparent: true, opacity: 0.35, depthWrite: false }),
     );
     this.scene.add(this.floaters);
+
+    // The void gets a floor. A sea of cloud far below the kill line turns
+    // looking down from a high deck into a view instead of an empty fog bank.
+    const clouds = new THREE.Mesh(
+      new THREE.PlaneGeometry(2400, 2400),
+      new THREE.MeshBasicMaterial({
+        map: cloudTexture(),
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.92,
+        depthWrite: false,
+        fog: true,
+      }),
+    );
+    clouds.rotation.x = -Math.PI / 2;
+    clouds.position.y = -66;
+    clouds.renderOrder = 2;
+    clouds.name = 'cloudsea';
+    this.scene.add(clouds);
+
+    // Broken slabs drifting well outside the play space: parallax, scale and a
+    // reminder that this ruin is a fragment of something much bigger.
+    const debris: THREE.BufferGeometry[] = [];
+    for (let i = 0; i < 18; i++) {
+      const a = (i / 18) * Math.PI * 2 + i * 0.37;
+      const r = 118 + (i % 6) * 20;
+      const y = -20 + ((i * 41) % 84);
+      const sc = 3 + (i % 4) * 2.6;
+      const g = new THREE.BoxGeometry(sc * 2, sc * 0.62, sc * 1.5);
+      g.rotateY(i * 0.71);
+      g.rotateX(0.18 + (i % 3) * 0.1);
+      g.rotateZ(0.09 + (i % 5) * 0.05);
+      g.translate(Math.cos(a) * r, y, Math.sin(a) * r);
+      debris.push(g);
+    }
+    const rocks = new THREE.Mesh(
+      mergeGeometries(debris),
+      new THREE.MeshStandardMaterial({ map: stone, color: 0xcfcabd, roughness: 0.96, metalness: 0.02 }),
+    );
+    rocks.name = 'debris';
+    rocks.castShadow = false;
+    rocks.receiveShadow = false;
+    this.scene.add(rocks);
   }
 
   private buildPlayers(): void {
