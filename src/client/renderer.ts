@@ -2537,6 +2537,8 @@ export class Renderer {
   recoil(): void {
     this.weaponRecoil = 1;
     this.weaponKick = 1;
+    // The body in the world kicks with the rifle in your hands.
+    this.shotKick(this.localIndex);
     // The flash carries the kit's own light: an Aurum round burns gold, an
     // Obsidian round burns low and hot. Identical recoil, different signature.
     const gs = gunSkin(this.look.gun);
@@ -2646,6 +2648,19 @@ export class Renderer {
       this.camera.position.x += (Math.random() - 0.5) * this.shakeAmt;
       this.camera.position.y += (Math.random() - 0.5) * this.shakeAmt;
       this.camera.rotateZ((Math.random() - 0.5) * this.shakeAmt * 0.6);
+    }
+
+    // Head bob runs off the character's own gait phase, so the camera and the
+    // legs are one motion instead of two sines that drift apart. It is the
+    // cheapest thing that separates "gliding" from "running".
+    {
+      const gait = this.players[local.id]?.anim;
+      if (gait) {
+        const jog = local.grounded ? clamp((local.speed - 1) / 10, 0, 1) : 0;
+        const dip = gait.squash * 0.11;
+        this.camera.translateY(Math.sin(gait.phase * 2) * 0.032 * jog - dip);
+        this.camera.translateX(Math.cos(gait.phase) * 0.022 * jog);
+      }
     }
 
     // FOV: speed is the single strongest "feels fast" cue.
@@ -2930,12 +2945,21 @@ export class Renderer {
     const lifted = Math.sin(Math.min(1, (1 - cycle) * 2) * Math.PI);
     this.boltGroup.rotation.x = -lifted * 1.15;
     this.boltGroup.position.z = -0.14 + lifted * 0.06;
-    // Spool pays out while the claw is away.
+    // Spool: pays out while the claw is away, and keeps turning while the rope
+    // is loaded, because a reel under tension is never still.
     this.hookKick = Math.max(0, this.hookKick - dt * 6);
-    this.spool.rotation.x += dt * (local.hook.active ? 26 : 0) + this.hookKick * dt * 40;
+    const paying = local.hook.active ? 1 : local.grapple.active ? 0.5 : 0;
+    this.spool.rotation.x += dt * (26 * paying) + this.hookKick * dt * 40;
     // One claw, one place: while it is out the launcher's cradle is empty.
     const clawAway = local.hook.active || local.grapple.active;
     this.readyClaw.visible = !clawAway;
+    if (!clawAway) {
+      // Cradle claw: a slow idle spin and a breath, so the grapnel looks armed
+      // rather than moulded onto the model.
+      this.readyClaw.rotation.z += dt * (local.slot === 1 ? 0.7 : 0.15);
+      const arm = 1 + Math.sin(this.time * 2.2) * 0.02;
+      this.readyClaw.scale.set(arm, arm, arm);
+    }
     this.grapnelModel.position.z = this.hookKick * 0.07;
 
     // ── Skin motion ────────────────────────────────────────────────────────
