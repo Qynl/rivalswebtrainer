@@ -388,6 +388,41 @@ interface HookHit {
 }
 
 /**
+ * Curves a claw that is already flying toward a pinion it nearly hit.
+ *
+ * Pure geometry and no randomness, so the server replaying the same inputs
+ * lands on the same bite point as the client's prediction. The cone is
+ * generous but the convergence rate is slow (a few frames), which reads as
+ * the claw *reaching* rather than teleporting onto the target.
+ */
+function assistHookDir(from: Vec3, dir: Vec3, arena: Arena, dt: number): Vec3 {
+  const cone = Math.cos((GRAPPLE.assistDeg * Math.PI) / 180);
+  let bestDot = cone;
+  let best: Vec3 | null = null;
+  let bestLen = 1;
+  for (const a of arena.anchors) {
+    const d = sub(a, from);
+    const dist = len(d);
+    if (dist < 3 || dist > GRAPPLE.range + 8) continue;
+    const dot = (d.x * dir.x + d.y * dir.y + d.z * dir.z) / dist;
+    if (dot > bestDot) {
+      bestDot = dot;
+      best = d;
+      bestLen = dist;
+    }
+  }
+  if (!best) return dir;
+  // Exponential convergence: the claw bends over a handful of frames instead
+  // of snapping, and a throw at the edge of the cone barely bends at all.
+  const centred = (bestDot - cone) / Math.max(1e-3, 1 - cone);
+  const k = (1 - Math.exp(-GRAPPLE.assistRate * dt)) * (0.35 + 0.65 * clamp(centred, 0, 1));
+  const tx = best.x / bestLen;
+  const ty = best.y / bestLen;
+  const tz = best.z / bestLen;
+  return norm(v3(dir.x + (tx - dir.x) * k, dir.y + (ty - dir.y) * k, dir.z + (tz - dir.z) * k));
+}
+
+/**
  * One tick of claw travel: a swept segment against the world, the anchor
  * pinions and the opponent's capsule. Nothing here is random, so the server
  * and the client always agree about where the hook bites.
@@ -535,6 +570,7 @@ export function stepPlayer(
   // ── Claw in flight ───────────────────────────────────────────────────────
   if (hook.active) {
     hook.time += dt;
+    hook.dir = assistHookDir(hook.pos, hook.dir, arena, dt);
     const step = GRAPPLE.hookSpeed * dt;
     const hit = sweepHook(phys, hook.pos, hook.dir, step, opponent, arena, p.id);
     if (hit) {

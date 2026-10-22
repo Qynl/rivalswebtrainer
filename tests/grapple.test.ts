@@ -251,4 +251,32 @@ describe('grapple', () => {
     }
     expect(found).toBe(true);
   });
+
+  it('bends a near miss onto a pinion, and leaves a wild throw alone', async () => {
+    const { makeWorld } = await import('./helpers.ts');
+    const ONE: Arena = {
+      blocks: [],
+      anchors: [{ x: 0, y: 70, z: 0 }],
+      spawns: [],
+      center: { x: 0, y: 0, z: 0 },
+      voidY: -1000,
+    };
+    // Empty world on purpose: the only thing the claw can bite is the pinion.
+    const phys = await makeWorld(ONE);
+    const throwFrom = (offDeg: number): PlayerState => {
+      const p = airPlayer(0, 30, 40);
+      aim(p, { x: 0, y: 70, z: 0 });
+      p.yaw += (offDeg * Math.PI) / 180;
+      p.slot = 1;
+      for (let i = 0; i < 30 && !p.grapple.active; i++) {
+        stepPlayer(p, { seq: i + 1, keys: KEY.fire, yaw: p.yaw, pitch: p.pitch }, DT, phys, ONE, null, []);
+      }
+      return p;
+    };
+
+    // 8 degrees off a 56 m throw is a ~7 m miss without the claw's curve.
+    expect(throwFrom(8).grapple.active).toBe(true);
+    // But the assist must never rescue a throw aimed somewhere else entirely.
+    expect(throwFrom(20).grapple.active).toBe(false);
+  });
 });

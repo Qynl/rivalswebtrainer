@@ -101,6 +101,13 @@ export const GRAPPLE = {
    *  instant but still lets you see the throw. */
   hookSpeed: 170,
   hookMaxTime: 0.5,
+  /** The claw forgives the last few degrees of a throw: inside this cone it
+   *  curves onto the nearest pinion instead of sailing past it. It cannot
+   *  invent a target you were not already pointing near, it is pure geometry
+   *  (identical on both machines) and it is identical for both players. */
+  assistDeg: 12,
+  /** Convergence rate of that curve (1/s per tick). Low enough to see it bend. */
+  assistRate: 13,
   /** Time of a "quick" click after the hook bites, before it becomes a swing. */
   /** Rope length blends so a moving opponent doesn't teleport-yank you. */
   opponentElastic: 0.9,

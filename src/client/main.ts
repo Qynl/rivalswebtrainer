@@ -22,6 +22,7 @@ import type { PlayerSnap, ServerMsg, Snapshot } from '../shared/protocol.ts';
 import {
   clonePlayerState,
   createPlayer,
+  findGrappleTarget,
   KEY,
   lookOf,
   respawnPlayer,
@@ -677,6 +678,7 @@ class Game {
       // Hitstop freezes the picture, never the simulation.
       const visDt = this.hitstop > 0 ? 0 : dt;
       if (this.hitstop > 0) this.hitstop -= dt;
+      this.updateGrappleAim();
       this.renderer.update(visDt, {
         local: this.local,
         eye: {
@@ -849,6 +851,7 @@ class Game {
           this.sfx.attach(sp.distance, sp.pan * 0.4);
           this.renderer.shake(0.014);
           this.renderer.punch(-0.01, 0);
+          this.renderer.fovPulse(e.strength > 0.6 ? 5 : 3);
           if (this.local.grapple.target === 1) this.hud.bannerText('HOOKED THE OPPONENT', 'me', 900);
           break;
         }
@@ -861,6 +864,7 @@ class Game {
         case 'boost':
           this.sfx.release(e.strength);
           this.renderer.shake(0.02 * e.strength);
+          this.renderer.fovPulse(7 * e.strength);
           this.renderer.punch(-0.018 * e.strength, 0);
           break;
         case 'chain':
@@ -887,9 +891,25 @@ class Game {
           break;
         case 'hookMiss':
           this.sfx.hookMiss();
+          // Reel the empty claw back to the hand rather than blinking it out.
+          this.renderer.retractHook(0, this.local.hook.pos);
           break;
       }
     }
+  }
+
+  /**
+   * Feeds the world-space grapnel reticle. Recomputed every frame because the
+   * answer changes with a single degree of aim, which is exactly the feedback
+   * the player needs before committing a throw.
+   */
+  private updateGrappleAim(): void {
+    if (!this.local.alive || this.local.slot !== 1 || this.local.hook.active) {
+      this.renderer.setGrappleAim(null);
+      return;
+    }
+    const target = findGrappleTarget(this.phys, this.local.eye, lookOf(this.local), this.remoteSim, ARENA, this.local.id);
+    this.renderer.setGrappleAim(target ? target.point : null, target?.target === 1);
   }
 
   private updateRemote(): void {

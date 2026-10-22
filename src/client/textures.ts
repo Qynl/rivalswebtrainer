@@ -515,3 +515,48 @@ export function deckStencilTexture(label: string): THREE.Texture {
   tex.anisotropy = 4;
   return tex;
 }
+
+/**
+ * A target reticle that lives in the world: a dashed ring with four ticks and
+ * a hollow centre. Used for the grapnel's aim assist marker, so the player can
+ * see exactly which pinion the claw is going to bite before throwing it.
+ */
+export function aimRingTexture(): THREE.Texture {
+  const size = 256;
+  const [c, ctx] = canvas(size, size);
+  ctx.clearRect(0, 0, size, size);
+  ctx.translate(size / 2, size / 2);
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineCap = 'round';
+
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  for (let i = 0; i < 16; i++) {
+    if (i % 2 !== 0) continue;
+    const a0 = (i / 16) * Math.PI * 2;
+    const a1 = ((i + 1) / 16) * Math.PI * 2;
+    ctx.arc(0, 0, size * 0.4, a0, a1);
+  }
+  ctx.stroke();
+
+  // Four ticks pointing at the centre, so the marker reads as a sight.
+  ctx.lineWidth = 7;
+  for (let i = 0; i < 4; i++) {
+    ctx.save();
+    ctx.rotate((i / 4) * Math.PI * 2);
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 0.27);
+    ctx.lineTo(0, -size * 0.17);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(0, 0, size * 0.045, 0, Math.PI * 2);
+  ctx.fill();
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}

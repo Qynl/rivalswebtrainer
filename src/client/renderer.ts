@@ -33,6 +33,7 @@ import {
   metalTexture,
   panelTexture,
   signTexture,
+  aimRingTexture,
   cloudTexture,
   deckStencilTexture,
   patternTexture,
@@ -238,15 +239,23 @@ function shadeBlocks(geo: THREE.BufferGeometry): void {
   const pos = geo.getAttribute('position');
   const nrm = geo.getAttribute('normal');
   const colors = new Float32Array(pos.count * 3);
+  // The sun sits in the -x/-z quadrant and above, so a face's dot product with
+  // it is a free, per-vertex bounce-light term: sunlit concrete goes warm and
+  // slightly hot, shaded faces pick up the cool sky and sit lower. This is
+  // baked into vertex colours, so it costs nothing at runtime and it is what
+  // stops the whole map reading as one flat grey material.
+  const sun = new THREE.Vector3(-0.46, 0.62, -0.62).normalize();
   for (let i = 0; i < pos.count; i++) {
     const ny = nrm.getY(i);
     const y = pos.getY(i);
-    let v = ny > 0.5 ? 1 : ny < -0.5 ? 0.52 : 0.8;
-    v *= 0.88 + clamp((y + 12) / 130, 0, 1) * 0.16;
-    // A hint of warm light from the sun side, cool bounce in the shade.
-    colors[i * 3] = clamp(v * 1.01, 0, 1);
-    colors[i * 3 + 1] = clamp(v, 0, 1);
-    colors[i * 3 + 2] = clamp(v * 0.97, 0, 1);
+    const facing = nrm.getX(i) * sun.x + ny * sun.y + nrm.getZ(i) * sun.z;
+    let v = ny > 0.5 ? 1 : ny < -0.5 ? 0.5 : 0.78;
+    v *= 0.87 + clamp((y + 12) / 130, 0, 1) * 0.15;
+    v *= 1 + clamp(facing, -1, 1) * 0.07;
+    const cool = clamp(-facing, 0, 1) * 0.05;
+    colors[i * 3] = clamp(v * 1.02 - cool * 0.4, 0, 1);
+    colors[i * 3 + 1] = clamp(v - cool * 0.1, 0, 1);
+    colors[i * 3 + 2] = clamp(v * 0.96 + cool * 0.9, 0, 1);
   }
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 }
@@ -314,6 +323,21 @@ export class Renderer {
   private slotBlend = 0;
   private hookKick = 0;
   private hookHeads: THREE.Group[] = [];
+  /** A bead that runs down the cable while the reels are turning. */
+  private ropePulses: THREE.Sprite[] = [];
+  /** Halo where the claw bit: proves the bite point to both players. */
+  private biteHalos: THREE.Sprite[] = [];
+  /** World-space marker for the pinion the claw would bite right now. */
+  private aimMark: THREE.Sprite | null = null;
+  private aimTarget: { point: Vec3; onPlayer: boolean } | null = null;
+  private moteAcc = 0;
+  /** A short FOV punch: the lens equivalent of a flinch, used on hook catches. */
+  private fovPunch = 0;
+  /** Claws whipping back to the hand after a miss, so nothing blinks out. */
+  private hookRetract: { t: number; from: Vec3 }[] = [
+    { t: 1, from: { x: 0, y: 0, z: 0 } },
+    { t: 1, from: { x: 0, y: 0, z: 0 } },
+  ];
   private hookClaw: number[] = [0, 0];
   private viewmodelSkin = -1;
   /** Cosmetic kit for the local player and the opponent. Purely visual. */
@@ -477,36 +501,6 @@ export class Renderer {
 
     this.buildStructure();
 
-    // Painted edge markings on every deck: the cheapest readability win there
-    // is, and the reason you can see a ledge coming at 40 m.
-    const edges: THREE.Matrix4[] = [];
-    for (const b of this.arena.blocks) {
-      if (b.kind !== 'deck' || b.hx < 2.2 || b.hz < 2.2) continue;
-      const y = b.y + b.hy + 0.014;
-      const w = 0.26;
-      const place = (x: number, z: number, sx: number, sz: number): void => {
-        edges.push(
-          new THREE.Matrix4().compose(
-            new THREE.Vector3(x, y, z),
-            new THREE.Quaternion(),
-            new THREE.Vector3(sx, 0.02, sz),
-          ),
-        );
-      };
-      place(b.x, b.z - b.hz + w / 2, b.hx * 2 - w, w);
-      place(b.x, b.z + b.hz - w / 2, b.hx * 2 - w, w);
-      place(b.x - b.hx + w / 2, b.z, w, b.hz * 2 - w * 2);
-      place(b.x + b.hx - w / 2, b.z, w, b.hz * 2 - w * 2);
-    }
-    if (edges.length) {
-      const paint = new THREE.MeshStandardMaterial({ color: 0xd9b23f, roughness: 0.72, metalness: 0.06 });
-      const stripes = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), paint, edges.length);
-      edges.forEach((m, i) => stripes.setMatrixAt(i, m));
-      stripes.instanceMatrix.needsUpdate = true;
-      stripes.name = 'deck-edges';
-      this.scene.add(stripes);
-    }
-
     // Painted safety yellow along every deck rim. It is the clearest "this is
     // an edge" cue in the scene, and it costs one instanced draw call.
     const hazard: THREE.Matrix4[] = [];
@@ -532,8 +526,17 @@ export class Renderer {
     if (hazard.length) {
       const paint = new THREE.MeshStandardMaterial({ color: 0xd8b23c, roughness: 0.78, metalness: 0.05 });
       const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), paint, hazard.length);
-      hazard.forEach((m, i) => inst.setMatrixAt(i, m));
+      const tint = new THREE.Color();
+      hazard.forEach((m, i) => {
+        inst.setMatrixAt(i, m);
+        // Paint wears unevenly: a per-strip brightness wobble (deterministic,
+        // so the map looks the same on both machines) beats a flat yellow line.
+        const k = 0.82 + ((Math.sin(i * 12.9898) * 43758.5453) % 1 + 1) % 1 * 0.3;
+        tint.setHex(0xd8b23c).multiplyScalar(k);
+        inst.setColorAt(i, tint);
+      });
       inst.instanceMatrix.needsUpdate = true;
+      if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
       inst.receiveShadow = true;
       this.scene.add(inst);
     }
@@ -600,13 +603,28 @@ export class Renderer {
       this.scene.add(inst);
     }
 
-    // Signage on the walls: crisp stencilled plates.
+    // Signage on the walls: crisp stencilled plates, merged per label so the
+    // whole map's signage costs two draw calls instead of two per wall.
     const sign = signTexture('SECTOR 07', '#c9b275');
     const sign2 = signTexture('NO ANCHOR', '#b9c3cc');
-    for (const [i, b] of this.arena.blocks.entries()) {
-      if (b.kind !== 'wall' || b.hx < 2) continue;
-      const mat = new THREE.MeshStandardMaterial({
-        map: i % 4 === 0 ? sign2 : sign,
+    const plates: Record<string, THREE.BufferGeometry[]> = { a: [], b: [] };
+    this.arena.blocks.forEach((b, i) => {
+      if (b.kind !== 'wall' || b.hx < 2) return;
+      const w = Math.min(7, b.hx * 1.9);
+      const h = Math.min(3.4, b.hy * 1.5);
+      const key = i % 4 === 0 ? 'b' : 'a';
+      for (const side of [1, -1]) {
+        const g = new THREE.PlaneGeometry(w, h);
+        const m = new THREE.Matrix4()
+          .makeRotationY(side === 1 ? 0 : Math.PI)
+          .setPosition(b.x, b.y + b.hy * 0.2, b.z + side * (b.hz + 0.03));
+        g.applyMatrix4(m);
+        plates[key].push(g);
+      }
+    });
+    const plateMat = (map: THREE.Texture): THREE.MeshStandardMaterial =>
+      new THREE.MeshStandardMaterial({
+        map,
         transparent: true,
         roughness: 0.9,
         metalness: 0.02,
@@ -614,16 +632,8 @@ export class Renderer {
         polygonOffset: true,
         polygonOffsetFactor: -2,
       });
-      const w = Math.min(7, b.hx * 1.9);
-      const h = Math.min(3.4, b.hy * 1.5);
-      const plane = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
-      plane.position.set(b.x, b.y + b.hy * 0.2, b.z + b.hz + 0.03);
-      this.scene.add(plane);
-      const back = plane.clone();
-      back.position.z = b.z - b.hz - 0.03;
-      back.rotation.y = Math.PI;
-      this.scene.add(back);
-    }
+    if (plates.a.length) this.scene.add(new THREE.Mesh(mergeGeometries(plates.a), plateMat(sign)));
+    if (plates.b.length) this.scene.add(new THREE.Mesh(mergeGeometries(plates.b), plateMat(sign2)));
 
     // Anchor pinions: warm brass markers, small and physical, not glowing orbs.
     const anchorGeo = new THREE.CylinderGeometry(0.34, 0.42, 0.5, 8);
@@ -924,6 +934,26 @@ export class Renderer {
       this.scene.add(sheath);
 
       this.ropes.push({ line, geo, mat, sheath, sheathGeo, sheathMat });
+
+      // A travelling bead makes the cable read as a live mechanism: it runs
+      // from the hand to the claw while the spool is paying out or reeling in.
+      const pulse = new THREE.Sprite(
+        new THREE.SpriteMaterial({ map: this.glow, color: SKINS[i].color, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }),
+      );
+      pulse.scale.setScalar(1.5);
+      pulse.visible = false;
+      this.scene.add(pulse);
+      this.ropePulses.push(pulse);
+
+      // Where the claw bit: a soft halo so a rope in the sky has a near end
+      // and a far end, not just a line into fog.
+      const halo = new THREE.Sprite(
+        new THREE.SpriteMaterial({ map: this.glow, color: SKINS[i].color, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }),
+      );
+      halo.scale.setScalar(4.2);
+      halo.visible = false;
+      this.scene.add(halo);
+      this.biteHalos.push(halo);
       const head = buildGrapnel(i === 0 ? grappleSkin(DEFAULT_LOADOUT.grapple).claw : 0xc9a86a);
       // A hot little halo rides with the claw while it is in the air, so a
       // throw stays visible against the sky at any range.
@@ -937,6 +967,7 @@ export class Renderer {
       this.scene.add(head);
       this.hookHeads.push(head);
     }
+    this.buildAimMark();
   }
 
   /**
@@ -1350,6 +1381,34 @@ export class Renderer {
     rifle.add(box(0.055, 0.07, 0.03, blued, 0, -0.012, 0.25));
     // Rail slots along the receiver top.
     for (let i = 0; i < 3; i++) rifle.add(box(0.03, 0.008, 0.022, blued, 0, 0.072, -0.2 - i * 0.06));
+
+    // Folding bipod: two legs and a hinge block. It is the detail that most
+    // sells "this rifle was designed to be shot off a ledge".
+    rifle.add(box(0.05, 0.026, 0.07, gunmetal, 0, -0.042, -0.86));
+    for (const side of [-1, 1]) {
+      const leg = cyl(0.007, 0.007, 0.3, blued, side * 0.024, -0.16, -0.9);
+      leg.rotation.z = side * 0.22;
+      leg.rotation.x = 0.28;
+      rifle.add(leg);
+      rifle.add(box(0.024, 0.014, 0.04, polymer, side * 0.055, -0.3, -0.94));
+    }
+    // Sling swivels and a strap loop under the stock.
+    for (const z of [-0.62, 0.2]) {
+      const loop = new THREE.Mesh(new THREE.TorusGeometry(0.016, 0.005, 5, 10), brass);
+      loop.rotation.y = Math.PI / 2;
+      loop.position.set(-0.045, -0.05, z);
+      rifle.add(loop);
+    }
+    // Magnification ring with a throw lever, plus a parallax knob.
+    const magRing = new THREE.Mesh(new THREE.TorusGeometry(0.036, 0.007, 6, 18), polymer);
+    magRing.position.set(0, scopeY, -0.2);
+    magRing.rotation.y = Math.PI / 2;
+    rifle.add(magRing);
+    rifle.add(box(0.012, 0.02, 0.038, polymer, 0.03, scopeY + 0.026, -0.2));
+    rifle.add(cyl(0.012, 0.012, 0.026, blued, -0.04, scopeY - 0.006, -0.2, 'x'));
+    // Cheek-riser thumb screws and a bolt-body cover with a witness port.
+    for (const z of [0.02, 0.1]) rifle.add(cyl(0.009, 0.009, 0.012, brass, 0.03, 0.076, z, 'x'));
+    rifle.add(box(0.028, 0.014, 0.05, blued, 0.05, 0.016, -0.17));
     // Sling: two straps and a brass swivel.
     const slingA = box(0.014, 0.006, 0.5, sleeve, 0.055, -0.075, 0.03);
     slingA.rotation.x = 0.18;
@@ -1416,6 +1475,26 @@ export class Renderer {
     }
     grapnel.add(this.spool);
     grapnel.add(box(0.02, 0.05, 0.05, brass, 0.06, -0.035, -0.2));
+    // Fairlead: the cable is guided out through a ringed eye, so the spool and
+    // the muzzle read as one machine instead of two boxes.
+    for (const z of [-0.34, -0.47]) {
+      const eye = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.006, 5, 12), gunmetal);
+      eye.position.set(0, 0.045, z);
+      eye.rotation.x = Math.PI / 2;
+      grapnel.add(eye);
+    }
+    // Pressure gauge on the side, with a needle at the charged end.
+    grapnel.add(cyl(0.026, 0.026, 0.012, brass, -0.07, -0.005, -0.22, 'x'));
+    grapnel.add(box(0.004, 0.016, 0.003, blued, -0.077, 0.002, -0.222));
+    // Side braces and a spare claw clipped under the barrel.
+    for (const side of [-1, 1]) {
+      const brace = box(0.012, 0.012, 0.22, gunmetal, side * 0.058, 0.0, -0.33);
+      brace.rotation.z = side * 0.0;
+      grapnel.add(brace);
+    }
+    grapnel.add(box(0.05, 0.018, 0.07, brass, 0, -0.062, -0.4));
+    // Forearm brace: a wide yoke the off hand presses into.
+    grapnel.add(box(0.09, 0.02, 0.05, polymer, 0, -0.075, -0.13));
 
     // The resting claw, cradled and ready.
     const ready = buildGrapnel(gr.claw);
@@ -1471,6 +1550,16 @@ export class Renderer {
   }
 
   /** Sparks at the bite point. */
+  /** Widens the lens for a beat. Positive reads as a jolt of speed. */
+  fovPulse(deg: number): void {
+    this.fovPunch = Math.min(14, this.fovPunch + deg);
+  }
+
+  /** A missed claw flies back to the hand instead of vanishing at range. */
+  retractHook(index: number, from: Vec3): void {
+    this.hookRetract[index] = { t: 0, from: { ...from } };
+  }
+
   hookHit(pos: Vec3): void {
     const trail = grappleSkin(this.look.grapple).trail;
     this.particles.burst(pos, trail, 16, { speed: 6, size: 0.12, life: 0.35, gravity: 8 });
@@ -1485,6 +1574,32 @@ export class Renderer {
     const changed = look.gun !== this.look.gun || look.grapple !== this.look.grapple;
     this.look = { ...look };
     if (changed) this.rebuildViewmodel();
+  }
+
+  /** The reticle that shows which pinion the claw would bite. */
+  private buildAimMark(): void {
+    const sprite = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: aimRingTexture(),
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.9,
+        depthWrite: false,
+        depthTest: true,
+      }),
+    );
+    sprite.visible = false;
+    sprite.renderOrder = 4;
+    this.aimMark = sprite;
+    this.scene.add(sprite);
+  }
+
+  /**
+   * Where the claw would bite if the trigger were pulled now. Null hides the
+   * marker (wrong slot, no target, or the throw is out of range).
+   */
+  setGrappleAim(point: Vec3 | null, onPlayer = false): void {
+    this.aimTarget = point ? { point: { ...point }, onPlayer } : null;
   }
 
   /** The opponent's kit: rifle furniture, claw metal and cable colour. */
@@ -1638,7 +1753,8 @@ export class Renderer {
 
     // FOV: speed is the single strongest "feels fast" cue.
     const speedT = clamp(local.speed / 46, 0, 1);
-    const hipFov = WEAPON.baseFov + speedT * WEAPON.maxFovKick;
+    this.fovPunch *= Math.exp(-dt * 7);
+    const hipFov = WEAPON.baseFov + speedT * WEAPON.maxFovKick + this.fovPunch;
     const targetFov = lerp(hipFov, WEAPON.scopedFov, smoothstep(0.25, 1, local.scopeT));
     this.fov = lerp(this.fov, targetFov, 1 - Math.exp(-dt * 9));
     if (Math.abs(this.camera.fov - this.fov) > 0.01) {
@@ -1720,6 +1836,50 @@ export class Renderer {
       remoteRopeColor,
       dt,
     );
+
+    // ── Grapnel aim marker ─────────────────────────────────────────────────
+    // A ring that lives on the pinion the claw would bite. It is not a HUD
+    // element: it is sized in metres at the anchor, so it shrinks with range
+    // exactly like a real sight picture does.
+    if (this.aimMark) {
+      const show = !!this.aimTarget && local.alive && local.slot === 1 && !view.killcam && local.scopeT < 0.5;
+      this.aimMark.visible = show;
+      if (show && this.aimTarget) {
+        const at = this.aimTarget.point;
+        const d = Math.hypot(at.x - local.eye.x, at.y - local.eye.y, at.z - local.eye.z);
+        this.aimMark.position.set(at.x, at.y, at.z);
+        const onPlayer = this.aimTarget.onPlayer;
+        const breathe = 1 + Math.sin(this.time * (onPlayer ? 9 : 4.5)) * 0.05;
+        this.aimMark.scale.setScalar(clamp(d * 0.048, 0.6, 3) * breathe);
+        const mat = this.aimMark.material;
+        mat.color.setHex(onPlayer ? 0xff6a52 : grappleSkin(this.look.grapple).trail);
+        mat.rotation = this.time * (onPlayer ? 1.8 : 0.45);
+        mat.opacity = 0.62 + Math.sin(this.time * 6) * 0.12;
+      }
+    }
+
+    // Air off the cable: while a swing is carrying you, the fast air peels
+    // past in short motes tinted to the kit. Purely cosmetic, frame-rate safe.
+    this.moteAcc = 0;
+    if (local.grapple.active && local.grapple.mode === 'swing' && local.speed > 24) {
+      const k = clamp((local.speed - 24) / 36, 0, 1);
+      this.moteAcc += dt * (10 + 34 * k);
+      const trail = grappleSkin(this.look.grapple).trail;
+      const n = Math.min(8, Math.floor(this.moteAcc));
+      for (let i = 0; i < n; i++) {
+        this.particles.ember(
+          {
+            x: local.eye.x + (Math.random() - 0.5) * 1.6,
+            y: local.eye.y + (Math.random() - 0.5) * 1.6,
+            z: local.eye.z + (Math.random() - 0.5) * 1.6,
+          },
+          trail,
+          0.22,
+          0.3,
+        );
+      }
+      this.moteAcc -= n;
+    }
 
     // ── World effects ──────────────────────────────────────────────────────
     this.updateRing(view.ringRadius, view.ringActive, dt);
@@ -1837,13 +1997,41 @@ export class Renderer {
   private drawRope(index: number, from: Vec3, rope: RopeView | null, color: number, dt: number): void {
     const entry = this.ropes[index];
     const head = this.hookHeads[index];
+    const pulse = this.ropePulses[index];
+    const halo = this.biteHalos[index];
     if (!rope) {
       entry.line.visible = false;
       entry.sheath.visible = false;
-      head.visible = false;
-      this.hookClaw[index] = lerp(this.hookClaw[index], 0, 1 - Math.exp(-dt * 20));
+      pulse.visible = false;
+      halo.visible = false;
+      const back = this.hookRetract[index];
+      if (back.t < 1) {
+        back.t = Math.min(1, back.t + dt * 9);
+        const e = 1 - Math.pow(1 - back.t, 2.4);
+        head.visible = true;
+        head.position.set(
+          lerp(back.from.x, from.x, e),
+          lerp(back.from.y, from.y, e),
+          lerp(back.from.z, from.z, e),
+        );
+        head.lookAt(from.x, from.y, from.z);
+        head.rotateZ(dt * 14);
+        head.scale.setScalar(1 - 0.25 * e);
+        const mat = (head.getObjectByName('hookspark') as THREE.Sprite | undefined)?.material as
+          | THREE.SpriteMaterial
+          | undefined;
+        if (mat) {
+          mat.opacity = 0.4 * (1 - e);
+          (head.getObjectByName('hookspark') as THREE.Sprite).visible = mat.opacity > 0.02;
+        }
+        this.hookClaw[index] = lerp(this.hookClaw[index], 0.8, 1 - Math.exp(-dt * 12));
+      } else {
+        head.visible = false;
+        this.hookClaw[index] = lerp(this.hookClaw[index], 0, 1 - Math.exp(-dt * 20));
+      }
       return;
     }
+    this.hookRetract[index].t = 1;
 
     const dist = Math.hypot(rope.anchor.x - from.x, rope.anchor.y - from.y, rope.anchor.z - from.z);
     const slack = Math.max(0, rope.length - dist);
@@ -1875,6 +2063,37 @@ export class Renderer {
     entry.mat.linewidth = flight ? 1.1 : rope.mode === 'zip' ? 1.9 : 1.5;
     entry.mat.opacity = 0.9;
     entry.sheathMat.linewidth = flight ? 2.6 : rope.mode === 'zip' ? 5 : 4.2;
+    // The sheath takes the kit's colour too, darkened: a cable is part of the
+    // skin, not a black line drawn on top of it.
+    const sheathCol = new THREE.Color(clawSkin.rope).multiplyScalar(0.42);
+    entry.sheathMat.color.copy(sheathCol);
+    // Taut cable hums: the core widens and brightens as the reel loads up.
+    const tension = clamp(1 - slack / 3.2, 0, 1);
+    entry.mat.linewidth = (flight ? 1.1 : rope.mode === 'zip' ? 1.9 : 1.5) * (1 + tension * 0.35);
+
+    // Bead on the cable: pays out fast in flight, crawls while reeling in.
+    if (!flight) {
+      const speed = rope.mode === 'zip' ? 2.4 : 0.55;
+      const t = (this.time * speed + index * 0.37) % 1;
+      pulse.position.set(
+        from.x + (rope.anchor.x - from.x) * t,
+        from.y + (rope.anchor.y - from.y) * t - Math.sin(Math.PI * t) * sag,
+        from.z + (rope.anchor.z - from.z) * t,
+      );
+      pulse.material.color.setHex(clawSkin.trail);
+      pulse.material.opacity = 0.5 + 0.35 * tension;
+      pulse.scale.setScalar(1.1 + 0.6 * tension);
+      pulse.visible = true;
+    } else {
+      pulse.visible = false;
+    }
+
+    // The bite point glows, and breathes harder the more the rope is loaded.
+    halo.position.set(rope.anchor.x, rope.anchor.y, rope.anchor.z);
+    halo.material.color.setHex(clawSkin.trail);
+    halo.material.opacity = (flight ? 0.55 : 0.3 + tension * 0.35) * (0.85 + Math.sin(this.time * 9 + index) * 0.15);
+    halo.scale.setScalar((flight ? 2.6 : 3.4) + tension * 1.2);
+    halo.visible = true;
 
     // Claw: spins open in flight, snaps shut on the bite.
     head.visible = true;
