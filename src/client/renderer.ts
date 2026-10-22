@@ -1917,6 +1917,14 @@ export class Renderer {
   recoil(): void {
     this.weaponRecoil = 1;
     this.weaponKick = 1;
+    // The flash carries the kit's own light: an Aurum round burns gold, an
+    // Obsidian round burns low and hot. Identical recoil, different signature.
+    const gs = gunSkin(this.look.gun);
+    const heat = 0.55 + gs.anim.glow * 0.4;
+    const flashColor = new THREE.Color(0xffe6b4).lerp(new THREE.Color(gs.glow), heat * 0.5).getHex();
+    this.muzzle.material.color.setHex(flashColor);
+    this.muzzleFlare.material.color.setHex(flashColor);
+    this.muzzleLight.color.setHex(flashColor);
     this.fx.shells.eject(new THREE.Vector3(0.075, 0.02, -0.34));
     // Powder smoke drifts off the brake in world space, so it stays behind when
     // you turn instead of riding the camera like a decal.

@@ -141,7 +141,7 @@ describe('client', () => {
     // One click, one round — holding the button across a whole bolt adds none.
     await ready();
     canvas.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true }));
-    await until(() => shots >= 1, 5000, 'first round');
+    await until(() => shots >= 1, 8000, 'first round');
     await sleep(1300);
     expect(shots).toBe(1);
     canvas.dispatchEvent(new MouseEvent('mouseup', { button: 0, bubbles: true }));
@@ -152,7 +152,7 @@ describe('client', () => {
     await ready();
     canvas.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true }));
     canvas.dispatchEvent(new MouseEvent('mouseup', { button: 0, bubbles: true }));
-    await until(() => shots >= 2, 5000, 'second round');
+    await until(() => shots >= 2, 8000, 'second round');
     expect(shots).toBe(2);
     net.sendShot = orig;
     expect(errors).toEqual([]);

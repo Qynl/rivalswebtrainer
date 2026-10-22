@@ -65,6 +65,16 @@ const GradeShader = {
       }
       col /= total;
 
+      // Wind: thin radial streaks at the edges once you are genuinely fast.
+      // They are noise-gated, so they never form a pattern you can stare at,
+      // and they fade out in the middle where the shot has to be clean.
+      if (uSpeed > 0.18) {
+        float ang = atan(center.y, center.x);
+        float band = hash(vec2(floor(ang * 46.0), floor(r * 7.0 - uTime * 3.0)));
+        float streak = smoothstep(0.9, 1.0, band) * smoothstep(0.2, 0.6, r);
+        col += vec3(0.86, 0.93, 1.0) * streak * uSpeed * 0.5;
+      }
+
       // A whisper of chromatic aberration, mostly at the edges.
       float ca = (0.00018 + uSpeed * 0.0012 + uHurt * 0.0008) * (0.4 + r * 1.4);
       vec2 off = dir * ca;
