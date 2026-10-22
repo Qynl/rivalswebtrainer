@@ -347,6 +347,12 @@ export class Renderer {
   private glassMats: THREE.MeshStandardMaterial[] = [];
   private lastRemote: Vec3 | null = null;
   private ropeMoteAcc = [0, 0];
+  private readonly sunDir = new THREE.Vector3(-0.46, 0.62, -0.62).normalize();
+  private readonly sunScreen = new THREE.Vector2(0.5, 0.5);
+  private readonly sunProbe = new THREE.Vector3();
+  private readonly camForward = new THREE.Vector3();
+  /** 1 → 0 while the weapon is being turned over after a skin change. */
+  private inspect = 0;
   private readonly tint = new THREE.Color();
   private readonly warm = new THREE.Color(0xffcf8a);
   /** A short FOV punch: the lens equivalent of a flinch, used on hook catches. */
@@ -1782,7 +1788,12 @@ export class Renderer {
   applyLoadout(look: Loadout): void {
     const changed = look.gun !== this.look.gun || look.grapple !== this.look.grapple;
     this.look = { ...look };
-    if (changed) this.rebuildViewmodel();
+    if (changed) {
+      this.rebuildViewmodel();
+      // Bringing a new kit into the match should be seen, not silently swapped
+      // between frames: the viewmodel rolls over and settles.
+      this.inspect = 1;
+    }
   }
 
   /** The reticle that shows which pinion the claw would bite. */
@@ -2244,15 +2255,24 @@ export class Renderer {
     const bob = Math.sin(this.time * 9) * 0.005 * Math.min(1, bobSpeed / 8);
     const breathe = Math.sin(this.breath * 1.7) * 0.0022;
     const raise = smoothstep(0.55, 1, local.scopeT);
+    // Sprint: the rifle drops and cants across the body. It is the cheapest way
+    // to tell the player "you are running" without a speedometer.
+    const sprint = clamp((local.speed - 10) / 14, 0, 1) * (local.grounded ? 1 : 0.45);
+    const air = local.grounded ? 0 : clamp(-local.vel.y / 22, -0.5, 1);
+    // Inspect: a half turn of the wrist and a small rise, then it settles.
+    this.inspect = Math.max(0, this.inspect - dt * 1.6);
+    const insp = this.inspect * this.inspect * (3 - 2 * this.inspect);
+    const inspWave = Math.sin(insp * Math.PI);
+    const strafe = clamp((local.vel.x * Math.cos(local.yaw) - local.vel.z * Math.sin(local.yaw)) / 26, -1, 1);
     this.viewmodel.position.set(
-      0.22 + Math.sin(this.time * 4.2) * 0.003 + this.swayX - raise * 0.18,
-      -0.2 + bob + breathe + this.swayY - this.weaponKick * 0.025 - raise * 0.05,
-      -0.1 + this.weaponRecoil * 0.14,
+      0.22 + Math.sin(this.time * 4.2) * 0.003 + this.swayX - raise * 0.18 - sprint * 0.035 + strafe * 0.012,
+      -0.2 + bob + breathe + this.swayY - this.weaponKick * 0.025 - raise * 0.05 - sprint * 0.055 + air * 0.02 + inspWave * 0.03,
+      -0.1 + this.weaponRecoil * 0.14 + sprint * 0.05,
     );
     this.viewmodel.rotation.set(
-      this.weaponRecoil * 0.18 + this.weaponKick * 0.06 - this.swayY * 0.6,
-      -0.04 + Math.cos(this.time * 4.2) * 0.002 + this.swayX * 0.5,
-      this.weaponRecoil * 0.05,
+      this.weaponRecoil * 0.18 + this.weaponKick * 0.06 - this.swayY * 0.6 + sprint * 0.11 - inspWave * 0.35,
+      -0.04 + Math.cos(this.time * 4.2) * 0.002 + this.swayX * 0.5 - inspWave * 0.5,
+      this.weaponRecoil * 0.05 + sprint * 0.22 + strafe * 0.06 + inspWave * 0.9,
     );
     if (this.muzzle.visible) {
       this.muzzle.material.opacity = Math.max(0, this.muzzle.material.opacity - dt * 8);
@@ -2284,6 +2304,30 @@ export class Renderer {
       this.camera.lookAt(killer.x, killer.y, killer.z);
       this.camera.fov = lerp(this.camera.fov, 58, 1 - Math.exp(-dt * 6));
       this.camera.updateProjectionMatrix();
+    }
+
+    // Sun on screen: project the light direction and hand the grade pass a UV.
+    // The disc is at infinity, so only its direction matters.
+    {
+      this.camForward.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
+      const facing = this.camForward.dot(this.sunDir);
+      if (facing > 0.1) {
+        this.sunProbe.copy(this.camera.position).addScaledVector(this.sunDir, 1500);
+        this.sunProbe.project(this.camera);
+        this.sunScreen.set(this.sunProbe.x * 0.5 + 0.5, this.sunProbe.y * 0.5 + 0.5);
+        const edge = Math.max(
+          0,
+          Math.min(
+            1,
+            Math.min(this.sunScreen.x, 1 - this.sunScreen.x) * 3 + 0.35,
+          ),
+        ) * Math.max(0, Math.min(1, Math.min(this.sunScreen.y, 1 - this.sunScreen.y) * 3 + 0.35));
+        // Scoping dims it: an optic is looking at the target, not at the sky.
+        const scopeDim = 1 - local.scopeT * 0.85;
+        this.post.setSun(this.sunScreen, clamp(edge * Math.min(1, (facing - 0.1) * 2.4) * scopeDim, 0, 1));
+      } else {
+        this.post.setSun(this.sunScreen, 0);
+      }
     }
 
     const hurt = this.hurtFlash + (view.hurt ?? 0);

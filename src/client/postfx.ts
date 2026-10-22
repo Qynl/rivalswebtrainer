@@ -21,6 +21,8 @@ const GradeShader = {
     uHurt: { value: 0 },
     uFlash: { value: 0 },
     uFlashColor: { value: new THREE.Color(0xffd27a) },
+    uSun: { value: new THREE.Vector2(0.5, 0.5) },
+    uSunVis: { value: 0 },
     uResolution: { value: new THREE.Vector2(1, 1) },
   },
   vertexShader: /* glsl */ `
@@ -38,6 +40,8 @@ const GradeShader = {
     uniform float uHurt;
     uniform float uFlash;
     uniform vec3 uFlashColor;
+    uniform vec2 uSun;
+    uniform float uSunVis;
     uniform vec2 uResolution;
     varying vec2 vUv;
 
@@ -83,6 +87,18 @@ const GradeShader = {
 
       // Fine grain: keeps large flat surfaces from banding.
       col += (hash(uv * uResolution + uTime * 40.0) - 0.5) * 0.014;
+
+      // Sun: a warm halo and a thin anamorphic streak when the disc is on
+      // screen. No sprites, no extra pass: it is the grade pass doing double
+      // duty, and it only ever costs a few instructions.
+      if (uSunVis > 0.001) {
+        vec2 sp = uv - uSun;
+        sp.x *= uResolution.x / max(1.0, uResolution.y);
+        float sd = length(sp);
+        float halo = exp(-sd * 6.5) * 0.2 + exp(-sd * 2.2) * 0.06;
+        float streak = exp(-abs(sp.y) * 150.0) * exp(-abs(sp.x) * 1.8) * 0.16;
+        col += vec3(1.0, 0.87, 0.68) * uSunVis * (halo + streak);
+      }
 
       // Kill flash: a hot centre bloom that dies out fast. It is the frame the
       // kill lands on, and it has to read through the scope without whiting out
@@ -141,6 +157,12 @@ export class PostFX {
 
   private flashAmt = 0;
   private flashColor = new THREE.Color(0xffd27a);
+
+  /** Screen position of the sun in UV space, and how visible it is (0..1). */
+  setSun(uv: THREE.Vector2, visibility: number): void {
+    (this.grade.uniforms.uSun.value as THREE.Vector2).copy(uv);
+    this.grade.uniforms.uSunVis.value = visibility;
+  }
 
   /** A brief full-frame flash in a given colour. Used on kills only. */
   flash(color: number, amount = 0.15): void {
