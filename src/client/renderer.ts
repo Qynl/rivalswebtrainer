@@ -393,6 +393,9 @@ export class Renderer {
   private gunAnim = { sweep: 0, pulse: 0, glow: 0 };
   private glassMats: THREE.MeshStandardMaterial[] = [];
   private lastRemote: Vec3 | null = null;
+  /** The spire's rotating warning beacon: the map's one moving landmark. */
+  private beaconSweep: THREE.Group | null = null;
+  private beaconLamp: THREE.Sprite | null = null;
   private ropeMoteAcc = [0, 0];
   private readonly sunDir = new THREE.Vector3(-0.46, 0.62, -0.62).normalize();
   private readonly sunScreen = new THREE.Vector2(0.5, 0.5);
@@ -472,6 +475,7 @@ export class Renderer {
     this.sky = buildSky();
     this.sunLight = this.sky.sun;
     this.setupSunShadow();
+    this.buildEnvironment();
     this.scene.add(this.sky.group);
     this.buildArena();
     this.buildPlayers();
@@ -545,6 +549,32 @@ export class Renderer {
 
     this.post = new PostFX(this.renderer, this.scene, this.camera);
     this.resize();
+  }
+
+  /**
+   * Image-based lighting.
+   *
+   * Metal with no environment is black plastic: every chrome, brass and blued
+   * surface in this game was being lit only by a hemisphere light, which is
+   * why the rifle read as painted. Rendering the sky into a prefiltered
+   * environment map once costs a few milliseconds at boot and gives every
+   * metal on the map the actual sky, in the actual colours, in every highlight.
+   */
+  private buildEnvironment(): void {
+    try {
+      const pmrem = new THREE.PMREMGenerator(this.renderer);
+      const envScene = new THREE.Scene();
+      // Only the sky dome and its clouds: the arena would bake its own shadow.
+      envScene.add(this.sky.group.clone(true));
+      const env = pmrem.fromScene(envScene, 0, 1, 900);
+      this.scene.environment = env.texture;
+      // Dialled back so daylight stays directional: the sun still owns the
+      // shadows, this only fills the metal.
+      this.scene.environmentIntensity = 0.5;
+      pmrem.dispose();
+    } catch {
+      // A context that cannot render to a cube still gets the directional rig.
+    }
   }
 
   private buildLights(): void {
@@ -721,6 +751,63 @@ export class Renderer {
       inst.instanceMatrix.needsUpdate = true;
       inst.renderOrder = 1;
       this.scene.add(inst);
+    }
+
+    // ── The landmark ──────────────────────────────────────────────────────
+    // The spire crown gets a rotating warning beacon and a mast with guy wires.
+    // Everything on this map is static, so one moving light in the sky gives the
+    // whole arena a heartbeat and a direction you can orient by.
+    const crown = this.arena.blocks.find((b) => b.kind === 'beacon');
+    if (crown) {
+      const top = crown.y + crown.hy;
+      const sweep = new THREE.Group();
+      sweep.position.set(crown.x, top + 0.35, crown.z);
+      // A shallow cone of light, additive, no depth write, so it reads as haze
+      // rather than a solid object you could hook onto.
+      const coneGeo = new THREE.CylinderGeometry(0.12, 5.2, 9, 24, 1, true);
+      coneGeo.translate(0, -4.5, 0);
+      coneGeo.rotateX(Math.PI / 2);
+      coneGeo.translate(0, 0, 4.5);
+      const coneMat = new THREE.MeshBasicMaterial({
+        color: 0xffe2b0,
+        transparent: true,
+        opacity: 0.1,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      const cone = new THREE.Mesh(coneGeo, coneMat);
+      sweep.add(cone);
+      this.beaconSweep = sweep;
+      this.scene.add(sweep);
+
+      const lamp = new THREE.Sprite(
+        this.makeGlowSpriteMaterial(0xffd9a0, 0.85),
+      );
+      lamp.position.set(crown.x, top + 0.42, crown.z);
+      lamp.scale.setScalar(3.2);
+      this.beaconLamp = lamp;
+      this.scene.add(lamp);
+
+      // Mast and guy wires: three thin cylinders and three cables.
+      const mast = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.09, 0.16, 9, 8),
+        new THREE.MeshStandardMaterial({ color: 0x7a7f86, roughness: 0.55, metalness: 0.6 }),
+      );
+      mast.position.set(crown.x, top + 4.6, crown.z);
+      this.scene.add(mast);
+      const stayPts: THREE.Vector3[] = [];
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI * 2 + 0.4;
+        const bx = crown.x + Math.cos(a) * crown.hx * 0.85;
+        const bz = crown.z + Math.sin(a) * crown.hz * 0.85;
+        stayPts.push(new THREE.Vector3(bx, top + 0.1, bz), new THREE.Vector3(crown.x, top + 8.6, crown.z));
+      }
+      const stays = new THREE.LineSegments(
+        new THREE.BufferGeometry().setFromPoints(stayPts),
+        new THREE.LineBasicMaterial({ color: 0x9aa2aa, transparent: true, opacity: 0.55 }),
+      );
+      this.scene.add(stays);
     }
 
     // Cables strung between neighbouring pinions: these are the lines you will
@@ -2364,6 +2451,12 @@ export class Renderer {
       (this.anchorHalos.material as THREE.PointsMaterial).opacity = 0.3 + Math.sin(this.time * 2) * 0.1;
     }
     if (this.floaters) this.floaters.rotation.y = this.time * 0.008;
+    if (this.beaconSweep) this.beaconSweep.rotation.y = this.time * 0.22;
+    if (this.beaconLamp) {
+      const blink = Math.pow(Math.max(0, Math.sin(this.time * 1.6)), 6);
+      this.beaconLamp.material.opacity = 0.35 + blink * 0.6;
+      this.beaconLamp.scale.setScalar(2.8 + blink * 1.4);
+    }
 
     // ── Viewmodel ──────────────────────────────────────────────────────────
     // Swapping is a physical motion: the outgoing item drops out of frame and
