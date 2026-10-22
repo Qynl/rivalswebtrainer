@@ -346,6 +346,7 @@ export class Renderer {
   private gunAnim = { sweep: 0, pulse: 0, glow: 0 };
   private glassMats: THREE.MeshStandardMaterial[] = [];
   private lastRemote: Vec3 | null = null;
+  private ropeMoteAcc = [0, 0];
   private readonly tint = new THREE.Color();
   private readonly warm = new THREE.Color(0xffcf8a);
   /** A short FOV punch: the lens equivalent of a flinch, used on hook catches. */
@@ -365,6 +366,10 @@ export class Renderer {
   private gunPattern: THREE.Texture | null = null;
   private muzzle: THREE.Sprite;
   private muzzleLight: THREE.PointLight;
+  /** A brief flare at the muzzle: a star, not a ball. */
+  private muzzleFlare: THREE.Sprite;
+  /** One light that lives at the most recent impact. */
+  private impactLight: THREE.PointLight;
   private weaponRecoil = 0;
   private weaponKick = 0;
   private punchPitch = 0;
@@ -469,6 +474,21 @@ export class Renderer {
     this.muzzleLight = new THREE.PointLight(0xffd9a0, 0, 14, 2);
     this.muzzleLight.position.set(0, 0.06, -1.55);
     this.camera.add(this.muzzleLight);
+    this.muzzleFlare = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: this.flare,
+        color: 0xffe0a0,
+        transparent: true,
+        opacity: 0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
+    );
+    this.muzzleFlare.visible = false;
+    this.viewmodel.add(this.muzzleFlare);
+    this.muzzleFlare.position.set(0, 0.008, -1.44);
+    this.impactLight = new THREE.PointLight(0xffdca8, 0, 26, 2);
+    this.scene.add(this.impactLight);
 
     this.post = new PostFX(this.renderer, this.scene, this.camera);
     this.resize();
@@ -951,8 +971,10 @@ export class Renderer {
       geo.setPositions([0, 0, 0, 0, 1, 0]);
       const mat = new LineMaterial({
         color: SKINS[i].color,
-        linewidth: 1.5,
-        worldUnits: false,
+        // World units: the cable thins with distance like a real rope instead of
+        // staying a constant smear of pixels, which is what sells the swing.
+        linewidth: 0.045,
+        worldUnits: true,
         transparent: true,
         opacity: 0.9,
         depthWrite: false,
@@ -966,8 +988,8 @@ export class Renderer {
       sheathGeo.setPositions([0, 0, 0, 0, 1, 0]);
       const sheathMat = new LineMaterial({
         color: 0x23262b,
-        linewidth: 3.6,
-        worldUnits: false,
+        linewidth: 0.11,
+        worldUnits: true,
         transparent: true,
         opacity: 0.95,
         depthWrite: false,
@@ -1905,8 +1927,14 @@ export class Renderer {
     }
     this.muzzle.visible = true;
     this.muzzle.material.opacity = 1;
-    this.muzzle.scale.setScalar(1.5);
+    this.muzzle.scale.setScalar(1.45);
     this.muzzleLight.intensity = 22;
+    // The flare is a four-point star with a random roll, so no two shots give
+    // the same silhouette; the sprite underneath supplies the hot core.
+    this.muzzleFlare.visible = true;
+    this.muzzleFlare.material.opacity = 1;
+    this.muzzleFlare.material.rotation = Math.random() * Math.PI;
+    this.muzzleFlare.scale.setScalar(1.1 + Math.random() * 0.5);
   }
 
   muzzleFlash(): void {
@@ -1918,10 +1946,28 @@ export class Renderer {
     this.beams.fire(from, to, 0xffffff, 0.1, 0.16);
   }
 
+  /** A puff of concrete dust where a pair of boots meets a deck. */
+  landDust(pos: Vec3, strength: number): void {
+    const k = clamp(strength, 0, 1);
+    this.particles.burst(pos, 0xd8d2c2, Math.round(6 + k * 12), {
+      speed: 1.4 + k * 2.4,
+      size: 0.26 + k * 0.16,
+      life: 0.5 + k * 0.4,
+      gravity: 1.2,
+      drag: 2.4,
+    });
+    if (k > 0.55) this.fx.decals.add(pos, null, 0.9 + k, 3.2);
+  }
+
   spark(pos: Vec3, color: number, count = 5, normal: Vec3 | null = null): void {
     this.particles.burst(pos, color, count, { speed: 9, size: 0.3, life: 0.4, gravity: 18 });
     this.particles.burst(pos, 0xffe2b0, Math.round(count * 0.5), { speed: 6, size: 0.2, life: 0.28, gravity: 22 });
     this.fx.impact(pos, normal, color);
+    // One light, moved to the newest impact: a spark that lights nothing reads
+    // as paint. This is the only dynamic light in the match, so it is free.
+    this.impactLight.position.set(pos.x, pos.y, pos.z);
+    this.impactLight.color.setHex(color);
+    this.impactLight.intensity = 30;
   }
 
   /** Big hit burst: a kill is the loudest visual event in the game. */
@@ -2212,6 +2258,12 @@ export class Renderer {
       this.muzzle.material.opacity = Math.max(0, this.muzzle.material.opacity - dt * 8);
       if (this.muzzle.material.opacity <= 0.01) this.muzzle.visible = false;
     }
+    if (this.muzzleFlare.visible) {
+      this.muzzleFlare.material.opacity = Math.max(0, this.muzzleFlare.material.opacity - dt * 13);
+      this.muzzleFlare.scale.multiplyScalar(1 + dt * 3.5);
+      if (this.muzzleFlare.material.opacity <= 0.02) this.muzzleFlare.visible = false;
+    }
+    this.impactLight.intensity = Math.max(0, this.impactLight.intensity - dt * 260);
     this.muzzleLight.intensity = Math.max(0, this.muzzleLight.intensity - dt * 220);
 
     if (view.killcam) {
@@ -2316,16 +2368,16 @@ export class Renderer {
     entry.sheath.visible = true;
     const clawSkin = grappleSkin(index === 0 ? this.look.grapple : this.remoteLook.grapple);
     entry.mat.color.setHex(flight ? clawSkin.trail : color);
-    entry.mat.linewidth = flight ? 1.1 : rope.mode === 'zip' ? 1.9 : 1.5;
+    entry.mat.linewidth = flight ? 0.03 : rope.mode === 'zip' ? 0.055 : 0.045;
     entry.mat.opacity = 0.9;
-    entry.sheathMat.linewidth = flight ? 2.6 : rope.mode === 'zip' ? 5 : 4.2;
+    entry.sheathMat.linewidth = flight ? 0.07 : rope.mode === 'zip' ? 0.14 : 0.11;
     // The sheath takes the kit's colour too, darkened: a cable is part of the
     // skin, not a black line drawn on top of it.
     const sheathCol = new THREE.Color(clawSkin.rope).multiplyScalar(0.42);
     entry.sheathMat.color.copy(sheathCol);
     // Taut cable hums: the core widens and brightens as the reel loads up.
     const tension = clamp(1 - slack / 3.2, 0, 1);
-    entry.mat.linewidth = (flight ? 1.1 : rope.mode === 'zip' ? 1.9 : 1.5) * (1 + tension * 0.35);
+    entry.mat.linewidth = (flight ? 0.03 : rope.mode === 'zip' ? 0.055 : 0.045) * (1 + tension * 0.35);
 
     // Bead on the cable: pays out fast in flight, crawls while reeling in.
     if (!flight) {
@@ -2343,6 +2395,26 @@ export class Renderer {
     } else {
       pulse.visible = false;
     }
+
+    // The claw sheds its own trail in flight: a short hot stream tinted to the
+    // kit, which is the only thing that makes a 170 m/s projectile readable
+    // against a white sky.
+    this.ropeMoteAcc[index] += dt * (flight ? 55 : rope.mode === 'zip' ? 30 : 0);
+    const shed = Math.min(14, Math.floor(this.ropeMoteAcc[index]));
+    for (let i = 0; i < shed; i++) {
+      const jitter = 0.12;
+      this.particles.ember(
+        {
+          x: head.position.x + (Math.random() - 0.5) * jitter,
+          y: head.position.y + (Math.random() - 0.5) * jitter,
+          z: head.position.z + (Math.random() - 0.5) * jitter,
+        },
+        clawSkin.trail,
+        flight ? 0.15 : 0.11,
+        flight ? 0.3 : 0.22,
+      );
+    }
+    this.ropeMoteAcc[index] -= shed;
 
     // The bite point glows, and breathes harder the more the rope is loaded.
     halo.position.set(rope.anchor.x, rope.anchor.y, rope.anchor.z);

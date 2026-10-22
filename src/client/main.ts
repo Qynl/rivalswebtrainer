@@ -840,10 +840,14 @@ class Game {
         case 'jump':
           this.sfx.jump();
           break;
-        case 'land':
+        case 'land': {
           this.sfx.land(e.strength);
           this.renderer.shake(0.004 + e.strength * 0.01);
+          // Dust at the feet: a landing has to move the world, not just the lens.
+          const g = this.groundUnder(this.local.pos, this.local.id);
+          if (typeof g === 'number') this.renderer.landDust({ x: this.local.pos.x, y: g + 0.05, z: this.local.pos.z }, e.strength);
           break;
+        }
         case 'dash':
           this.sfx.dash();
           this.renderer.shake(0.01);

@@ -1617,3 +1617,78 @@ button.ghost:hover {
   18% { opacity: 1; transform: translate(-50%, 0) scale(1); }
   100% { opacity: 0; transform: translate(-50%, -38px) scale(1); }
 }
+
+/* ── Armory polish ─────────────────────────────────────────────────────────
+   The store is the one place the player studies a skin closely, so it gets the
+   motion the in-game viewmodel gets: a light band sweeping the card art, a
+   lift on hover, and a slow rotation of the tier rings on signature items. */
+
+.card {
+  position: relative;
+  overflow: hidden;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+}
+
+.card-art {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.card-art::after {
+  content: '';
+  position: absolute;
+  inset: -40% -60%;
+  background: linear-gradient(
+    72deg,
+    rgba(255, 255, 255, 0) 38%,
+    rgba(255, 245, 220, 0.22) 48%,
+    rgba(255, 255, 255, 0) 58%
+  );
+  transform: translateX(-60%);
+  animation: card-sweep 4.6s cubic-bezier(0.42, 0, 0.58, 1) infinite;
+  pointer-events: none;
+}
+
+.card.tier-signature .card-art::after {
+  animation-duration: 2.4s;
+  background: linear-gradient(
+    72deg,
+    rgba(255, 210, 130, 0) 36%,
+    rgba(255, 226, 170, 0.4) 48%,
+    rgba(255, 210, 130, 0) 60%
+  );
+}
+
+@keyframes card-sweep {
+  0% { transform: translateX(-70%); }
+  55%, 100% { transform: translateX(70%); }
+}
+
+.card.active::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  background: radial-gradient(120% 80% at 50% 0%, rgba(230, 178, 100, 0.16), transparent 60%);
+  pointer-events: none;
+}
+
+.card .card-tier {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.card .tier-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 8px rgba(230, 178, 100, 0.8);
+  align-self: center;
+}

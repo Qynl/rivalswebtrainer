@@ -157,9 +157,9 @@ export class Armory {
         const label = isEquipped ? 'EQUIPPED' : have ? 'EQUIP' : `${item.price}`;
         const disabled = action === 'equipped' ? 'disabled' : '';
         const poor = !have && state.coins < item.price ? 'poor' : '';
-        return `<article class="card ${isEquipped ? 'active' : ''} ${poor}" data-item="${item.id}" data-kind="${this.kind}">
+        return `<article class="card tier-${item.tier} ${isEquipped ? 'active' : ''} ${poor}" data-item="${item.id}" data-kind="${this.kind}">
           <div class="card-art">${preview(item)}</div>
-          <div class="card-tier">${TIER_LABEL[item.tier]}</div>
+          <div class="card-tier"><span>${TIER_LABEL[item.tier]}</span><i class="tier-dot"></i></div>
           <h3>${item.name}</h3>
           <p>${item.blurb}</p>
           <button class="card-btn ${action}" data-action="${have ? 'equip' : 'buy'}" data-item="${item.id}" data-kind="${this.kind}" ${disabled}>
