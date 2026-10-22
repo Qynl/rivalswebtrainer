@@ -106,6 +106,13 @@ export class Hud {
     this.pause.classList.add('hidden');
   }
 
+  /** Re-open the results screen (after the armory, for instance). */
+  showResultsOnly(): void {
+    this.results.classList.remove('hidden');
+    this.root.classList.add('hidden');
+    this.pause.classList.add('hidden');
+  }
+
   hideResults(): void {
     this.results.classList.add('hidden');
   }

@@ -387,3 +387,93 @@ export function cloudTexture(): THREE.Texture {
   tex.anisotropy = 4;
   return tex;
 }
+
+/**
+ * White-on-white surface pattern for weapon skins. The material colour does
+ * the tinting, so one texture serves every skin: carbon weave, camo blotches,
+ * marble veins, paint flake and simple plate seams.
+ */
+export function patternTexture(pattern: string): THREE.Texture | null {
+  if (pattern === 'solid') return null;
+  const size = 256;
+  const [c, ctx] = canvas(size, size);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, size, size);
+
+  if (pattern === 'carbon') {
+    // 2x2 twill: alternating light and dark cells on a 45° weave.
+    for (let y = 0; y < size; y += 8) {
+      for (let x = 0; x < size; x += 8) {
+        const on = ((x / 8) + (y / 8)) % 4 < 2;
+        ctx.fillStyle = on ? 'rgba(255,255,255,0.0)' : 'rgba(120,126,136,0.5)';
+        ctx.fillRect(x, y, 8, 8);
+      }
+    }
+    ctx.strokeStyle = 'rgba(90,96,106,0.35)';
+    ctx.lineWidth = 1;
+    for (let i = -size; i < size * 2; i += 16) {
+      ctx.beginPath();
+      ctx.moveTo(i, 0);
+      ctx.lineTo(i + size, size);
+      ctx.stroke();
+    }
+  } else if (pattern === 'camo') {
+    for (let i = 0; i < 26; i++) {
+      const x = Math.random() * size;
+      const y = Math.random() * size;
+      const r = 18 + Math.random() * 34;
+      ctx.fillStyle = Math.random() > 0.5 ? 'rgba(120,116,96,0.45)' : 'rgba(215,210,190,0.5)';
+      ctx.beginPath();
+      for (let k = 0; k < 9; k++) {
+        const a = (k / 9) * Math.PI * 2;
+        const rr = r * (0.65 + Math.random() * 0.5);
+        const px = x + Math.cos(a) * rr;
+        const py = y + Math.sin(a) * rr;
+        if (k === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+  } else if (pattern === 'marble') {
+    ctx.strokeStyle = 'rgba(120,110,88,0.42)';
+    for (let i = 0; i < 22; i++) {
+      ctx.lineWidth = 0.7 + Math.random() * 2.2;
+      ctx.beginPath();
+      let x = Math.random() * size;
+      let y = 0;
+      ctx.moveTo(x, y);
+      while (y < size) {
+        x += (Math.random() - 0.5) * 26;
+        y += 10 + Math.random() * 14;
+        ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+  } else if (pattern === 'flake') {
+    for (let i = 0; i < 1400; i++) {
+      const a = 0.08 + Math.random() * 0.22;
+      ctx.fillStyle = Math.random() > 0.4 ? `rgba(255,255,255,${a})` : `rgba(120,120,130,${a})`;
+      ctx.fillRect(Math.random() * size, Math.random() * size, 2, 2);
+    }
+  } else {
+    // plate: recessed panel lines with a hairline highlight.
+    ctx.strokeStyle = 'rgba(110,110,120,0.32)';
+    ctx.lineWidth = 3;
+    for (let i = 1; i < 4; i++) {
+      ctx.beginPath();
+      ctx.moveTo((i * size) / 4, 0);
+      ctx.lineTo((i * size) / 4, size);
+      ctx.moveTo(0, (i * size) / 4);
+      ctx.lineTo(size, (i * size) / 4);
+      ctx.stroke();
+    }
+  }
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(2, 2);
+  tex.anisotropy = 4;
+  return tex;
+}

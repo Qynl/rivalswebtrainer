@@ -20,6 +20,7 @@ import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import type { Arena } from '../shared/arena.ts';
 import { SKINS, WEAPON } from '../shared/constants.ts';
+import { DEFAULT_LOADOUT, gunSkin, grappleSkin, killEffect, type Loadout } from '../shared/cosmetics.ts';
 import { clamp, lerp, smoothstep, type Vec3 } from '../shared/mathx.ts';
 import type { PlayerState } from '../shared/sim.ts';
 import { Beams, Particles, Shockwaves } from './particles.ts';
@@ -33,9 +34,12 @@ import {
   panelTexture,
   signTexture,
   cloudTexture,
+  patternTexture,
 } from './textures.ts';
 
 export interface RemoteView {
+  /** Cosmetic kit of the opponent, validated server-side. */
+  look?: Loadout;
   pos: Vec3;
   yaw: number;
   pitch: number;
@@ -102,6 +106,10 @@ interface PlayerVisual {
   glintFlare: THREE.Sprite;
   rifle: THREE.Group;
   launcher: THREE.Group;
+  /** Rifle furniture materials, recoloured by the owner's gun skin. */
+  kitBody: THREE.MeshStandardMaterial;
+  kitPanel: THREE.MeshStandardMaterial;
+  kitTrim: THREE.MeshStandardMaterial;
   color: THREE.Color;
 }
 
@@ -307,6 +315,12 @@ export class Renderer {
   private hookHeads: THREE.Group[] = [];
   private hookClaw: number[] = [0, 0];
   private viewmodelSkin = -1;
+  /** Cosmetic kit for the local player and the opponent. Purely visual. */
+  private look: Loadout = { ...DEFAULT_LOADOUT };
+  private remoteLook: Loadout = { ...DEFAULT_LOADOUT };
+  /** Which array slot in `players` belongs to the player holding this camera. */
+  private localIndex = 0;
+  private gunPattern: THREE.Texture | null = null;
   private muzzle: THREE.Sprite;
   private muzzleLight: THREE.PointLight;
   private weaponRecoil = 0;
@@ -409,10 +423,10 @@ export class Renderer {
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     const cam = sun.shadow.camera;
-    cam.left = -120;
-    cam.right = 120;
-    cam.top = 140;
-    cam.bottom = -60;
+    cam.left = -104;
+    cam.right = 104;
+    cam.top = 118;
+    cam.bottom = -58;
     cam.near = 20;
     cam.far = 460;
     cam.updateProjectionMatrix();
@@ -461,6 +475,36 @@ export class Renderer {
     }
 
     this.buildStructure();
+
+    // Painted edge markings on every deck: the cheapest readability win there
+    // is, and the reason you can see a ledge coming at 40 m.
+    const edges: THREE.Matrix4[] = [];
+    for (const b of this.arena.blocks) {
+      if (b.kind !== 'deck' || b.hx < 2.2 || b.hz < 2.2) continue;
+      const y = b.y + b.hy + 0.014;
+      const w = 0.26;
+      const place = (x: number, z: number, sx: number, sz: number): void => {
+        edges.push(
+          new THREE.Matrix4().compose(
+            new THREE.Vector3(x, y, z),
+            new THREE.Quaternion(),
+            new THREE.Vector3(sx, 0.02, sz),
+          ),
+        );
+      };
+      place(b.x, b.z - b.hz + w / 2, b.hx * 2 - w, w);
+      place(b.x, b.z + b.hz - w / 2, b.hx * 2 - w, w);
+      place(b.x - b.hx + w / 2, b.z, w, b.hz * 2 - w * 2);
+      place(b.x + b.hx - w / 2, b.z, w, b.hz * 2 - w * 2);
+    }
+    if (edges.length) {
+      const paint = new THREE.MeshStandardMaterial({ color: 0xd9b23f, roughness: 0.72, metalness: 0.06 });
+      const stripes = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), paint, edges.length);
+      edges.forEach((m, i) => stripes.setMatrixAt(i, m));
+      stripes.instanceMatrix.needsUpdate = true;
+      stripes.name = 'deck-edges';
+      this.scene.add(stripes);
+    }
 
     // Painted safety yellow along every deck rim. It is the clearest "this is
     // an edge" cue in the scene, and it costs one instanced draw call.
@@ -803,7 +847,24 @@ export class Renderer {
       this.scene.add(shadow);
 
       this.scene.add(group);
-      this.players.push({ group, torso, legs, visor, outline: chest, jetL, jetR, shadow, glintCore, glintFlare, rifle, launcher, color });
+      this.players.push({
+        group,
+        torso,
+        legs,
+        visor,
+        outline: chest,
+        jetL,
+        jetR,
+        shadow,
+        glintCore,
+        glintFlare,
+        rifle,
+        launcher,
+        kitBody: tan,
+        kitPanel: plate,
+        kitTrim: accent,
+        color,
+      });
     }
 
     // Cable: a thick dark sheath with a bright core, plus a real grapnel head
@@ -840,7 +901,7 @@ export class Renderer {
       this.scene.add(sheath);
 
       this.ropes.push({ line, geo, mat, sheath, sheathGeo, sheathMat });
-      const head = buildGrapnel(0xc9a86a);
+      const head = buildGrapnel(i === 0 ? grappleSkin(DEFAULT_LOADOUT.grapple).claw : 0xc9a86a);
       // A hot little halo rides with the claw while it is in the air, so a
       // throw stays visible against the sky at any range.
       const spark = new THREE.Sprite(
@@ -1124,10 +1185,19 @@ export class Renderer {
     const skin = SKINS[skinIndex];
     const container = new THREE.Group();
 
-    const gunmetal = new THREE.MeshStandardMaterial({ color: 0x33383f, roughness: 0.42, metalness: 0.8 });
-    const blued = new THREE.MeshStandardMaterial({ color: 0x191c20, roughness: 0.32, metalness: 0.85 });
-    const polymer = new THREE.MeshStandardMaterial({ color: 0x22252a, roughness: 0.85, metalness: 0.08 });
-    const sand = new THREE.MeshStandardMaterial({ color: 0xa78e5b, roughness: 0.7, metalness: 0.12 });
+    // The skin is a material set, not a decal: receiver, furniture, steel and
+    // trim each take a colour from the catalogue plus one shared pattern map.
+    const gs = gunSkin(this.look.gun);
+    const gr = grappleSkin(this.look.grapple);
+    const pattern = patternTexture(gs.pattern);
+    if (this.gunPattern && this.gunPattern !== pattern) this.gunPattern.dispose();
+    this.gunPattern = pattern;
+    const mapped = pattern ? { map: pattern } : {};
+    const shadeOf = (hex: number, k: number): number => new THREE.Color(hex).multiplyScalar(k).getHex();
+    const gunmetal = new THREE.MeshStandardMaterial({ color: gs.metal, roughness: 0.42, metalness: 0.8, ...mapped });
+    const blued = new THREE.MeshStandardMaterial({ color: shadeOf(gs.metal, 0.55), roughness: 0.3, metalness: 0.85, ...mapped });
+    const polymer = new THREE.MeshStandardMaterial({ color: gs.panel, roughness: 0.82, metalness: 0.14, ...mapped });
+    const sand = new THREE.MeshStandardMaterial({ color: gs.body, roughness: 0.62, metalness: 0.22, ...mapped });
     const accent = new THREE.MeshStandardMaterial({
       color: skin.color,
       roughness: 0.45,
@@ -1138,8 +1208,17 @@ export class Renderer {
     const glove = new THREE.MeshStandardMaterial({ color: 0xb99455, roughness: 0.93, metalness: 0.02 });
     const gloveDark = new THREE.MeshStandardMaterial({ color: 0x8a6d40, roughness: 0.95, metalness: 0.02 });
     const sleeve = new THREE.MeshStandardMaterial({ color: 0x4b4e44, roughness: 0.96, metalness: 0.02 });
-    const brass = new THREE.MeshStandardMaterial({ color: 0xc9a86a, roughness: 0.33, metalness: 0.9 });
-    const glass = new THREE.MeshStandardMaterial({ color: 0x223a4a, roughness: 0.08, metalness: 0.95 });
+    const brass = new THREE.MeshStandardMaterial({ color: gs.trim, roughness: 0.3, metalness: 0.92 });
+    const glass = new THREE.MeshStandardMaterial({
+      color: gs.glow,
+      emissive: new THREE.Color(gs.glow),
+      emissiveIntensity: 0.4,
+      roughness: 0.08,
+      metalness: 0.95,
+    });
+    // Launcher furniture follows the grapnel skin, so 1 and 2 wear the same set.
+    const gBody = new THREE.MeshStandardMaterial({ color: gr.body, roughness: 0.55, metalness: 0.45 });
+    const gSpool = new THREE.MeshStandardMaterial({ color: gr.spool, roughness: 0.62, metalness: 0.5 });
 
     const box = (w: number, h: number, d: number, m: THREE.Material, x: number, y: number, z: number): THREE.Mesh => {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
@@ -1287,9 +1366,9 @@ export class Renderer {
 
     // ── Grapnel launcher ──────────────────────────────────────────────────
     const grapnel = new THREE.Group();
-    grapnel.add(box(0.11, 0.12, 0.26, gunmetal, 0, -0.01, -0.17));
+    grapnel.add(box(0.11, 0.12, 0.26, gBody, 0, -0.01, -0.17));
     grapnel.add(box(0.088, 0.075, 0.11, sand, 0, 0.032, -0.31));
-    grapnel.add(cyl(0.05, 0.055, 0.18, gunmetal, 0, 0.02, -0.44));
+    grapnel.add(cyl(0.05, 0.055, 0.18, gBody, 0, 0.02, -0.44));
     // Muzzle crown: a toothed brass ring, the launcher's one loud detail.
     grapnel.add(cyl(0.058, 0.058, 0.026, brass, 0, 0.02, -0.52));
     for (let i = 0; i < 6; i++) {
@@ -1304,8 +1383,8 @@ export class Renderer {
     // Spool: visible cable, spins while the claw is out.
     this.spool = new THREE.Group();
     this.spool.position.set(0, -0.035, -0.2);
-    const spoolCore = new THREE.MeshStandardMaterial({ color: 0x2a2d33, roughness: 0.6, metalness: 0.5 });
-    const cableMat = new THREE.MeshStandardMaterial({ color: 0x3c3a34, roughness: 0.85, metalness: 0.2 });
+    const spoolCore = gSpool;
+    const cableMat = new THREE.MeshStandardMaterial({ color: gr.rope, roughness: 0.85, metalness: 0.2 });
     this.spool.add(cyl(0.052, 0.052, 0.05, spoolCore, 0, 0, 0, 'x'));
     const wound = cyl(0.056, 0.056, 0.042, cableMat, 0, 0, 0, 'x');
     this.spool.add(wound);
@@ -1316,7 +1395,7 @@ export class Renderer {
     grapnel.add(box(0.02, 0.05, 0.05, brass, 0.06, -0.035, -0.2));
 
     // The resting claw, cradled and ready.
-    const ready = buildGrapnel(0xc9a86a);
+    const ready = buildGrapnel(gr.claw);
     ready.scale.setScalar(0.55);
     ready.position.set(0, 0.035, -0.52);
     grapnel.add(ready);
@@ -1354,8 +1433,9 @@ export class Renderer {
     this.grapnelModel = grapnel;
     this.slotBlend = skinIndex === -1 ? 0 : this.slotBlend;
 
-    container.position.set(0.22, -0.2, -0.1);
-    container.rotation.y = -0.04;
+    container.position.set(0.2, -0.19, -0.1);
+    container.scale.setScalar(1.06);
+    container.rotation.y = -0.06;
     container.visible = false;
     this.viewmodelSkin = skinIndex;
     return container;
@@ -1371,6 +1451,56 @@ export class Renderer {
   hookHit(pos: Vec3): void {
     this.particles.burst(pos, 0xffe0a8, 16, { speed: 6, size: 0.12, life: 0.35, gravity: 8 });
     this.waves.spawn(pos, 0xe6b264, 2.4, 0.3);
+  }
+
+  /**
+   * Applies the equipped kit. Called on equip and on join; the viewmodel is
+   * rebuilt only when the rifle or launcher material set actually changes.
+   */
+  applyLoadout(look: Loadout): void {
+    const changed = look.gun !== this.look.gun || look.grapple !== this.look.grapple;
+    this.look = { ...look };
+    if (changed) this.rebuildViewmodel();
+  }
+
+  /** The opponent's kit: rifle furniture, claw metal and cable colour. */
+  applyRemoteLook(look: Loadout): void {
+    this.remoteLook = { ...look };
+    const gs = gunSkin(look.gun);
+    const gr = grappleSkin(look.grapple);
+    const visual = this.players[1 - this.localIndex];
+    if (visual) {
+      visual.kitBody.color.setHex(gs.body);
+      visual.kitPanel.color.setHex(gs.panel);
+      visual.kitTrim.color.setHex(gs.trim);
+    }
+    const head = this.hookHeads[1 - this.localIndex];
+    if (head) {
+      head.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        const mat = mesh.material as THREE.MeshStandardMaterial;
+        if (mat && mat.metalness !== undefined && mat.metalness > 0.5) mat.color.setHex(gr.claw);
+      });
+    }
+  }
+
+  /** Their kill, dressed in their effect. */
+  killBurst(at: Vec3, effectId: string, scale = 1): void {
+    const fx = killEffect(effectId);
+    this.particles.burst(at, fx.burst, Math.round(26 * scale), { speed: 9 * scale, size: 0.16, life: 0.5, gravity: 10 });
+    this.particles.burst(at, fx.motes, Math.round(18 * scale), { speed: 3.5 * scale, size: 0.22, life: 0.85, gravity: -1.2 });
+    this.waves.spawn(at, fx.ring, 3.2 * scale, 0.45);
+    this.waves.spawn(at, fx.burst, 1.6 * scale, 0.28);
+  }
+
+  private rebuildViewmodel(): void {
+    const index = this.viewmodelSkin < 0 ? 0 : this.viewmodelSkin;
+    this.camera.remove(this.viewmodel);
+    this.viewmodel = this.buildViewmodel(index);
+    this.viewmodel.add(this.muzzle);
+    this.muzzle.position.set(0, 0.008, -1.42);
+    this.camera.add(this.viewmodel);
   }
 
   setSkin(index: 0 | 1): void {
@@ -1552,13 +1682,18 @@ export class Renderer {
       }
     }
 
+    this.localIndex = local.id;
+
     // ── Ropes ──────────────────────────────────────────────────────────────
-    this.drawRope(0, local.eye, local.grapple.active && local.grapple.mode !== 'none' ? view.localRope : null, SKINS[local.id].color, dt);
+    const localRopeColor = grappleSkin(this.look.grapple).rope;
+    const remoteRopeColor = grappleSkin(this.remoteLook.grapple).rope;
+    const rope = local.hook.active ? view.localRope : local.grapple.active && local.grapple.mode !== 'none' ? view.localRope : null;
+    this.drawRope(0, local.eye, rope, localRopeColor, dt);
     this.drawRope(
       1,
       { x: remote.pos.x, y: remote.pos.y + 0.35, z: remote.pos.z },
-      remote.grapple.active ? view.remoteRope : null,
-      SKINS[1 - local.id].color,
+      remote.grapple.active || remote.hook.active ? view.remoteRope : null,
+      remoteRopeColor,
       dt,
     );
 
@@ -1711,7 +1846,8 @@ export class Renderer {
     entry.sheathGeo.setPositions(pts);
     entry.line.visible = true;
     entry.sheath.visible = true;
-    entry.mat.color.setHex(flight ? 0xd8c79a : color);
+    const clawSkin = grappleSkin(index === 0 ? this.look.grapple : this.remoteLook.grapple);
+    entry.mat.color.setHex(flight ? clawSkin.trail : color);
     entry.mat.linewidth = flight ? 1.1 : rope.mode === 'zip' ? 1.9 : 1.5;
     entry.mat.opacity = 0.9;
     entry.sheathMat.linewidth = flight ? 2.6 : rope.mode === 'zip' ? 5 : 4.2;
@@ -1739,9 +1875,16 @@ export class Renderer {
     const spark = head.getObjectByName('hookspark') as THREE.Sprite | undefined;
     if (spark) {
       const mat = spark.material as THREE.SpriteMaterial;
+      mat.color.setHex(clawSkin.trail);
       mat.opacity = lerp(mat.opacity, flight ? 0.55 : 0, 1 - Math.exp(-dt * 12));
       spark.visible = mat.opacity > 0.02;
     }
+    head.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const mat = mesh.material as THREE.MeshStandardMaterial;
+      if (mat && mat.metalness !== undefined && mat.metalness > 0.5) mat.color.setHex(clawSkin.claw);
+    });
   }
 
   private updateRing(radius: number, active: boolean, dt: number): void {

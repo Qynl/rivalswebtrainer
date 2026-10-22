@@ -15,6 +15,7 @@ import { ARENA } from '../shared/arena.ts';
 import type { ShotMessage } from '../shared/combat.ts';
 import { glintVisibility, markFired, muzzleOffset, resolveShot, spreadShotDir } from '../shared/combat.ts';
 import { DT, INTERP_DELAY, MATCH, SKINS, WEAPON } from '../shared/constants.ts';
+import { ECONOMY, killEffect, matchReward, type Loadout } from '../shared/cosmetics.ts';
 import { clamp, dist, lerp, lookDir, smoothstep, type Vec3 } from '../shared/mathx.ts';
 import { initRapier, Physics } from '../shared/physics.ts';
 import type { PlayerSnap, ServerMsg, Snapshot } from '../shared/protocol.ts';
@@ -30,10 +31,12 @@ import {
   type PlayerState,
   type SimEvent,
 } from '../shared/sim.ts';
+import { Armory } from './armory.ts';
 import { Sfx } from './audio.ts';
 import { Hud } from './hud.ts';
 import { Input } from './input.ts';
 import { Net, type ConnState } from './net.ts';
+import { Progress } from './progress.ts';
 import { Renderer, type RemoteView, type RopeView } from './renderer.ts';
 
 interface HistoryEntry {
@@ -57,6 +60,11 @@ class Game {
   private sfx = new Sfx();
   private input: Input;
   private net = new Net();
+  /** Coins, level and equipped cosmetics. Local to this browser on purpose. */
+  private progress = Progress.load();
+  private armory: Armory;
+  /** Kills this match, for the coin and XP payout at the results screen. */
+  private matchKills = 0;
   private phys: Physics;
 
   private local: PlayerState = createPlayer(0, 0);
@@ -118,6 +126,8 @@ class Game {
     this.input = new Input(this.canvas);
     this.bindUi();
     this.bindNet();
+    this.armory = new Armory(this.progress, () => this.applyLoadout());
+    this.applyLoadout();
     this.resetLocalSpawn(0);
     this.hintUntil = performance.now() + 9000;
     this.hud.showMenu(true);
@@ -195,6 +205,26 @@ class Game {
       this.sfx.ui('back');
       this.toMenu();
     };
+    el('result-armory').onclick = () => {
+      this.sfx.ui('click');
+      this.hud.hideResults();
+      this.armory.show('gun');
+    };
+    el('armory-open').onclick = () => {
+      this.sfx.ui('click');
+      this.hud.showMenu(false);
+      this.armory.show('gun');
+    };
+    window.addEventListener('gg:armory-closed', () => {
+      // Wherever the armory was opened from, come back to a sane screen.
+      this.progress.save();
+      if (this.inMatch && this.matchOver) this.hud.showResultsOnly();
+      else if (!this.inMatch) {
+        this.menuOpen = true;
+        this.hud.showMenu(true);
+        this.refreshProfile();
+      }
+    });
     el('result-again').onclick = () => {
       this.sfx.ui('click');
       this.net.disconnectNow();
@@ -222,6 +252,32 @@ class Game {
       this.sfx.unlock();
       if (this.inMatch && !this.paused && !this.resultsOpen) this.input.requestLock();
     });
+  }
+
+  /** Pushes the equipped kit into the renderer and the next hello message. */
+  private applyLoadout(): void {
+    const look: Loadout = { ...this.progress.state.loadout };
+    this.net.look = look;
+    this.renderer.applyLoadout(look);
+    this.stats();
+    // A live opponent should see the change now, not after a reconnect.
+    if (this.net.state === 'open') this.net.sendLook(look);
+  }
+
+  /** Menu purse: level, XP bar and coin count. */
+  private stats(): void {
+    const level = this.progress.level;
+    const state = this.progress.state;
+    const lv = el('menu-level');
+    const xp = el('menu-xp');
+    const coins = el('menu-coins');
+    if (lv) lv.textContent = `LV ${level.level}`;
+    if (xp) xp.style.width = `${Math.round(level.fraction * 100)}%`;
+    if (coins) coins.textContent = String(state.coins);
+  }
+
+  private refreshProfile(): void {
+    this.stats();
   }
 
   private bindNet(): void {
@@ -304,6 +360,7 @@ class Game {
 
   // ── Screens ──────────────────────────────────────────────────────────────
   private enterMatchScreen(): void {
+    this.matchKills = 0;
     this.menuOpen = false;
     this.hud.showMenu(false);
     this.hud.showGame(true);
@@ -378,6 +435,13 @@ class Game {
     this.remoteSim.yaw = theirs.yaw;
     this.remoteSim.pitch = theirs.pitch;
     updateEye(this.remoteSim);
+    // Cosmetics are cosmetic: no simulation state is derived from them.
+    if (theirs.look && (this.remoteView.look?.gun !== theirs.look.gun
+      || this.remoteView.look?.grapple !== theirs.look.grapple
+      || this.remoteView.look?.effect !== theirs.look.effect)) {
+      this.remoteView.look = { ...theirs.look };
+      this.renderer.applyRemoteLook(theirs.look);
+    }
 
     this.hud.setScore(snap.match.scores[0], snap.match.scores[1], this.you, this.net.playerName, this.net.opponentName);
     if (snap.match.phase !== this.lastPhase) {
@@ -504,18 +568,24 @@ class Game {
     this.hud.setScore(msg.scores[0], msg.scores[1], me, this.net.playerName, this.net.opponentName);
     if (msg.event.killer === me) {
       this.hud.hitmarker(true);
-      this.hud.killBanner('ELIMINATED');
+      this.hud.killBanner(`ELIMINATED  +${ECONOMY.killCoins} ◆`);
       this.sfx.hitmarker(true);
       this.renderer.punch(-0.035, 0);
       this.renderer.shake(0.014);
       this.hud.feedLine(`YOU KILLED ${this.net.opponentName}`, 'me');
       this.renderer.shatter(msg.victimAt, SKINS[1 - me].color);
+      this.matchKills += 1;
+      const fx = killEffect(this.progress.state.loadout.effect);
+      this.renderer.killBurst(msg.victimAt, fx.id, 1);
+      this.sfx.killFx(fx.sound);
       this.hitstop = WEAPON.hitstop;
     } else if (msg.event.victim === me) {
       this.sfx.death();
       this.hud.damage();
       this.renderer.hurt(0.9);
       this.renderer.shatter(msg.victimAt, SKINS[me].color);
+      // The effect that killed you is the killer's, so you learn what to buy.
+      if (this.remoteView.look) this.renderer.killBurst(msg.victimAt, this.remoteView.look.effect, 0.8);
       const killerIdx = msg.event.killer === 1 - me ? 1 - me : -1;
       if (killerIdx >= 0) {
         this.killcam = { t: 0, killerPos: { ...this.remoteSim.pos }, victimPos: { ...msg.victimAt } };
@@ -547,6 +617,8 @@ class Game {
         : won
           ? 'THE ROPE REMEMBERS.'
           : 'WATCH THE GLINT. MOVE AFTER EVERY SHOT.';
+    const reward = matchReward(this.matchKills, draw ? 'draw' : won ? 'win' : 'loss');
+    const payout = this.progress.applyReward(reward);
     this.hud.showResults({
       title,
       eyebrow,
@@ -554,6 +626,17 @@ class Game {
       note,
       win: won && !draw,
     });
+    const rewardCoins = document.getElementById('reward-coins');
+    const rewardXp = document.getElementById('reward-xp');
+    const rewardLevel = document.getElementById('reward-level');
+    const rewardLevelNote = document.getElementById('reward-level-note');
+    if (rewardCoins) rewardCoins.textContent = `+${reward.coins + payout.bonus}`;
+    if (rewardXp) rewardXp.textContent = `+${reward.xp}`;
+    if (rewardLevel) rewardLevel.textContent = `LV ${payout.after.level}`;
+    if (rewardLevelNote) {
+      rewardLevelNote.textContent = payout.after.level > payout.before.level ? `LEVEL UP +${payout.bonus}` : 'LEVEL';
+    }
+    this.refreshProfile();
     this.sfx.hitmarker(won);
     if (won) this.hud.bannerText('VICTORY', 'me', 2400);
     else if (!draw) this.hud.bannerText('DEFEAT', 'them', 2400);

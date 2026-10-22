@@ -92,7 +92,9 @@ export function buildSky(): SkyKit {
   group.add(dome);
 
   // Sun: a bright disc plus a wide halo, high and to the left.
-  const sunDir = new THREE.Vector3(-0.42, 0.72, -0.55).normalize();
+  // A 42° sun: long enough shadows to describe the ruin, high enough that the
+  // decks still read as sunlit white concrete rather than dusk silhouettes.
+  const sunDir = new THREE.Vector3(-0.46, 0.62, -0.62).normalize();
   const sunPos = sunDir.clone().multiplyScalar(620);
   const sunDisc = new THREE.Sprite(
     new THREE.SpriteMaterial({ map: glowTexture(), color: 0xfff6e2, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }),

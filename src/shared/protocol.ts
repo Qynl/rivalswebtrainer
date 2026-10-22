@@ -3,6 +3,7 @@
 import type { ShotMessage } from './combat.ts';
 import type { KillEvent, MatchPhase } from './match.ts';
 import type { InputFrame } from './sim.ts';
+import type { Loadout } from './cosmetics.ts';
 import type { Vec3 } from './mathx.ts';
 
 export interface PlayerSnap {
@@ -33,6 +34,8 @@ export interface PlayerSnap {
   slot: 0 | 1;
   /** Claw in flight. */
   hook: { active: boolean; pos: Vec3 };
+  /** Cosmetic kit, already validated against the catalogue by the server. */
+  look: Loadout;
 }
 
 export interface MatchSnap {
@@ -49,10 +52,11 @@ export interface MatchSnap {
 }
 
 export type ClientMsg =
-  | { t: 'hello'; name: string; mode: 'duel' | 'practice'; token?: string }
+  | { t: 'hello'; name: string; mode: 'duel' | 'practice'; token?: string; look?: Partial<Loadout> }
   | { t: 'input'; frame: InputFrame }
   | { t: 'shot'; shot: ShotMessage }
   | { t: 'ping'; id: number; c: number }
+  | { t: 'look'; look: Partial<Loadout> }
   | { t: 'rematch' }
   | { t: 'leave' };
 

@@ -217,6 +217,24 @@ export class Sfx {
     this.noiseBurst(0.9, 0.15, { freq: 900, q: 0.5, type: 'lowpass', sweepTo: 90 });
   }
 
+  /** Kill stinger variants, one per purchasable effect. */
+  killFx(kind: 'shatter' | 'bloom' | 'pulse' | 'sting'): void {
+    if (kind === 'shatter') {
+      this.noiseBurst(0.35, 0.22, { freq: 5200, q: 1.6, sweepTo: 2400 });
+      this.tone(1600, 0.22, 'triangle', 0.1, { slideTo: 520 });
+    } else if (kind === 'bloom') {
+      this.tone(392, 0.7, 'sine', 0.16, { slideTo: 588 });
+      this.tone(588, 0.8, 'sine', 0.09, { slideTo: 784, when: 0.06 });
+      this.noiseBurst(0.5, 0.08, { freq: 1200, q: 0.7, sweepTo: 300 });
+    } else if (kind === 'pulse') {
+      this.tone(220, 0.3, 'square', 0.1, { slideTo: 1400 });
+      this.noiseBurst(0.2, 0.2, { freq: 3000, q: 3.2, sweepTo: 900 });
+    } else {
+      this.tone(1240, 0.1, 'square', 0.12, { slideTo: 660 });
+      this.tone(170, 0.5, 'sine', 0.3, { slideTo: 48, when: 0.02 });
+    }
+  }
+
   spawn(): void {
     this.tone(180, 0.4, 'sine', 0.2, { slideTo: 440 });
     this.noiseBurst(0.25, 0.06, { freq: 2400, q: 1.2, sweepTo: 520 });

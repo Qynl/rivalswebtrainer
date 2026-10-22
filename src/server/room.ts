@@ -32,10 +32,13 @@ import {
   type SimEvent,
 } from '../shared/sim.ts';
 import { Bot } from './bot.ts';
+import { sanitizeLoadout, type Loadout } from '../shared/cosmetics.ts';
 
 interface Slot {
   ws: WebSocket | null;
   name: string;
+  /** Cosmetics only, echoed to the opponent so their view of you matches. */
+  look: Loadout;
   token: string;
   connected: boolean;
   leftAt: number | null;
@@ -71,6 +74,7 @@ export class Room {
     const makeSlot = (i: number): Slot => ({
       ws: null,
       name: i === 0 ? 'PLAYER' : 'OPPONENT',
+      look: sanitizeLoadout(undefined),
       token: randomUUID(),
       connected: false,
       leftAt: null,
@@ -104,12 +108,13 @@ export class Room {
   }
 
   /** Human joins a free slot. Returns the slot index or null if none. */
-  join(ws: WebSocket, name: string): number | null {
+  join(ws: WebSocket, name: string, look?: unknown): number | null {
     const idx = this.slots.findIndex((s) => !s.connected && s.leftAt === null);
     if (idx < 0) return null;
     const slot = this.slots[idx];
     slot.ws = ws;
     slot.name = (name || 'PLAYER').slice(0, 14).toUpperCase();
+    slot.look = sanitizeLoadout(look);
     slot.connected = true;
     slot.leftAt = null;
     slot.token = randomUUID();
@@ -134,7 +139,7 @@ export class Room {
   }
 
   /** Reconnect with the token issued at first join. */
-  reconnect(ws: WebSocket, token: string, name: string): number | null {
+  reconnect(ws: WebSocket, token: string, name: string, look?: unknown): number | null {
     const idx = this.slots.findIndex((s) => s.token === token && (s.leftAt !== null || !s.connected));
     if (idx < 0) return null;
     const slot = this.slots[idx];
@@ -143,6 +148,7 @@ export class Room {
     slot.leftAt = null;
     slot.queue.length = 0;
     if (name) slot.name = name.slice(0, 14).toUpperCase();
+    if (look !== undefined) slot.look = sanitizeLoadout(look);
     this.send(slot, {
       t: 'welcome',
       you: idx,
@@ -210,6 +216,10 @@ export class Room {
         }
         break;
       }
+      case 'look':
+        // Cosmetics can change between matches; the simulation never notices.
+        slot.look = sanitizeLoadout(msg.look);
+        break;
       case 'rematch':
         // No rematch state machine: a new match is a new room. Kept as a no-op
         // acknowledgement so an old client message cannot wedge the room.
@@ -452,6 +462,7 @@ export class Room {
       },
       slot: p.slot,
       hook: { active: p.hook.active, pos: p.hook.pos },
+      look: this.slots[i].look,
     };
   }
 

@@ -193,4 +193,20 @@ describe('client', () => {
     expect(document.getElementById('results')?.classList.contains('hidden')).toBe(true);
     expect(errors).toEqual([]);
   }, 10000);
+
+  it('opens the armory, switches shelves and comes back to the menu', async () => {
+    const { GUN_SKINS, KILL_EFFECTS } = await import('../src/shared/cosmetics.ts');
+    (document.getElementById('armory-open') as HTMLButtonElement).click();
+    await until(() => !document.getElementById('armory')?.classList.contains('hidden'), 4000, 'armory open');
+    expect(document.querySelectorAll('#armory-grid .card').length).toBe(GUN_SKINS.length);
+    expect(document.getElementById('menu')?.classList.contains('hidden')).toBe(true);
+
+    (document.querySelector('[data-armory-tab="effect"]') as HTMLButtonElement).click();
+    expect(document.querySelectorAll('#armory-grid .card').length).toBe(KILL_EFFECTS.length);
+
+    (document.getElementById('armory-back') as HTMLButtonElement).click();
+    await until(() => document.getElementById('armory')?.classList.contains('hidden') === true, 4000, 'armory closed');
+    expect(document.getElementById('menu')?.classList.contains('hidden')).toBe(false);
+    expect(errors).toEqual([]);
+  }, 15000);
 });

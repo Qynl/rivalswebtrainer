@@ -20,6 +20,8 @@ export class Net {
   you = 0;
   opponentName = 'OPPONENT';
   playerName = 'PLAYER';
+  /** Cosmetic kit sent on (re)connect; the server validates every id. */
+  look: { gun: string; grapple: string; effect: string } = { gun: 'service', grapple: 'brass', effect: 'spark' };
 
   onSnapshot: ((snap: Snapshot) => void) | null = null;
   onShot: ((msg: Extract<ServerMsg, { t: 'shot' }>) => void) | null = null;
@@ -42,6 +44,11 @@ export class Net {
   private pings = new Map<number, { sent: number; c: number }>();
   private everJoined = false;
 
+  /** Cosmetic change mid-match: the server re-validates and echoes it. */
+  sendLook(look: { gun: string; grapple: string; effect: string }): void {
+    this.send({ t: 'look', look });
+  }
+
   connect(name: string, mode: 'duel' | 'practice', token = ''): void {
     this.playerName = name;
     this.mode = mode;
@@ -58,7 +65,13 @@ export class Net {
     this.ws = ws;
     ws.onopen = () => {
       this.setState('open');
-      this.send({ t: 'hello', name: this.playerName, mode: this.mode, token: this.token || undefined });
+      this.send({
+        t: 'hello',
+        name: this.playerName,
+        mode: this.mode,
+        token: this.token || undefined,
+        look: this.look,
+      });
       this.startPing();
     };
     ws.onmessage = (ev) => this.handle(ev.data as string);

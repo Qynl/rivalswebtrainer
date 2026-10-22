@@ -1258,3 +1258,310 @@ input[type='range']::-moz-range-thumb {
     display: none;
   }
 }
+
+/* ══ PROGRESSION + ARMORY ═══════════════════════════════════════════════ */
+
+.profile {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(10, 13, 17, 0.55);
+}
+
+.profile-level {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: 1;
+}
+
+.profile .tag {
+  font-size: 0.56rem;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  color: var(--gold);
+}
+
+.xpbar {
+  position: relative;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.xpbar.big {
+  height: 6px;
+  width: 150px;
+}
+
+.xpbar i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--gold), #f4d79a);
+  transition: width 0.35s ease;
+}
+
+.profile-coins {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.profile-coins .coin,
+.card .coin {
+  color: var(--gold);
+  font-size: 0.8rem;
+}
+
+.profile-coins b {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--text);
+}
+
+button.ghost {
+  background: transparent;
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+button.ghost:hover {
+  color: var(--text);
+  border-color: var(--gold);
+}
+
+/* Results reward strip */
+.reward {
+  display: flex;
+  justify-content: center;
+  gap: 26px;
+  margin: 4px 0 18px;
+  padding: 12px 18px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(10, 13, 17, 0.5);
+}
+
+.reward > div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.reward b {
+  font-size: 1.4rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.reward .coin {
+  color: var(--gold);
+}
+
+.reward .label {
+  font-size: 0.52rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: var(--muted);
+}
+
+.reward .levelup b {
+  color: var(--gold);
+}
+
+/* Armory screen */
+#armory {
+  align-items: stretch;
+  justify-content: center;
+  padding: 4vh 4vw;
+}
+
+.armory-inner {
+  width: min(1180px, 96vw);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.armory-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 20px;
+}
+
+.armory-head h2 {
+  margin: 2px 0 6px;
+  font-size: clamp(1.6rem, 3vw, 2.4rem);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.armory-head .note {
+  max-width: 52ch;
+}
+
+.armory-purse {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.purse-level {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 0.56rem;
+  letter-spacing: 0.16em;
+  color: var(--muted);
+}
+
+.purse-level b {
+  color: var(--gold);
+  font-size: 0.7rem;
+}
+
+.armory-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.armory-tabs button {
+  padding: 8px 16px;
+  font: inherit;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: var(--muted);
+  background: rgba(10, 13, 17, 0.55);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.armory-tabs button.on {
+  color: #0d1014;
+  background: var(--gold);
+  border-color: var(--gold);
+}
+
+.armory-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+  overflow-y: auto;
+  padding-right: 4px;
+  max-height: 58vh;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(12, 15, 19, 0.78);
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.card:hover {
+  border-color: rgba(230, 178, 100, 0.55);
+}
+
+.card.active {
+  border-color: var(--gold);
+  box-shadow: inset 0 0 0 1px rgba(230, 178, 100, 0.35);
+}
+
+.card.poor .card-btn.buy {
+  opacity: 0.5;
+}
+
+.card-art {
+  border-radius: 6px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.01));
+  padding: 6px 4px;
+}
+
+.card-art svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.card-tier {
+  font-size: 0.5rem;
+  letter-spacing: 0.26em;
+  color: var(--muted);
+}
+
+.card h3 {
+  margin: 0;
+  font-size: 0.86rem;
+  letter-spacing: 0.08em;
+}
+
+.card p {
+  margin: 0;
+  font-size: 0.66rem;
+  line-height: 1.45;
+  color: var(--muted);
+  min-height: 3.2em;
+}
+
+.card-btn {
+  margin-top: 4px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.card-btn.buy {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: #0d1014;
+}
+
+.card-btn.buy .coin {
+  color: #0d1014;
+}
+
+.card-btn.equipped {
+  border-color: var(--gold);
+  color: var(--gold);
+  cursor: default;
+}
+
+.armory-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.armory-foot .note.warn {
+  color: var(--ember);
+}

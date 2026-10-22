@@ -54,7 +54,7 @@ function handleHello(ws: WebSocket, msg: Extract<ClientMsg, { t: 'hello' }>): vo
   if (msg.token) {
     for (const room of rooms) {
       if (room.dead) continue;
-      const slot = room.reconnect(ws, msg.token, name);
+      const slot = room.reconnect(ws, msg.token, name, msg.look);
       if (slot !== null) {
         socketMeta.set(ws, { room, slot, alive: true });
         return;
@@ -64,7 +64,7 @@ function handleHello(ws: WebSocket, msg: Extract<ClientMsg, { t: 'hello' }>): vo
   // 2. Practice always gets a fresh room with a bot.
   if (msg.mode === 'practice') {
     const room = newRoom('practice');
-    const slot = room.join(ws, name);
+    const slot = room.join(ws, name, msg.look);
     if (slot === null) {
       send(ws, { t: 'error', text: 'ROOM FULL' });
       return;
@@ -82,7 +82,7 @@ function handleHello(ws: WebSocket, msg: Extract<ClientMsg, { t: 'hello' }>): vo
     }
   }
   const room = newRoom('duel');
-  const slot = room.join(ws, name);
+  const slot = room.join(ws, name, msg.look);
   if (slot === null) {
     send(ws, { t: 'error', text: 'COULD NOT SEAT PLAYER' });
     return;
