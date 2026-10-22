@@ -8,7 +8,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { ARENA } from '../src/shared/arena.ts';
 import { createPlayer, respawnPlayer } from '../src/shared/sim.ts';
 import type { Renderer as R } from '../src/client/renderer.ts';
-import { installDomStubs } from './stubgl.ts';
+import { glStats, installDomStubs } from './stubgl.ts';
 
 let Renderer: typeof R;
 let renderer: R;
@@ -79,5 +79,51 @@ describe('renderer', () => {
       renderer.setRingColor(false);
       renderer.resize();
     }).not.toThrow();
+  });
+
+  it('draws the first-person rifle and grapnel, not just builds them', () => {
+    // Regression: the viewmodel hangs off the camera, and three.js only draws
+    // what it can reach from the scene root. For a long time the weapon was
+    // built, animated and never rendered.
+    const scene = (renderer as unknown as { scene: import('three').Scene }).scene;
+    const viewmodel = (renderer as unknown as { viewmodel: import('three').Object3D }).viewmodel;
+    expect(viewmodel.parent).toBe(renderer.camera);
+    expect(scene.children).toContain(renderer.camera);
+
+    const local = createPlayer(0, 0);
+    respawnPlayer(local, ARENA, 0);
+    const view = {
+      local,
+      localRope: { active: false, anchor: { x: 0, y: 0, z: 0 }, length: 0, mode: 'none' as const },
+      remote: {
+        pos: { x: 0, y: 0, z: 40 }, vel: { x: 0, y: 0, z: 0 }, grounded: true, scopeT: 0,
+        yaw: 0, pitch: 0, alive: false, sliding: false, scoped: false, glint: 0, speed: 0,
+        grapple: { active: false, mode: 'none' as const, anchor: { x: 0, y: 0, z: 0 }, length: 0, target: 0 as const },
+        slot: 0 as const, hook: { active: false, pos: { x: 0, y: 0, z: 0 } },
+      },
+      remoteRope: { active: false, anchor: { x: 0, y: 0, z: 0 }, length: 0, mode: 'none' as const },
+      ringRadius: 60,
+      ringActive: false,
+      scoped: 0,
+      glintVisible: false,
+      glintIntensity: 0,
+      killcam: null,
+      reducedFx: false,
+    };
+
+    // One frame with the weapon up, one with it stowed: the difference is the
+    // weapon actually reaching the GPU.
+    renderer.update(1 / 60, view);
+    renderer.render();
+    const before = glStats.draws;
+    renderer.render();
+    const armed = glStats.draws - before;
+    viewmodel.visible = false;
+    renderer.render();
+    const after = glStats.draws;
+    renderer.render();
+    const stowed = glStats.draws - after;
+    expect(armed).toBeGreaterThan(stowed);
+    viewmodel.visible = true;
   });
 });

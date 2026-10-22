@@ -146,6 +146,55 @@ describe('movement feel', () => {
     expect(run.speeds[run.speeds.length - 1]).toBeCloseTo(MOVE.walkSpeed, 1);
   });
 
+  it('flies where you point: every one of the eight air directions responds', async () => {
+    const phys = await makePadWorld();
+    const dirs: [number, number, number][] = [
+      [KEY.forward, 0, -1],
+      [KEY.back, 0, 1],
+      [KEY.left, -1, 0],
+      [KEY.right, 1, 0],
+      [KEY.forward | KEY.right, 0.7071, -0.7071],
+      [KEY.forward | KEY.left, -0.7071, -0.7071],
+      [KEY.back | KEY.right, 0.7071, 0.7071],
+      [KEY.back | KEY.left, -0.7071, 0.7071],
+    ];
+    for (const [keys, wx, wz] of dirs) {
+      const p = spawn(0);
+      place(p, 0, DECK, 0);
+      // Leaves the ground first, then holds one direction in the air.
+      drive(phys, p, { ticks: 2, keys: () => KEY.jump });
+      drive(phys, p, { ticks: 20, keys: () => keys });
+      expect(p.grounded).toBe(false);
+      const sp = Math.hypot(p.vel.x, p.vel.z);
+      expect(sp).toBeGreaterThan(6);
+      // Velocity has to point where the key points, not where the body is.
+      const align = (p.vel.x * wx + p.vel.z * wz) / sp;
+      expect(align).toBeGreaterThan(0.97);
+    }
+  });
+
+  it('carves in the air: a fast fall can be turned without losing its speed', async () => {
+    const phys = await makePadWorld();
+    const p = spawn(0);
+    place(p, 0, DECK + 60, 0);
+    p.vel = { x: 45, y: -5, z: 0 };
+    drive(phys, p, { ticks: 24, keys: () => KEY.left });
+    expect(p.vel.x).toBeLessThan(-20); // it came round, in 0.4 s
+    const sp = Math.hypot(p.vel.x, p.vel.z);
+    expect(sp).toBeGreaterThan(32); // and kept most of what it had
+    expect(p.vel.y).toBeLessThan(0); // steering never fights gravity
+  });
+
+  it('caps air thrust well below a swing, so the rope still matters', async () => {
+    const phys = await makePadWorld();
+    const p = spawn(0);
+    place(p, 0, DECK + 120, 0);
+    drive(phys, p, { ticks: 120, keys: () => KEY.forward });
+    const sp = Math.hypot(p.vel.x, p.vel.z);
+    expect(sp).toBeLessThanOrEqual(MOVE.airMaxSpeed + 0.5);
+    expect(sp).toBeGreaterThan(MOVE.walkSpeed * 1.6);
+  });
+
   it('dashes with a cooldown and no frame-rate dependence in the step itself', async () => {
     const phys = await makePadWorld();
     const p = onDeck();

@@ -509,6 +509,13 @@ export class Renderer {
   private gunPattern: THREE.Texture | null = null;
   private muzzle: THREE.Sprite;
   private muzzleLight: THREE.PointLight;
+  /**
+   * The three short-range lights on the viewmodel rig. They live with the
+   * weapon and are switched off with it: a point light is charged to every
+   * fragment of every material in the scene, so a stowed rifle must not keep
+   * paying for the light it is not standing in.
+   */
+  private vmLights: THREE.PointLight[] = [];
   /** A brief flare at the muzzle: a star, not a ball. */
   private muzzleFlare: THREE.Sprite;
   /** One light that lives at the most recent impact. */
@@ -594,6 +601,11 @@ export class Renderer {
     );
     this.scene.add(this.particles.points, this.beams.group, this.waves.group);
 
+    // The camera must be IN the scene graph: three.js only draws what it can
+    // reach from the scene, and the entire first-person weapon (plus its three
+    // lights) hangs off the camera. Without this line the rifle and the
+    // grapnel are built, animated, and never drawn.
+    this.scene.add(this.camera);
     this.viewmodel = this.buildViewmodel(0);
     this.viewmodel.traverse((o) => o.layers.enable(1));
     this.camera.add(this.viewmodel);
@@ -610,6 +622,7 @@ export class Renderer {
     const fill = new THREE.PointLight(0xffffff, 2.4, 2.2, 2);
     fill.position.set(0.1, -0.6, 0.2);
     this.camera.add(fill);
+    this.vmLights = [key, rim, fill];
 
     this.muzzle = this.makeSprite(0xfff0c0, 1.1);
     this.muzzle.visible = false;
@@ -3002,6 +3015,7 @@ export class Renderer {
 
     const scopedNow = local.scopeT > 0.72;
     this.viewmodel.visible = !scopedNow && !view.killcam && local.alive;
+    for (const light of this.vmLights) light.visible = this.viewmodel.visible;
     this.weaponRecoil *= Math.exp(-dt * 11);
     this.weaponKick *= Math.exp(-dt * 7);
     const yawDelta = this.normalizeAngle(local.yaw - this.lastYaw);

@@ -792,11 +792,37 @@ export function stepPlayer(
       }
       if (!stick) p.vel.y -= MOVE.gravity * dt;
     } else {
+      // ── Air control ──────────────────────────────────────────────────────
+      // Two authorities, because "I can't steer in the air" is the one thing
+      // that makes a movement game feel stiff:
+      //
+      // 1. Thrust toward your input up to `airMaxSpeed` — this is what lets a
+      //    plain jump go where you point it, in any of the eight directions.
+      // 2. *Steering*: rotate the velocity you already carry toward the input
+      //    without changing its length. Thrust alone can never turn a 50 m/s
+      //    swing, so momentum is re-aimed rather than fought. The rate tapers
+      //    above 40 m/s so a full-speed line still costs you something.
       if (wishLen > 1e-6) {
         const hs = flatSpeed(p.vel);
-        const scale = hs < MOVE.airMaxSpeed ? 1 : Math.max(0, 1 - (hs - MOVE.airMaxSpeed) / 18);
-        p.vel.x += wish.x * MOVE.airAccel * scale * dt;
-        p.vel.z += wish.z * MOVE.airAccel * scale * dt;
+        if (hs > 1.5) {
+          const heading = Math.atan2(p.vel.z, p.vel.x);
+          let turn = Math.atan2(wish.z, wish.x) - heading;
+          while (turn > Math.PI) turn -= Math.PI * 2;
+          while (turn < -Math.PI) turn += Math.PI * 2;
+          const taper = clamp(1 - (hs - 40) / 30, 0.4, 1);
+          const max = MOVE.airSteer * taper * dt;
+          const a = heading + clamp(turn, -max, max);
+          p.vel.x = Math.cos(a) * hs;
+          p.vel.z = Math.sin(a) * hs;
+        }
+        // Thrust only up to the cap, measured along the input: braking against
+        // your own momentum is the steering's job, not a rocket's.
+        const along = p.vel.x * wish.x + p.vel.z * wish.z;
+        if (along < MOVE.airMaxSpeed) {
+          const add = Math.min(MOVE.airAccel * dt, MOVE.airMaxSpeed - along);
+          p.vel.x += wish.x * add;
+          p.vel.z += wish.z * add;
+        }
       }
       p.vel.y -= MOVE.gravity * dt;
     }

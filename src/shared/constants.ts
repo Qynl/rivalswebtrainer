@@ -37,9 +37,16 @@ export const MOVE = {
   /** Exponential ground drag while above walk speed. */
   groundFriction: 4.5,
   slideFriction: 1.0,
-  airAccel: 30,
-  /** Air steering is capped so swinging beats running, but you never feel stuck. */
-  airMaxSpeed: 24,
+  /** Air thrust. 30 was a gentle drift; 48 lets a plain jump go where you point it. */
+  airAccel: 48,
+  /** Air thrust cap. Swinging (68) still beats flying, which is the point. */
+  airMaxSpeed: 28,
+  /**
+   * Radians per second you can rotate the velocity you already carry toward
+   * your input. This is the difference between "drift" and "steer": at 60 m/s
+   * thrust alone can never turn you, so momentum is re-aimed instead of fought.
+   */
+  airSteer: 6.4,
   jumpSpeed: 10.7,
   coyoteTime: 0.12,
   jumpBuffer: 0.12,
