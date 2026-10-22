@@ -110,6 +110,16 @@ interface PlayerVisual {
   outline: THREE.Mesh;
   jetL: THREE.Sprite;
   jetR: THREE.Sprite;
+  /** Thruster cones under the pack: solid geometry, not just a glow sprite. */
+  thrust: THREE.Mesh[];
+  /** A scored cape in four hinged panels, so speed is visible on the body. */
+  cape: THREE.Mesh[];
+  /** The visor's lamp: a thin line of team light you can find at 90 m. */
+  lamp: THREE.Sprite;
+  /** Anamorphic streak: a horizontal bar, the classic scope-shine tell. */
+  glintStreak: THREE.Sprite;
+  /** A wide, soft halo that lifts the glint off a bright sky. */
+  glintHalo: THREE.Sprite;
   shadow: THREE.Mesh;
   glintCore: THREE.Sprite;
   glintFlare: THREE.Sprite;
@@ -1181,6 +1191,70 @@ export class Renderer {
       beacon.scale.setScalar(1.1);
       group.add(beacon);
 
+      // ── Thruster pack ────────────────────────────────────────────────────
+      // Solid cones with an additive core: the sprite alone read as a smudge at
+      // range, and a player who is moving should look like they are moving.
+      const thrust: THREE.Mesh[] = [];
+      for (const side of [-1, 1]) {
+        const cone = new THREE.Mesh(
+          new THREE.ConeGeometry(0.075, 0.42, 8, 1, true),
+          new THREE.MeshBasicMaterial({
+            color: skin.color,
+            transparent: true,
+            opacity: 0,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending,
+            side: THREE.DoubleSide,
+          }),
+        );
+        cone.rotation.x = Math.PI;
+        cone.position.set(side * 0.16, -0.96, 0.14);
+        cone.visible = false;
+        group.add(cone);
+        thrust.push(cone);
+        // The nozzle it comes out of, part of the silhouette.
+        const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.07, 0.1, 10), plate);
+        nozzle.position.set(side * 0.16, -0.79, 0.14);
+        group.add(nozzle);
+      }
+      // The pack itself, so the thrusters are attached to something.
+      const pack = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.36, 0.14), plate);
+      pack.position.set(0, 0.3, 0.2);
+      pack.castShadow = true;
+      group.add(pack);
+      const packTrim = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.05, 0.15), accent);
+      packTrim.position.set(0, 0.24, 0.2);
+      group.add(packTrim);
+
+      // ── Cape ─────────────────────────────────────────────────────────────
+      // Four hinged panels hanging off the shoulders. Each lags the one above,
+      // so at speed the whole thing streams out behind like cloth, and when you
+      // stop it settles. It is the strongest distance cue on the model.
+      const cape: THREE.Mesh[] = [];
+      const capeMat = new THREE.MeshStandardMaterial({
+        color: 0x1b1f26,
+        roughness: 0.92,
+        metalness: 0.05,
+        side: THREE.DoubleSide,
+      });
+      let parent: THREE.Object3D = group;
+      for (let i = 0; i < 4; i++) {
+        const hinge = new THREE.Group();
+        hinge.position.set(0, i === 0 ? 0.44 : -0.2, i === 0 ? 0.22 : 0);
+        const seg = new THREE.Mesh(new THREE.PlaneGeometry(0.46 - i * 0.035, 0.21), capeMat);
+        seg.position.set(0, -0.105, 0.005);
+        seg.castShadow = true;
+        hinge.add(seg);
+        parent.add(hinge);
+        cape.push(hinge as unknown as THREE.Mesh);
+        parent = hinge;
+      }
+      // A team-coloured hem on the last panel: the cape is how you find the
+      // enemy, so it carries the colour that means "enemy".
+      const hem = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.035), accent);
+      hem.position.set(0, -0.2, 0.006);
+      parent.add(hem);
+
       const jetL = this.makeSprite(skin.color, 0.8);
       jetL.position.set(-0.16, -0.88, 0.16);
       group.add(jetL);
@@ -1192,6 +1266,30 @@ export class Renderer {
       glintCore.position.set(0, 0.66, -0.16);
       glintCore.visible = false;
       group.add(glintCore);
+      const lamp = this.makeSprite(skin.color, 0.55);
+      lamp.position.set(0, 0.66, -0.2);
+      group.add(lamp);
+      const glintStreak = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: this.flare,
+          color: 0xfff0d0,
+          transparent: true,
+          opacity: 0,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        }),
+      );
+      glintStreak.position.set(0, 0.66, -0.16);
+      glintStreak.visible = false;
+      // Squashed hard along one axis: a lens artefact, not a sun.
+      glintStreak.scale.set(9, 0.32, 1);
+      group.add(glintStreak);
+
+      const glintHalo = this.makeSprite(0xffe0b0, 3.4);
+      glintHalo.position.set(0, 0.66, -0.16);
+      glintHalo.visible = false;
+      group.add(glintHalo);
+
       const glintFlare = new THREE.Sprite(
         new THREE.SpriteMaterial({ map: this.flare, color: 0xffe6b8, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }),
       );
@@ -1216,6 +1314,11 @@ export class Renderer {
         outline: chest,
         jetL,
         jetR,
+        thrust,
+        cape,
+        lamp,
+        glintStreak,
+        glintHalo,
         shadow,
         glintCore,
         glintFlare,
@@ -2408,6 +2511,40 @@ export class Renderer {
         jet.visible = jetOn;
         jet.material.opacity = jetOn ? 0.35 + Math.sin(this.time * 40) * 0.1 : 0;
       }
+      // Thruster cones: length follows the throttle, so a swing pushes a long
+      // flame and a hop a short one. Flicker is per-frame noise, not a texture.
+      const throttle = clamp((state.speed - 6) / 34, 0, 1);
+      for (let t = 0; t < visual.thrust.length; t++) {
+        const cone = visual.thrust[t];
+        const lit = jetOn && throttle > 0.04;
+        cone.visible = lit;
+        if (lit) {
+          const flick = 0.82 + Math.sin(this.time * 54 + t * 2.1) * 0.18;
+          cone.scale.set(1, (0.35 + throttle * 1.5) * flick, 1);
+          (cone.material as THREE.MeshBasicMaterial).opacity = 0.35 + throttle * 0.5;
+        }
+      }
+      // Cape: each panel lags the body and the panel above it, so speed opens it
+      // out and stopping folds it back down. Cheap, and the single best motion
+      // read on a character seen from 60 m.
+      if (visual.cape.length) {
+        const sp = clamp(state.speed / 30, 0, 1);
+        const flutter = Math.sin(this.time * 9) * 0.05;
+        for (let c = 0; c < visual.cape.length; c++) {
+          const panel = visual.cape[c];
+          const lag = 0.06 * c;
+          const base = -0.08 - (sp * 0.42 + c * 0.1) * (c === 0 ? 1 : 0.9);
+          // Rising air pushes the hem up; falling lets it trail.
+          const vy = isLocal ? local.vel.y : 0;
+          const lift = clamp(vy / 18, -1, 1) * 0.12;
+          panel.rotation.x = lerp(
+            panel.rotation.x,
+            base - sp * 0.35 + flutter * (0.4 + c * 0.3) - lift + lag,
+            1 - Math.exp(-dt * 12),
+          );
+        }
+        visual.lamp.scale.setScalar(0.5 + Math.sin(this.time * 3 + (isLocal ? 0 : 2)) * 0.04);
+      }
 
       const groundY = isLocal ? view.groundLocal : view.groundRemote;
       if (typeof groundY === 'number' && alive) {
@@ -2426,13 +2563,30 @@ export class Renderer {
       const glintOn = intensity > 0.02;
       visual.glintCore.visible = glintOn;
       visual.glintFlare.visible = glintOn;
+      visual.glintStreak.visible = glintOn;
+      visual.glintHalo.visible = glintOn;
       if (glintOn) {
-        const pulse = 0.92 + Math.sin(this.time * 7.5) * 0.08;
-        visual.glintCore.material.opacity = Math.min(1, intensity) * 0.95;
-        visual.glintCore.scale.setScalar((0.7 + intensity * 1.2) * pulse);
-        visual.glintFlare.material.opacity = Math.min(1, intensity) * 0.7;
-        visual.glintFlare.scale.setScalar(1.6 + intensity * 2.6);
-        visual.glintFlare.material.rotation = this.time * 0.2;
+        const k = Math.min(1, intensity);
+        const dist = Math.hypot(pos.x - eye.x, pos.y - eye.y, pos.z - eye.z);
+        // Sprites are sized in metres, so a glint 90 m away would be a sub-pixel
+        // dot. Growing it with distance keeps the tell readable without turning
+        // a close-range glint into a bonfire.
+        const reach = 1 + clamp(dist / 55, 0, 1.6);
+        const pulse = 0.9 + Math.sin(this.time * 7.5) * 0.1;
+        visual.glintCore.material.opacity = k * 0.95;
+        visual.glintCore.scale.setScalar((0.7 + k * 1.2) * pulse * reach);
+        visual.glintFlare.material.opacity = k * 0.7;
+        visual.glintFlare.scale.setScalar((1.6 + k * 2.6) * pulse * reach);
+        visual.glintFlare.material.rotation = this.time * 0.18;
+        // The streak is locked horizontal in screen space: it reads as a lens,
+        // and it survives being seen against a white sky.
+        visual.glintStreak.material.opacity = k * (0.6 + Math.sin(this.time * 5.2) * 0.2);
+        visual.glintStreak.scale.set((6 + k * 7) * reach, 0.22 + k * 0.18, 1);
+        visual.glintHalo.material.opacity = k * 0.34;
+        visual.glintHalo.scale.setScalar((3.2 + k * 2.4) * reach * pulse);
+      } else {
+        visual.glintStreak.material.opacity = 0;
+        visual.glintHalo.material.opacity = 0;
       }
 
       if (isRemote && remote.alive && remote.speed > 26) {
