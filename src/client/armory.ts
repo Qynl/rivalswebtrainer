@@ -66,14 +66,57 @@ function preview(c: Cosmetic): string {
       <circle cx="158" cy="52" r="2" fill="${hex(s.trail)}" opacity="0.6"/>
     </svg>`;
   }
-  const s = c as KillEffect;
-  return `<svg viewBox="0 0 200 74" aria-hidden="true">
-    <circle cx="100" cy="37" r="26" fill="none" stroke="${hex(s.ring)}" stroke-width="2.5" opacity="0.85"/>
-    <circle cx="100" cy="37" r="15" fill="none" stroke="${hex(s.burst)}" stroke-width="1.5" opacity="0.7"/>
-    <path d="M100 9 v10 M100 55 v10 M72 37 h10 M118 37 h10 M82 19 l7 7 M118 48 l-7 -7 M118 19 l-7 7 M82 48 l7 -7"
-      stroke="${hex(s.burst)}" stroke-width="3" stroke-linecap="round"/>
-    <circle cx="100" cy="37" r="5" fill="${hex(s.motes)}"/>
-  </svg>`;
+  return fxPreview(c as KillEffect);
+}
+
+/**
+ * The effect card animates the effect it is selling: the same shape language the
+ * renderer uses (shards tumble, petals open, arcs fork) drawn in 2D. The shop is
+ * the only place a player can study a purchase, so a still frame undersells it.
+ */
+function fxPreview(s: KillEffect): string {
+  const ring = hex(s.ring);
+  const burst = hex(s.burst);
+  const motes = hex(s.motes);
+  const common = `<circle class="fx-ring" cx="100" cy="37" r="26" fill="none" stroke="${ring}" stroke-width="2.5"/>`;
+  const core = `<circle cx="100" cy="37" r="4.5" fill="${motes}"/>`;
+  switch (s.shape) {
+    case 'shard':
+      return `<svg viewBox="0 0 200 74" aria-hidden="true">${common}
+        <g class="fx-spin" style="transform-origin:100px 37px">
+          <path d="M100 16 l7 9 -7 12 -7 -12z" fill="${burst}" opacity="0.95"/>
+          <path d="M70 30 l6 6 -6 9 -6 -9z" fill="${motes}" opacity="0.85"/>
+          <path d="M130 44 l6 -7 6 8 -6 8z" fill="${burst}" opacity="0.8"/>
+          <path d="M88 54 l5 5 -5 7 -5 -7z" fill="${motes}" opacity="0.7"/>
+        </g>${core}</svg>`;
+    case 'petal':
+      return `<svg viewBox="0 0 200 74" aria-hidden="true">${common}
+        <g class="fx-bloom" style="transform-origin:100px 37px">
+          <ellipse cx="100" cy="26" rx="5" ry="11" fill="${burst}" opacity="0.8"/>
+          <ellipse cx="111" cy="37" rx="11" ry="5" fill="${burst}" opacity="0.8"/>
+          <ellipse cx="100" cy="48" rx="5" ry="11" fill="${motes}" opacity="0.7"/>
+          <ellipse cx="89" cy="37" rx="11" ry="5" fill="${motes}" opacity="0.7"/>
+        </g>${core}</svg>`;
+    case 'arc':
+      return `<svg viewBox="0 0 200 74" aria-hidden="true">${common}
+        <g class="fx-flicker" stroke="${burst}" stroke-width="2.4" stroke-linecap="round" fill="none">
+          <path d="M100 37 l-16 -12 8 -2 -14 -12"/>
+          <path d="M100 37 l17 -13 -9 -2 15 -11"/>
+          <path d="M100 37 l-14 13 9 2 -14 12"/>
+          <path d="M100 37 l15 12 -10 2 14 11" stroke="${motes}"/>
+        </g>${core}</svg>`;
+    case 'star':
+      return `<svg viewBox="0 0 200 74" aria-hidden="true">
+        <circle class="fx-ring fast" cx="100" cy="37" r="26" fill="none" stroke="${ring}" stroke-width="2.5"/>
+        <circle class="fx-ring slow" cx="100" cy="37" r="26" fill="none" stroke="${motes}" stroke-width="1.6"/>
+        <circle cx="100" cy="37" r="9" fill="${burst}" opacity="0.9"/>${core}</svg>`;
+    default:
+      return `<svg viewBox="0 0 200 74" aria-hidden="true">${common}
+        <g class="fx-spark" stroke="${burst}" stroke-width="3" stroke-linecap="round">
+          <path d="M100 12 v12 M100 50 v12 M74 37 h12 M114 37 h12"/>
+          <path d="M84 21 l7 7 M116 46 l-7 -7 M116 21 l-7 7 M84 46 l7 -7" stroke="${motes}"/>
+        </g>${core}</svg>`;
+  }
 }
 
 const TIER_LABEL: Record<string, string> = {

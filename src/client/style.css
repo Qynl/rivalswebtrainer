@@ -1692,3 +1692,60 @@ button.ghost:hover {
   box-shadow: 0 0 8px rgba(230, 178, 100, 0.8);
   align-self: center;
 }
+
+/* ── Effect card previews ──────────────────────────────────────────────────
+   The card animates the effect it is selling, in the same shape language the
+   renderer uses. All CSS: no canvas, no WebGL, nothing to load. */
+
+.fx-ring {
+  opacity: 0.85;
+  transform-origin: 100px 37px;
+  animation: fx-pulse 1.8s ease-out infinite;
+}
+
+.fx-ring.fast { animation-duration: 1.1s; }
+.fx-ring.slow { animation-duration: 2.6s; }
+
+@keyframes fx-pulse {
+  0% { transform: scale(0.55); opacity: 0.1; }
+  35% { opacity: 0.9; }
+  100% { transform: scale(1.25); opacity: 0; }
+}
+
+.fx-spin { animation: fx-rotate 5.5s linear infinite; }
+
+@keyframes fx-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.fx-bloom {
+  animation: fx-bloom 2.4s ease-in-out infinite;
+}
+
+@keyframes fx-bloom {
+  0%, 100% { transform: scale(0.7) rotate(0deg); opacity: 0.35; }
+  45% { transform: scale(1.15) rotate(18deg); opacity: 1; }
+}
+
+.fx-flicker { animation: fx-flicker 0.5s steps(2, end) infinite; }
+
+@keyframes fx-flicker {
+  0% { opacity: 0.25; }
+  50% { opacity: 1; }
+  100% { opacity: 0.45; }
+}
+
+.fx-spark { animation: fx-spark 1.2s ease-out infinite; }
+
+@keyframes fx-spark {
+  0% { transform: scale(0.4); opacity: 0.35; }
+  30% { opacity: 1; }
+  100% { transform: scale(1.1); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fx-ring, .fx-spin, .fx-bloom, .fx-flicker, .fx-spark, .card-art::after {
+    animation: none;
+  }
+}
