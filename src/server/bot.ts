@@ -101,8 +101,13 @@ export class Bot {
       // up hard where a swing would just orbit an anchor underneath the map.
       // Recover early: a long fall is survivable but it puts the bot under the
       // map, where every pinion is out of reach.
-      if (!p.grounded && p.vel.y < -10 && p.pos.y < 48) this.escape(p, arena);
-      else if (!p.grounded && p.pos.y < 34 && p.vel.y < -8) this.escape(p, arena);
+      if (!p.grounded && p.vel.y < -9) {
+        // Only bother if there is no deck under the drop: jumping in place
+        // must not read as a bot that panics at every hop.
+        const land = this.landingGoal(p, arena);
+        if (Math.hypot(land.x - p.pos.x, land.z - p.pos.z) > 7) this.escape(p, arena);
+      }
+      else if (p.pos.y < 34) this.escape(p, arena);
       else if (p.pos.y < 26) this.escape(p, arena);
       else if (!this.rope && !p.grapple.active && p.grapple.cooldown <= 0 && p.grapple.chainTimer <= 0) {
         // Travel from a standing start: a zip launched mid-fall is a coin flip
@@ -338,15 +343,20 @@ export class Bot {
   private escape(p: PlayerState, arena: Arena): void {
     if (this.rope || p.grapple.active) return;
     let best: { a: Vec3; score: number } | null = null;
+    let highest: { a: Vec3; score: number } | null = null;
     for (const a of arena.anchors) {
-      if (a.y < p.pos.y + 5) continue;
       const d = Math.hypot(a.x - p.pos.x, a.y - p.pos.y, a.z - p.pos.z);
       if (d > 60) continue;
       // A pinion over a deck is worth far more than a taller one over nothing:
       // a zip that ends in open air just buys another fall.
       const score = (this.deckBelow(arena, a) ? 60 : 0) - d * 0.4 + (a.y - p.pos.y) * 0.1;
+      if (!highest || a.y > highest.a.y) highest = { a, score };
+      if (a.y < p.pos.y + 5) continue;
       if (!best || score > best.score) best = { a, score };
     }
+    // Nothing above? Then the fall started from the roof: pull to the highest
+    // pinion there is. A zip that goes sideways still kills the fall speed.
+    if (!best) best = highest;
     if (best) this.startZip(best.a);
   }
 

@@ -100,6 +100,7 @@ interface PlayerVisual {
   glintCore: THREE.Sprite;
   glintFlare: THREE.Sprite;
   rifle: THREE.Group;
+  launcher: THREE.Group;
   color: THREE.Color;
 }
 
@@ -363,8 +364,22 @@ export class Renderer {
     this.scene.add(this.particles.points, this.beams.group, this.waves.group);
 
     this.viewmodel = this.buildViewmodel(0);
+    this.viewmodel.traverse((o) => o.layers.enable(1));
     this.camera.add(this.viewmodel);
-    this.scene.add(this.camera);
+    // A dedicated rig for the hands and the gun. A viewmodel lit only by the
+    // world sun goes black the moment you face away from it, which is exactly
+    // when you are looking at it most. Short-range point lights keep the effect
+    // on the weapon instead of washing out the map.
+    const key = new THREE.PointLight(0xfff3e0, 9, 2.8, 2);
+    key.position.set(-0.5, 0.7, 0.45);
+    this.camera.add(key);
+    const rim = new THREE.PointLight(0xc3dbf6, 5, 2.6, 2);
+    rim.position.set(0.7, -0.15, -1.1);
+    this.camera.add(rim);
+    const fill = new THREE.PointLight(0xffffff, 2.4, 2.2, 2);
+    fill.position.set(0.1, -0.6, 0.2);
+    this.camera.add(fill);
+
     this.muzzle = this.makeSprite(0xfff0c0, 1.1);
     this.muzzle.visible = false;
     this.viewmodel.add(this.muzzle);
@@ -664,18 +679,52 @@ export class Renderer {
         group.add(boot);
       }
 
+      // What the opponent is carrying has to be readable at rifle range: a
+      // long rifle silhouette, or the stubby launcher with its drum of cable.
       const rifle = new THREE.Group();
-      const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.12, 0.9), tan);
-      rifle.add(receiver);
-      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.62, 6), plate);
+      const part = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number): void => {
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(x, y, z);
+        rifle.add(mesh);
+      };
+      part(new THREE.BoxGeometry(0.09, 0.11, 0.86), tan, 0, 0, 0);
+      part(new THREE.BoxGeometry(0.075, 0.06, 0.5), plate, 0, -0.075, 0.02);
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.024, 0.72, 8), plate);
       barrel.rotation.x = Math.PI / 2;
       barrel.position.z = -0.72;
       rifle.add(barrel);
-      const trim = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.02, 0.34), accent);
-      trim.position.set(0, 0.07, -0.2);
-      rifle.add(trim);
+      const brake = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.04, 0.14, 8), accent);
+      brake.rotation.x = Math.PI / 2;
+      brake.position.z = -1.1;
+      rifle.add(brake);
+      // Optic.
+      const optic = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.036, 0.34, 8), plate);
+      optic.rotation.x = Math.PI / 2;
+      optic.position.set(0, 0.1, -0.16);
+      rifle.add(optic);
+      // Stock, magazine, grip.
+      part(new THREE.BoxGeometry(0.06, 0.1, 0.34), tan, 0, -0.03, 0.52);
+      part(new THREE.BoxGeometry(0.05, 0.16, 0.1), plate, 0, -0.16, -0.04);
+      part(new THREE.BoxGeometry(0.05, 0.14, 0.08), plate, 0, -0.12, 0.16);
+      part(new THREE.BoxGeometry(0.1, 0.02, 0.3), accent, 0, 0.065, -0.3);
       rifle.position.set(0.2, 0.24, -0.36);
       group.add(rifle);
+
+      // Grapnel launcher in the same hands.
+      const launcher = new THREE.Group();
+      const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.09, 12), plate);
+      drum.rotation.z = Math.PI / 2;
+      launcher.add(drum);
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.13, 0.42), tan);
+      body.position.z = -0.16;
+      launcher.add(body);
+      const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.16, 10), accent);
+      muzzle.rotation.x = Math.PI / 2;
+      muzzle.position.z = -0.42;
+      launcher.add(muzzle);
+      launcher.position.set(0.2, 0.24, -0.3);
+      launcher.visible = false;
+      group.add(launcher);
 
       // Team-colour shoulder beacon: the readable "that is an enemy" cue.
       const beacon = new THREE.Sprite(this.makeGlowSpriteMaterial(skin.color, 0.55));
@@ -710,7 +759,7 @@ export class Renderer {
       this.scene.add(shadow);
 
       this.scene.add(group);
-      this.players.push({ group, torso, legs, visor, outline: chest, jetL, jetR, shadow, glintCore, glintFlare, rifle, color });
+      this.players.push({ group, torso, legs, visor, outline: chest, jetL, jetR, shadow, glintCore, glintFlare, rifle, launcher, color });
     }
 
     // Cable: a thick dark sheath with a bright core, plus a real grapnel head
@@ -748,6 +797,14 @@ export class Renderer {
 
       this.ropes.push({ line, geo, mat, sheath, sheathGeo, sheathMat });
       const head = buildGrapnel(0xc9a86a);
+      // A hot little halo rides with the claw while it is in the air, so a
+      // throw stays visible against the sky at any range.
+      const spark = new THREE.Sprite(
+        new THREE.SpriteMaterial({ map: this.glow, color: 0xffe6b0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }),
+      );
+      spark.scale.setScalar(0.9);
+      spark.name = 'hookspark';
+      head.add(spark);
       head.visible = false;
       this.scene.add(head);
       this.hookHeads.push(head);
@@ -1404,7 +1461,9 @@ export class Renderer {
       const sliding = state.sliding;
       visual.group.rotation.z = sliding ? 0.6 : 0;
       // Their hands show the same kit they have equipped.
-      visual.rifle.visible = (isLocal ? local.slot : remote.slot) === 0;
+      const slot = isLocal ? local.slot : remote.slot;
+      visual.rifle.visible = slot === 0;
+      visual.launcher.visible = slot === 1;
       visual.group.rotation.x = 0;
 
       const airborne = isLocal ? !local.grounded : !remote.alive ? false : true;
@@ -1633,6 +1692,12 @@ export class Renderer {
     });
     head.rotateZ(flight ? dt * 9 : 0);
     head.scale.setScalar(flight ? 1.15 : 1);
+    const spark = head.getObjectByName('hookspark') as THREE.Sprite | undefined;
+    if (spark) {
+      const mat = spark.material as THREE.SpriteMaterial;
+      mat.opacity = lerp(mat.opacity, flight ? 0.55 : 0, 1 - Math.exp(-dt * 12));
+      spark.visible = mat.opacity > 0.02;
+    }
   }
 
   private updateRing(radius: number, active: boolean, dt: number): void {
