@@ -24,6 +24,9 @@ function airPlayer(x: number, y: number, z: number): PlayerState {
   p.alive = true;
   p.pos = { x, y, z };
   p.vel = { x: 0, y: 0, z: 0 };
+  // These runs are about the rope, not the inventory: start with it in hand so
+  // the first trigger press throws rather than equips.
+  p.slot = 1;
   updateEye(p);
   return p;
 }
@@ -65,7 +68,7 @@ function runSwing(
   let peakAfterRelease = p.pos.y;
   for (let i = 0; i < 420; i++) {
     let keys = KEY.forward | extraKeys;
-    if (!released) keys |= KEY.grapple;
+    if (!released) keys |= KEY.fire;
     if (!released && p.grapple.active) attached = true;
     if (attached && !released && releaseWhen(p)) {
       released = true;
@@ -124,7 +127,7 @@ describe('grapple', () => {
         aim(p, { x: 0, y: 60, z: 20 });
         phase = 'chain';
       }
-      const keys = phase === 'swing' ? KEY.forward | KEY.grapple : phase === 'chain' ? KEY.grapple : KEY.forward;
+      const keys = phase === 'swing' ? KEY.forward | KEY.fire : phase === 'chain' ? KEY.fire : KEY.forward;
       stepPlayer(p, { seq: i, keys, yaw: p.yaw, pitch: p.pitch }, DT, phys, ROPE, null, events);
       if (phase === 'chain' && p.grapple.active && chainY === 0) {
         chainY = p.pos.y;
@@ -146,7 +149,7 @@ describe('grapple', () => {
     const events: SimEvent[] = [];
     // Hold a long swing, then release and wait past the window before re-hooking.
     for (let i = 0; i < 100; i++) {
-      stepPlayer(p, { seq: i, keys: KEY.forward | KEY.grapple, yaw: p.yaw, pitch: p.pitch }, DT, phys, ROPE, null, events);
+      stepPlayer(p, { seq: i, keys: KEY.forward | KEY.fire, yaw: p.yaw, pitch: p.pitch }, DT, phys, ROPE, null, events);
     }
     for (let i = 0; i < 50; i++) {
       stepPlayer(p, { seq: 100 + i, keys: KEY.forward, yaw: p.yaw, pitch: p.pitch }, DT, phys, ROPE, null, events);
@@ -155,7 +158,7 @@ describe('grapple', () => {
     aim(p, { x: 0, y: 60, z: 20 });
     const before = p.pos.y;
     for (let i = 0; i < 3; i++) {
-      stepPlayer(p, { seq: 200 + i, keys: KEY.grapple, yaw: p.yaw, pitch: p.pitch }, DT, phys, ROPE, null, events);
+      stepPlayer(p, { seq: 200 + i, keys: KEY.fire, yaw: p.yaw, pitch: p.pitch }, DT, phys, ROPE, null, events);
     }
     expect(p.grapple.active || p.pos.y < before).toBe(true);
     expect(p.grapple.chain).toBe(0);
@@ -168,7 +171,7 @@ describe('grapple', () => {
     const events: SimEvent[] = [];
     let peak = 0;
     for (let i = 0; i < 120; i++) {
-      stepPlayer(p, { seq: i, keys: i === 2 ? KEY.grapple : 0, yaw: p.yaw, pitch: p.pitch }, DT, phys, ROPE, null, events);
+      stepPlayer(p, { seq: i, keys: i === 2 ? KEY.fire : 0, yaw: p.yaw, pitch: p.pitch }, DT, phys, ROPE, null, events);
       peak = Math.max(peak, p.pos.y);
     }
     expect(events.some((e) => e.type === 'zip')).toBe(true);
@@ -185,17 +188,20 @@ describe('grapple', () => {
     updateEye(b);
     aim(a, b.pos);
     const events: SimEvent[] = [];
-    stepPlayer(a, { seq: 1, keys: KEY.grapple, yaw: a.yaw, pitch: a.pitch }, DT, phys, ROPE, b, events);
+    // The claw is a projectile: hold the trigger and give it the flight time.
+    for (let i = 0; i < 20 && !a.grapple.active; i++) {
+      stepPlayer(a, { seq: 1 + i, keys: KEY.fire, yaw: a.yaw, pitch: a.pitch }, DT, phys, ROPE, b, events);
+    }
     expect(a.grapple.active).toBe(true);
     expect(a.grapple.target).toBe(1);
     // Move the opponent: the rope anchor must follow their body.
     b.pos.z -= 6;
     updateEye(b);
-    stepPlayer(a, { seq: 2, keys: KEY.grapple, yaw: a.yaw, pitch: a.pitch }, DT, phys, ROPE, b, events);
+    stepPlayer(a, { seq: 2, keys: KEY.fire, yaw: a.yaw, pitch: a.pitch }, DT, phys, ROPE, b, events);
     expect(a.grapple.anchor.z).toBeLessThan(-20);
     // The opponent dying snaps the rope.
     b.alive = false;
-    stepPlayer(a, { seq: 3, keys: KEY.grapple, yaw: a.yaw, pitch: a.pitch }, DT, phys, ROPE, b, events);
+    stepPlayer(a, { seq: 3, keys: KEY.fire, yaw: a.yaw, pitch: a.pitch }, DT, phys, ROPE, b, events);
     expect(a.grapple.active).toBe(false);
   });
 
@@ -204,16 +210,20 @@ describe('grapple', () => {
     const p = airPlayer(0, 60, 0);
     aim(p, { x: 0, y: 60, z: -200 }); // nothing there
     const events: SimEvent[] = [];
-    stepPlayer(p, { seq: 1, keys: KEY.grapple, yaw: p.yaw, pitch: p.pitch }, DT, phys, ROPE, null, events);
+    for (let i = 0; i < 40; i++) {
+      stepPlayer(p, { seq: 1 + i, keys: KEY.fire, yaw: p.yaw, pitch: p.pitch }, DT, phys, ROPE, null, events);
+    }
     expect(p.grapple.active).toBe(false);
-    expect(events.some((e) => e.type === 'grappleMiss')).toBe(true);
+    expect(events.some((e) => e.type === 'hookMiss' || e.type === 'grappleMiss')).toBe(true);
 
     const far = airPlayer(0, 60, 0);
     aim(far, { x: 0, y: 90, z: 0 });
     const target = { x: 0, y: 90, z: 0 };
     far.pos = { x: 0, y: 90, z: GRAPPLE.range + 20 };
     aim(far, target);
-    stepPlayer(far, { seq: 1, keys: KEY.grapple, yaw: far.yaw, pitch: far.pitch }, DT, phys, ROPE, null, []);
+    for (let i = 0; i < 45; i++) {
+      stepPlayer(far, { seq: 1 + i, keys: KEY.fire, yaw: far.yaw, pitch: far.pitch }, DT, phys, ROPE, null, []);
+    }
     expect(far.grapple.active).toBe(false);
   });
 
@@ -232,10 +242,12 @@ describe('grapple', () => {
       p.yaw = (yawStep / 16) * Math.PI * 2;
       p.pitch = 0.7;
       const trial = createPlayer(0, 0);
-      Object.assign(trial, p, { grapple: { ...p.grapple, active: false } });
+      Object.assign(trial, p, { grapple: { ...p.grapple, active: false }, slot: 1 });
       const ev: SimEvent[] = [];
-      stepPlayer(trial, { seq: 99, keys: KEY.grapple, yaw: p.yaw, pitch: p.pitch }, DT, phys, ARENA, null, ev);
-      found = trial.grapple.active;
+      for (let i = 0; i < 30 && !found; i++) {
+        stepPlayer(trial, { seq: 99 + i, keys: KEY.fire, yaw: p.yaw, pitch: p.pitch }, DT, phys, ARENA, null, ev);
+        found = trial.grapple.active;
+      }
     }
     expect(found).toBe(true);
   });

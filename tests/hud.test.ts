@@ -44,7 +44,10 @@ describe('hud', () => {
         alive: false,
         respawnIn: 1.7,
         protect: false,
-              });
+        slot: 0,
+        hookFlying: false,
+        hooked: false,
+      });
       hud.setNet(42, 'ONLINE', 'ok');
       hud.setHint(true);
       hud.setWeaponLabel('LANCE');
@@ -78,6 +81,9 @@ describe('hud', () => {
       alive: true,
       respawnIn: 0,
       protect: true,
+      slot: 0,
+      hookFlying: false,
+      hooked: false,
     });
     const arc = document.getElementById('reloadArc');
     expect(arc?.classList.contains('on')).toBe(true);
@@ -87,9 +93,9 @@ describe('hud', () => {
 
   it('shows and hides the scope with the scope transition', () => {
     const scope = document.getElementById('scope') as HTMLElement;
-    hud.frame({ speed: 0, scopeT: 0, hipSpread: 2.4, fireCooldown: 0, chain: 0, alive: true, respawnIn: 0, protect: false, });
+    hud.frame({ speed: 0, scopeT: 0, hipSpread: 2.4, fireCooldown: 0, chain: 0, alive: true, respawnIn: 0, protect: false, slot: 0, hookFlying: false, hooked: false });
     expect(scope.classList.contains('on')).toBe(false);
-    hud.frame({ speed: 0, scopeT: 1, hipSpread: 0, fireCooldown: 0, chain: 0, alive: true, respawnIn: 0, protect: false, });
+    hud.frame({ speed: 0, scopeT: 1, hipSpread: 0, fireCooldown: 0, chain: 0, alive: true, respawnIn: 0, protect: false, slot: 0, hookFlying: false, hooked: false });
     expect(scope.classList.contains('on')).toBe(true);
     expect(document.getElementById('crosshair')?.classList.contains('scoped')).toBe(true);
   });

@@ -240,6 +240,25 @@ export class Sfx {
     if (boost > 0.6) this.tone(96, 0.4, 'sine', 0.2, { slideTo: 60 });
   }
 
+  /** Loadout change: a mechanical clack, heavier for the grapnel. */
+  equip(grapnel: boolean): void {
+    this.tone(grapnel ? 320 : 420, 0.06, 'square', 0.09, { slideTo: grapnel ? 190 : 520 });
+    this.noiseBurst(0.1, 0.07, { freq: grapnel ? 1400 : 2000, q: 1.6, sweepTo: 400 });
+  }
+
+  /** Claw launch: a pneumatic thump plus the cable paying out. */
+  hookFire(): void {
+    this.noiseBurst(0.07, 0.32, { freq: 900, q: 0.8, sweepTo: 2600 });
+    this.tone(150, 0.14, 'square', 0.16, { slideTo: 70 });
+    this.noiseBurst(0.34, 0.11, { freq: 2600, q: 2.2, sweepTo: 700, when: 0.02 });
+  }
+
+  /** Claw came back empty. */
+  hookMiss(): void {
+    this.noiseBurst(0.3, 0.09, { freq: 3000, q: 1.4, sweepTo: 600 });
+    this.tone(260, 0.12, 'triangle', 0.06, { slideTo: 150 });
+  }
+
   jump(): void {
     this.noiseBurst(0.1, 0.06, { freq: 1800, q: 1.2, sweepTo: 600 });
   }

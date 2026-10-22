@@ -96,6 +96,12 @@ export const GRAPPLE = {
   releaseBoostMax: 11,
   releaseUp: 3.2,
   minRopeLength: 6,
+  /** The hook is a projectile now: a visible claw crosses the gap before the
+   *  rope bites. 170 m/s makes a 25 m hop land in about 0.15 s, which reads as
+   *  instant but still lets you see the throw. */
+  hookSpeed: 170,
+  hookMaxTime: 0.5,
+  /** Time of a "quick" click after the hook bites, before it becomes a swing. */
   /** Rope length blends so a moving opponent doesn't teleport-yank you. */
   opponentElastic: 0.9,
 } as const;

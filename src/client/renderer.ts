@@ -44,6 +44,10 @@ export interface RemoteView {
   glint: number;
   speed: number;
   grapple: { active: boolean; mode: 'none' | 'swing' | 'zip'; anchor: Vec3; length: number; target: 0 | 1 };
+  /** Equipped item, so their hands match yours. */
+  slot: 0 | 1;
+  /** Claw in flight. */
+  hook: { active: boolean; pos: Vec3 };
 }
 
 export interface RopeView {
@@ -51,6 +55,8 @@ export interface RopeView {
   anchor: Vec3;
   length: number;
   mode: 'none' | 'swing' | 'zip';
+  /** Claw still travelling: a straight cable paying out of the hand. */
+  inFlight?: boolean;
 }
 
 export interface FrameView {
@@ -93,6 +99,7 @@ interface PlayerVisual {
   shadow: THREE.Mesh;
   glintCore: THREE.Sprite;
   glintFlare: THREE.Sprite;
+  rifle: THREE.Group;
   color: THREE.Color;
 }
 
@@ -161,6 +168,102 @@ function mergeGeometries(geos: THREE.BufferGeometry[]): THREE.BufferGeometry {
   return out;
 }
 
+
+/**
+ * The claw. A tapered shaft, a shackle ring and three hinged flukes that snap
+ * shut the instant the hook bites — the shape is what sells the throw.
+ */
+function buildGrapnel(metalHex: number): THREE.Group {
+  const root = new THREE.Group();
+  const steel = new THREE.MeshStandardMaterial({ color: 0x4a4e55, roughness: 0.38, metalness: 0.85 });
+  const brass = new THREE.MeshStandardMaterial({ color: metalHex, roughness: 0.34, metalness: 0.9 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x1d2024, roughness: 0.7, metalness: 0.4 });
+
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.028, 0.3, 10), steel);
+  shaft.rotation.x = Math.PI / 2;
+  shaft.position.z = -0.1;
+  root.add(shaft);
+
+  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.014, 5, 12), brass);
+  collar.position.z = -0.02;
+  root.add(collar);
+
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.012, 5, 12), brass);
+  ring.position.z = 0.09;
+  root.add(ring);
+
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.11, 8), dark);
+  nose.rotation.x = -Math.PI / 2;
+  nose.position.z = -0.3;
+  root.add(nose);
+
+  // Three flukes on a common hinge line: they fold back in flight and bite
+  // outward on contact.
+  for (let i = 0; i < 3; i++) {
+    const hinge = new THREE.Group();
+    hinge.name = `hinge${i}`;
+    hinge.rotation.z = (i / 3) * Math.PI * 2;
+    const fluke = new THREE.Group();
+    fluke.position.z = -0.16;
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.026, 0.15), steel);
+    arm.position.z = -0.075;
+    fluke.add(arm);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.021, 0.09, 6), brass);
+    tip.rotation.x = -Math.PI / 2;
+    tip.position.z = -0.175;
+    fluke.add(tip);
+    hinge.add(fluke);
+    root.add(hinge);
+  }
+  return root;
+}
+
+/**
+ * Bakes a cheap ambient-occlusion read into the merged block geometry: tops
+ * catch the sun, sides fall off, undersides go dark, and everything picks up a
+ * little more light the higher it sits. One extra attribute, no extra pass.
+ */
+function shadeBlocks(geo: THREE.BufferGeometry): void {
+  const pos = geo.getAttribute('position');
+  const nrm = geo.getAttribute('normal');
+  const colors = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const ny = nrm.getY(i);
+    const y = pos.getY(i);
+    let v = ny > 0.5 ? 1 : ny < -0.5 ? 0.52 : 0.8;
+    v *= 0.88 + clamp((y + 12) / 130, 0, 1) * 0.16;
+    // A hint of warm light from the sun side, cool bounce in the shade.
+    colors[i * 3] = clamp(v * 1.01, 0, 1);
+    colors[i * 3 + 1] = clamp(v, 0, 1);
+    colors[i * 3 + 2] = clamp(v * 0.97, 0, 1);
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+}
+
+
+/**
+ * Collapses a group of static meshes into one mesh per material. The first
+ * person models are ~90 little parts; merged they cost a dozen draw calls,
+ * which is the difference between a crisp viewmodel and a stutter.
+ */
+function mergeChildren(group: THREE.Group, preserve: Set<THREE.Object3D> = new Set()): void {
+  const byMat = new Map<THREE.Material, THREE.BufferGeometry[]>();
+  for (const child of [...group.children]) {
+    if (preserve.has(child) || !(child as THREE.Mesh).isMesh) continue;
+    const mesh = child as THREE.Mesh;
+    mesh.updateMatrix();
+    const geo = mesh.geometry.clone().applyMatrix4(mesh.matrix);
+    const list = byMat.get(mesh.material as THREE.Material) ?? [];
+    list.push(geo);
+    byMat.set(mesh.material as THREE.Material, list);
+    group.remove(mesh);
+  }
+  for (const [mat, geos] of byMat) {
+    if (!geos.length) continue;
+    group.add(new THREE.Mesh(geos.length === 1 ? geos[0] : mergeGeometries(geos), mat));
+  }
+}
+
 export class Renderer {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
@@ -175,8 +278,14 @@ export class Renderer {
   private waves = new Shockwaves(8);
 
   private players: PlayerVisual[] = [];
-  private ropes: { line: Line2; geo: LineGeometry; mat: LineMaterial }[] = [];
-  private ropeHook: THREE.Mesh[] = [];
+  private ropes: {
+    line: Line2;
+    geo: LineGeometry;
+    mat: LineMaterial;
+    sheath: Line2;
+    sheathGeo: LineGeometry;
+    sheathMat: LineMaterial;
+  }[] = [];
   private ringGroup = new THREE.Group();
   private ringWall: THREE.Mesh = new THREE.Mesh();
   private ringLines: THREE.Line[] = [];
@@ -185,6 +294,14 @@ export class Renderer {
   private anchorHalos: THREE.Points | null = null;
   private anchorSpin = 0;
   private viewmodel: THREE.Group;
+  private rifleModel: THREE.Group = new THREE.Group();
+  private grapnelModel: THREE.Group = new THREE.Group();
+  private boltGroup: THREE.Group = new THREE.Group();
+  private spool: THREE.Object3D = new THREE.Object3D();
+  private slotBlend = 0;
+  private hookKick = 0;
+  private hookHeads: THREE.Group[] = [];
+  private hookClaw: number[] = [0, 0];
   private viewmodelSkin = -1;
   private muzzle: THREE.Sprite;
   private muzzleLight: THREE.PointLight;
@@ -247,9 +364,9 @@ export class Renderer {
     this.muzzle = this.makeSprite(0xfff0c0, 1.1);
     this.muzzle.visible = false;
     this.viewmodel.add(this.muzzle);
-    this.muzzle.position.set(0, 0.02, -1.35);
+    this.muzzle.position.set(0, 0.008, -1.42);
     this.muzzleLight = new THREE.PointLight(0xffd9a0, 0, 14, 2);
-    this.muzzleLight.position.set(0, 0.1, -1.6);
+    this.muzzleLight.position.set(0, 0.06, -1.55);
     this.camera.add(this.muzzleLight);
 
     this.post = new PostFX(this.renderer, this.scene, this.camera);
@@ -302,21 +419,28 @@ export class Renderer {
     const rust = metalTexture('#6d5f52', '#3d352d');
 
     const mats: Record<string, THREE.Material> = {
-      deck: new THREE.MeshStandardMaterial({ map: floor, bumpMap: floor, bumpScale: 0.12, color: COL.deck, roughness: 0.88, metalness: 0.06 }),
-      wall: new THREE.MeshStandardMaterial({ map: stone, bumpMap: stone, bumpScale: 0.18, color: COL.wall, roughness: 0.92, metalness: 0.02 }),
-      strut: new THREE.MeshStandardMaterial({ map: steel, bumpMap: steel, bumpScale: 0.22, color: COL.strut, roughness: 0.72, metalness: 0.35 }),
-      beacon: new THREE.MeshStandardMaterial({ map: darkStone, bumpMap: darkStone, bumpScale: 0.14, color: COL.beacon, roughness: 0.85, metalness: 0.05 }),
+      deck: new THREE.MeshStandardMaterial({ map: floor, bumpMap: floor, bumpScale: 0.12, color: COL.deck, roughness: 0.88, metalness: 0.06, vertexColors: true }),
+      wall: new THREE.MeshStandardMaterial({ map: stone, bumpMap: stone, bumpScale: 0.18, color: COL.wall, roughness: 0.92, metalness: 0.02, vertexColors: true }),
+      strut: new THREE.MeshStandardMaterial({ map: steel, bumpMap: steel, bumpScale: 0.22, color: COL.strut, roughness: 0.72, metalness: 0.35, vertexColors: true }),
+      beacon: new THREE.MeshStandardMaterial({ map: darkStone, bumpMap: darkStone, bumpScale: 0.14, color: COL.beacon, roughness: 0.85, metalness: 0.05, vertexColors: true }),
     };
+    const seen = new Set<number>();
+    for (const list of Object.values(groups)) for (const g of list) seen.add(g.id);
     void rust;
+    void seen;
 
     for (const kind of Object.keys(groups)) {
       if (!groups[kind].length) continue;
-      const mesh = new THREE.Mesh(mergeGeometries(groups[kind]), mats[kind]);
+      const merged = mergeGeometries(groups[kind]);
+      shadeBlocks(merged);
+      const mesh = new THREE.Mesh(merged, mats[kind]);
       mesh.name = `arena-${kind}`;
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       this.scene.add(mesh);
     }
+
+    this.buildStructure();
 
     // Painted safety yellow along every deck rim. It is the clearest "this is
     // an edge" cue in the scene, and it costs one instanced draw call.
@@ -582,35 +706,179 @@ export class Renderer {
       this.scene.add(shadow);
 
       this.scene.add(group);
-      this.players.push({ group, torso, legs, visor, outline: chest, jetL, jetR, shadow, glintCore, glintFlare, color });
+      this.players.push({ group, torso, legs, visor, outline: chest, jetL, jetR, shadow, glintCore, glintFlare, rifle, color });
     }
 
-    // Rope: physical sag, a hook head and no glow soup.
+    // Cable: a thick dark sheath with a bright core, plus a real grapnel head
+    // that can be seen leaving your hand.
     for (let i = 0; i < 2; i++) {
       const geo = new LineGeometry();
       geo.setPositions([0, 0, 0, 0, 1, 0]);
       const mat = new LineMaterial({
         color: SKINS[i].color,
-        linewidth: 2.2,
+        linewidth: 1.5,
         worldUnits: false,
         transparent: true,
-        opacity: 0.95,
+        opacity: 0.9,
         depthWrite: false,
       });
       const line = new Line2(geo, mat);
       line.frustumCulled = false;
       line.visible = false;
       this.scene.add(line);
-      this.ropes.push({ line, geo, mat });
 
-      const hook = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.14, 0.1, 0.3, 8),
-        new THREE.MeshStandardMaterial({ color: 0xc9a86a, roughness: 0.4, metalness: 0.9 }),
-      );
-      hook.visible = false;
-      this.scene.add(hook);
-      this.ropeHook.push(hook);
+      const sheathGeo = new LineGeometry();
+      sheathGeo.setPositions([0, 0, 0, 0, 1, 0]);
+      const sheathMat = new LineMaterial({
+        color: 0x23262b,
+        linewidth: 3.6,
+        worldUnits: false,
+        transparent: true,
+        opacity: 0.95,
+        depthWrite: false,
+      });
+      const sheath = new Line2(sheathGeo, sheathMat);
+      sheath.frustumCulled = false;
+      sheath.visible = false;
+      this.scene.add(sheath);
+
+      this.ropes.push({ line, geo, mat, sheath, sheathGeo, sheathMat });
+      const head = buildGrapnel(0xc9a86a);
+      head.visible = false;
+      this.scene.add(head);
+      this.hookHeads.push(head);
     }
+  }
+
+  /**
+   * Everything that makes the blocks read as built rather than dropped:
+   * underdeck joists, corner caps, pipe runs and a hazy skyline on the horizon.
+   * All of it is decoration — none of it has a collider or a gameplay effect.
+   */
+  private buildStructure(): void {
+    const steel = new THREE.MeshStandardMaterial({ color: 0x53565c, roughness: 0.6, metalness: 0.55 });
+    const darkSteel = new THREE.MeshStandardMaterial({ color: 0x2b2e33, roughness: 0.66, metalness: 0.5 });
+    const unit = new THREE.BoxGeometry(1, 1, 1);
+    const mat4 = new THREE.Matrix4();
+    const push = (list: THREE.Matrix4[], x: number, y: number, z: number, sx: number, sy: number, sz: number, ry = 0): void => {
+      list.push(
+        new THREE.Matrix4().compose(
+          new THREE.Vector3(x, y, z),
+          new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ry),
+          new THREE.Vector3(sx, sy, sz),
+        ),
+      );
+    };
+
+    const joists: THREE.Matrix4[] = [];
+    const caps: THREE.Matrix4[] = [];
+    const pipes: THREE.Matrix4[] = [];
+    const lampsOn: THREE.Matrix4[] = [];
+
+    for (const b of this.arena.blocks) {
+      if (b.kind === 'deck') {
+        // Joists under the slab, running the short axis, so looking up from
+        // the void shows structure instead of a floating pancake.
+        const span = Math.min(b.hx, b.hz) * 2;
+        const long = Math.max(b.hx, b.hz);
+        const alongX = b.hx >= b.hz;
+        const count = Math.max(2, Math.round(long / 6));
+        for (let i = 0; i < count; i++) {
+          const t = (i + 0.5) / count;
+          const off = (t - 0.5) * long * 1.7;
+          const x = alongX ? b.x + off : b.x;
+          const z = alongX ? b.z : b.z + off;
+          push(joists, x, b.y - b.hy - 0.22, z, alongX ? 0.34 : span, 0.42, alongX ? span : 0.34);
+        }
+        // Corner caps: a machined edge catches the light and frames the deck.
+        for (const sx of [-1, 1]) {
+          for (const sz of [-1, 1]) {
+            const cx = b.x + sx * (b.hx - 0.32);
+            const cz = b.z + sz * (b.hz - 0.32);
+            push(caps, cx, b.y + b.hy + 0.12, cz, 0.62, 0.26, 0.62);
+            push(caps, cx, b.y - b.hy - 0.12, cz, 0.62, 0.26, 0.62);
+          }
+        }
+        // A few service lamps on the underside, aimed at the void.
+        if (b.hx > 5 && b.hz > 5) {
+          push(lampsOn, b.x, b.y - b.hy - 0.3, b.z, 1.1, 0.14, 1.1);
+        }
+      } else if (b.kind === 'wall') {
+        // Pipe runs down the inner faces of the tall walls.
+        const face = b.hx > b.hz ? 'x' : 'z';
+        for (const side of [-1, 1]) {
+          if (face === 'x') {
+            push(pipes, b.x, b.y + b.hy * 0.2, b.z + side * (b.hz + 0.28), 0.26, b.hy * 1.5, 0.26);
+          } else {
+            push(pipes, b.x + side * (b.hx + 0.28), b.y + b.hy * 0.2, b.z, 0.26, b.hy * 1.5, 0.26);
+          }
+        }
+      }
+    }
+
+    const instanced = (list: THREE.Matrix4[], geo: THREE.BufferGeometry, mat: THREE.Material, shadow = true): void => {
+      if (!list.length) return;
+      const mesh = new THREE.InstancedMesh(geo, mat, list.length);
+      list.forEach((m, i) => mesh.setMatrixAt(i, m));
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.castShadow = shadow;
+      mesh.receiveShadow = true;
+      this.scene.add(mesh);
+    };
+    instanced(joists, unit, darkSteel);
+    instanced(caps, unit, steel);
+    const pipeGeo = new THREE.CylinderGeometry(0.16, 0.16, 1, 8);
+    instanced(pipes, pipeGeo, steel);
+    void mat4;
+
+    // Skyline: hazy towers and a crane out past the arena. They never enter
+    // the play space; they exist so the horizon is a place, not a void.
+    const skyline: THREE.BufferGeometry[] = [];
+    for (let i = 0; i < 40; i++) {
+      const a = (i / 40) * Math.PI * 2 + (i % 3) * 0.06;
+      const r = 300 + (i % 6) * 46;
+      const h = 34 + ((i * 47) % 120);
+      const w = 12 + ((i * 29) % 26);
+      const g = new THREE.BoxGeometry(w, h, w * (0.6 + ((i * 7) % 10) / 10));
+      g.translate(Math.cos(a) * r, h / 2 - 46, Math.sin(a) * r);
+      skyline.push(g);
+    }
+    // Two cranes: a mast, a jib and a counter-jib.
+    for (const [cx, cz, rot] of [[210, -150, 0.4], [-230, 120, 2.2]] as [number, number, number][]) {
+      const mast = new THREE.BoxGeometry(3, 96, 3);
+      mast.translate(cx, 2, cz);
+      skyline.push(mast);
+      const jib = new THREE.BoxGeometry(70, 2.4, 2.4);
+      jib.translate(cx + Math.cos(rot) * 26, 48, cz + Math.sin(rot) * 26);
+      jib.rotateY(rot);
+      skyline.push(jib);
+    }
+    const cityGeo = mergeGeometries(skyline);
+    const city = new THREE.Mesh(
+      cityGeo,
+      new THREE.MeshStandardMaterial({ color: 0x9aa9b8, roughness: 1, metalness: 0 }),
+    );
+    city.name = 'skyline';
+    this.scene.add(city);
+
+    // Lit windows on the nearest towers, so the skyline is not a flat cut-out.
+    const winGeo = new THREE.PlaneGeometry(2.4, 1.4);
+    const winMat = new THREE.MeshBasicMaterial({ color: 0xf2e3c3, transparent: true, opacity: 0.5 });
+    const wins: THREE.Matrix4[] = [];
+    for (let i = 0; i < 60; i++) {
+      const a = (i / 60) * Math.PI * 2 + 0.15;
+      const r = 300 + (i % 6) * 46;
+      const h = 34 + ((i * 47) % 120);
+      const y = -40 + ((i * 13) % Math.max(10, h - 24)) + 12;
+      wins.push(
+        new THREE.Matrix4().compose(
+          new THREE.Vector3(Math.cos(a) * (r - 9), y, Math.sin(a) * (r - 9)),
+          new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -a + Math.PI / 2),
+          new THREE.Vector3(1, 1, 1),
+        ),
+      );
+    }
+    instanced(wins, winGeo, winMat, false);
   }
 
   private buildRing(): void {
@@ -697,96 +965,235 @@ export class Renderer {
     return s;
   }
 
+  /**
+   * Both hands' worth of kit, built once. The marksman rifle is the long,
+   * scoped, bolt-action silhouette; the grapnel is a chunky launcher with a
+   * live spool. Only one is visible at a time — swapping is a physical motion,
+   * not a texture change.
+   */
   private buildViewmodel(skinIndex: number): THREE.Group {
     const skin = SKINS[skinIndex];
-    const g = new THREE.Group();
-    // Sand-painted furniture over dark steel: the warm gun body is the one
-    // large non-informational colour in view, and it keeps the first-person
-    // silhouette readable against dark interior walls.
-    const gunmetal = new THREE.MeshStandardMaterial({ color: 0x2c3138, roughness: 0.46, metalness: 0.75 });
-    const polymer = new THREE.MeshStandardMaterial({ color: 0x1b1e23, roughness: 0.82, metalness: 0.1 });
-    const sand = new THREE.MeshStandardMaterial({ color: 0xa48b58, roughness: 0.72, metalness: 0.15 });
-    const accent = new THREE.MeshStandardMaterial({ color: skin.color, roughness: 0.5, metalness: 0.3, emissive: new THREE.Color(skin.color), emissiveIntensity: 0.12 });
+    const container = new THREE.Group();
+
+    const gunmetal = new THREE.MeshStandardMaterial({ color: 0x33383f, roughness: 0.42, metalness: 0.8 });
+    const blued = new THREE.MeshStandardMaterial({ color: 0x191c20, roughness: 0.32, metalness: 0.85 });
+    const polymer = new THREE.MeshStandardMaterial({ color: 0x22252a, roughness: 0.85, metalness: 0.08 });
+    const sand = new THREE.MeshStandardMaterial({ color: 0xa78e5b, roughness: 0.7, metalness: 0.12 });
+    const accent = new THREE.MeshStandardMaterial({
+      color: skin.color,
+      roughness: 0.45,
+      metalness: 0.3,
+      emissive: new THREE.Color(skin.color),
+      emissiveIntensity: 0.1,
+    });
     const glove = new THREE.MeshStandardMaterial({ color: 0xb99455, roughness: 0.93, metalness: 0.02 });
-    const sleeve = new THREE.MeshStandardMaterial({ color: 0x4a4d43, roughness: 0.96, metalness: 0.02 });
-    const lance = skin.weapon === 'lance';
+    const gloveDark = new THREE.MeshStandardMaterial({ color: 0x8a6d40, roughness: 0.95, metalness: 0.02 });
+    const sleeve = new THREE.MeshStandardMaterial({ color: 0x4b4e44, roughness: 0.96, metalness: 0.02 });
+    const brass = new THREE.MeshStandardMaterial({ color: 0xc9a86a, roughness: 0.33, metalness: 0.9 });
+    const glass = new THREE.MeshStandardMaterial({ color: 0x223a4a, roughness: 0.08, metalness: 0.95 });
 
-    // Receiver.
-    const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.13, 0.72), sand);
-    receiver.position.z = -0.4;
-    g.add(receiver);
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.03, 0.6), polymer);
-    rail.position.set(0, 0.08, -0.42);
-    g.add(rail);
-    // Painted panel on the side, the cosmetic difference.
-    const panel = new THREE.Mesh(new THREE.BoxGeometry(0.005, 0.08, 0.34), accent);
-    panel.position.set(0.052, -0.01, -0.44);
-    g.add(panel);
+    const box = (w: number, h: number, d: number, m: THREE.Material, x: number, y: number, z: number): THREE.Mesh => {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+      mesh.position.set(x, y, z);
+      return mesh;
+    };
+    const cyl = (r1: number, r2: number, len: number, m: THREE.Material, x: number, y: number, z: number, axis: 'x' | 'z' = 'z'): THREE.Mesh => {
+      const mesh = new THREE.Mesh(new THREE.CylinderGeometry(r1, r2, len, 12), m);
+      if (axis === 'z') mesh.rotation.x = Math.PI / 2;
+      else mesh.rotation.z = Math.PI / 2;
+      mesh.position.set(x, y, z);
+      return mesh;
+    };
 
-    // Handguard + barrel.
-    const guardLen = lance ? 0.62 : 0.5;
-    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.09, guardLen), sand);
-    guard.position.set(0, 0.01, -0.82 - guardLen * 0.3);
-    g.add(guard);
-    const barrelLen = lance ? 0.66 : 0.52;
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(lance ? 0.019 : 0.015, lance ? 0.021 : 0.017, barrelLen, 10), gunmetal);
-    barrel.rotation.x = Math.PI / 2;
-    barrel.position.set(0, 0.02, -0.9 - guardLen * 0.55 - barrelLen * 0.4);
-    g.add(barrel);
-    const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.028, 0.1, 8), gunmetal);
-    muzzle.rotation.x = Math.PI / 2;
-    muzzle.position.set(0, 0.02, -0.9 - guardLen * 0.55 - barrelLen * 0.78);
-    g.add(muzzle);
+    // ── Marksman rifle ────────────────────────────────────────────────────
+    const rifle = new THREE.Group();
 
-    // Optic.
-    const scopeBody = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.046, 0.3, 12), gunmetal);
-    scopeBody.rotation.x = Math.PI / 2;
-    scopeBody.position.set(0, 0.15, -0.34);
-    g.add(scopeBody);
-    const scopeRing = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.008, 6, 14), polymer);
-    scopeRing.position.set(0, 0.15, -0.2);
-    g.add(scopeRing);
-    const lens = new THREE.Mesh(new THREE.CircleGeometry(0.038, 14), new THREE.MeshStandardMaterial({ color: 0x2a4a5c, roughness: 0.1, metalness: 0.9 }));
-    lens.position.set(0, 0.15, -0.19);
-    g.add(lens);
+    const receiver = box(0.086, 0.1, 0.44, sand, 0, 0.005, -0.36);
+    rifle.add(receiver);
+    rifle.add(box(0.072, 0.055, 0.48, gunmetal, 0, -0.055, -0.37));
+    rifle.add(box(0.05, 0.016, 0.44, blued, 0, 0.062, -0.4));
+    // Chamfered shoulders give the receiver a machined read instead of a slab.
+    for (const side of [-1, 1]) {
+      const chamfer = box(0.02, 0.03, 0.42, polymer, side * 0.041, 0.048, -0.38);
+      chamfer.rotation.z = side * 0.5;
+      rifle.add(chamfer);
+    }
 
-    // Magazine, grip, stock.
-    const mag = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.22, 0.13), polymer);
-    mag.position.set(0, -0.16, -0.32);
-    mag.rotation.x = 0.22;
-    g.add(mag);
-    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.16, 0.09), polymer);
-    grip.position.set(0, -0.12, -0.06);
-    grip.rotation.x = -0.32;
-    g.add(grip);
-    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.1, 0.26), polymer);
-    stock.position.set(0, -0.01, 0.06);
-    g.add(stock);
+    // Barrel, flutes, brake.
+    rifle.add(cyl(0.0145, 0.0155, 0.62, blued, 0, 0.008, -1.0));
+    for (let i = 0; i < 3; i++) {
+      const flute = cyl(0.0045, 0.0045, 0.5, gunmetal, 0, 0.008, -0.98);
+      const a = (i / 3) * Math.PI * 2;
+      flute.position.x = Math.cos(a) * 0.016;
+      flute.position.y = 0.008 + Math.sin(a) * 0.016;
+      rifle.add(flute);
+    }
+    const brake = cyl(0.03, 0.032, 0.12, gunmetal, 0, 0.008, -1.36);
+    rifle.add(brake);
+    rifle.add(cyl(0.033, 0.033, 0.014, brass, 0, 0.008, -1.31));
+    rifle.add(cyl(0.033, 0.033, 0.014, brass, 0, 0.008, -1.41));
+    for (const side of [-1, 1]) rifle.add(box(0.014, 0.03, 0.05, blued, side * 0.03, 0.008, -1.36));
 
-    // Hands: a glove on the grip and one on the handguard, with sleeves.
-    const glove1 = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.11, 0.16), glove);
-    glove1.position.set(0.005, -0.14, -0.08);
-    glove1.rotation.x = -0.2;
-    g.add(glove1);
-    const glove2 = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.1, 0.15), glove);
-    glove2.position.set(-0.01, -0.06, -0.78);
-    g.add(glove2);
-    const sleeve1 = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.07, 0.34, 8), sleeve);
-    sleeve1.rotation.x = Math.PI / 2.3;
-    sleeve1.rotation.z = 0.12;
-    sleeve1.position.set(0.09, -0.24, -0.02);
-    g.add(sleeve1);
-    const sleeve2 = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.068, 0.4, 8), sleeve);
-    sleeve2.rotation.x = Math.PI / 2.1;
-    sleeve2.rotation.z = -0.3;
-    sleeve2.position.set(-0.14, -0.2, -0.62);
-    g.add(sleeve2);
+    // Handguard with cooling slots.
+    rifle.add(box(0.07, 0.072, 0.34, sand, 0, 0.004, -0.76));
+    for (let i = 0; i < 4; i++) {
+      for (const side of [-1, 1]) {
+        rifle.add(box(0.004, 0.032, 0.03, polymer, side * 0.036, 0.004, -0.63 - i * 0.075));
+      }
+    }
+    rifle.add(box(0.06, 0.014, 0.3, polymer, 0, -0.034, -0.76));
 
-    g.position.set(0.22, -0.2, -0.1);
-    g.rotation.y = -0.04;
-    g.visible = false;
+    // Optic: tube, objective bell, ocular, sunshade, turrets, mounts.
+    const scopeY = 0.128;
+    rifle.add(cyl(0.031, 0.031, 0.3, gunmetal, 0, scopeY, -0.3));
+    rifle.add(cyl(0.043, 0.036, 0.1, gunmetal, 0, scopeY, -0.48));
+    rifle.add(cyl(0.039, 0.034, 0.08, gunmetal, 0, scopeY, -0.13));
+    rifle.add(cyl(0.046, 0.046, 0.03, blued, 0, scopeY, -0.535));
+    const lens = new THREE.Mesh(new THREE.CircleGeometry(0.036, 18), glass);
+    lens.position.set(0, scopeY, -0.545);
+    lens.rotation.y = Math.PI;
+    rifle.add(lens);
+    const eyeLens = new THREE.Mesh(new THREE.CircleGeometry(0.03, 16), glass);
+    eyeLens.position.set(0, scopeY, -0.088);
+    rifle.add(eyeLens);
+    const turret = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.03, 12), blued);
+    turret.position.set(0, scopeY + 0.045, -0.34);
+    rifle.add(turret);
+    rifle.add(cyl(0.014, 0.014, 0.028, blued, 0.038, scopeY, -0.34, 'x'));
+    for (const z of [-0.42, -0.2]) rifle.add(box(0.04, 0.05, 0.03, blued, 0, scopeY - 0.045, z));
+
+    // Bolt handle: this group is animated through the cycle.
+    this.boltGroup = new THREE.Group();
+    this.boltGroup.position.set(0.045, 0.016, -0.14);
+    const stem = cyl(0.011, 0.011, 0.075, gunmetal, 0.035, 0, 0, 'x');
+    this.boltGroup.add(stem);
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.024, 10, 8), blued);
+    knob.position.x = 0.075;
+    this.boltGroup.add(knob);
+    rifle.add(this.boltGroup);
+
+    // Magazine, grip, trigger, stock.
+    const mag = box(0.052, 0.18, 0.11, polymer, 0, -0.13, -0.26);
+    mag.rotation.x = 0.16;
+    rifle.add(mag);
+    rifle.add(box(0.056, 0.02, 0.12, gunmetal, 0, -0.22, -0.245));
+    const grip = box(0.048, 0.15, 0.075, polymer, 0, -0.11, -0.03);
+    grip.rotation.x = -0.34;
+    rifle.add(grip);
+    const triggerGuard = new THREE.Mesh(new THREE.TorusGeometry(0.032, 0.006, 5, 10), gunmetal);
+    triggerGuard.rotation.x = Math.PI / 2;
+    triggerGuard.position.set(0, -0.085, -0.135);
+    rifle.add(triggerGuard);
+    rifle.add(box(0.05, 0.085, 0.28, sand, 0, -0.01, 0.08));
+    rifle.add(box(0.045, 0.032, 0.14, polymer, 0, 0.05, 0.04));
+    rifle.add(box(0.06, 0.11, 0.028, polymer, 0, -0.012, 0.23));
+    rifle.add(box(0.03, 0.02, 0.05, gunmetal, 0, 0.075, -0.02));
+
+    // Folded bipod under the handguard.
+    for (const side of [-1, 1]) {
+      const leg = box(0.012, 0.012, 0.22, gunmetal, side * 0.028, -0.06, -0.62);
+      leg.rotation.x = 0.22;
+      rifle.add(leg);
+    }
+
+    // Team paint + stencil plate.
+    rifle.add(box(0.004, 0.055, 0.2, accent, 0.045, -0.005, -0.42));
+    rifle.add(box(0.004, 0.03, 0.05, accent, -0.045, 0.02, -0.2));
+
+    // Hands: right on the grip, left under the handguard.
+    const handR = box(0.075, 0.1, 0.13, glove, 0.004, -0.135, -0.03);
+    handR.rotation.x = -0.3;
+    rifle.add(handR);
+    const handL = box(0.082, 0.088, 0.12, glove, -0.006, -0.075, -0.72);
+    rifle.add(handL);
+    for (let i = 0; i < 3; i++) {
+      rifle.add(box(0.078, 0.018, 0.032, gloveDark, -0.004, -0.052 + i * 0.03, -0.74 - i * 0.001));
+    }
+    const sleeveR = cyl(0.055, 0.07, 0.3, sleeve, 0.07, -0.23, 0.02);
+    sleeveR.rotation.set(1.25, 0, 0.16);
+    rifle.add(sleeveR);
+    const sleeveL = cyl(0.05, 0.066, 0.34, sleeve, -0.1, -0.19, -0.56);
+    sleeveL.rotation.set(1.3, 0, -0.34);
+    rifle.add(sleeveL);
+
+    // ── Grapnel launcher ──────────────────────────────────────────────────
+    const grapnel = new THREE.Group();
+    grapnel.add(box(0.098, 0.11, 0.24, gunmetal, 0, -0.01, -0.16));
+    grapnel.add(box(0.08, 0.07, 0.1, sand, 0, 0.03, -0.3));
+    grapnel.add(cyl(0.048, 0.052, 0.17, gunmetal, 0, 0.02, -0.42));
+    grapnel.add(cyl(0.055, 0.055, 0.02, brass, 0, 0.02, -0.5));
+    grapnel.add(cyl(0.056, 0.056, 0.02, brass, 0, 0.02, -0.34));
+    grapnel.add(box(0.04, 0.02, 0.06, blued, 0, 0.085, -0.42));
+
+    // Spool: visible cable, spins while the claw is out.
+    this.spool = new THREE.Group();
+    this.spool.position.set(0, -0.035, -0.2);
+    const spoolCore = new THREE.MeshStandardMaterial({ color: 0x2a2d33, roughness: 0.6, metalness: 0.5 });
+    const cableMat = new THREE.MeshStandardMaterial({ color: 0x3c3a34, roughness: 0.85, metalness: 0.2 });
+    this.spool.add(cyl(0.052, 0.052, 0.05, spoolCore, 0, 0, 0, 'x'));
+    const wound = cyl(0.056, 0.056, 0.042, cableMat, 0, 0, 0, 'x');
+    this.spool.add(wound);
+    for (const side of [-1, 1]) {
+      this.spool.add(cyl(0.062, 0.062, 0.012, gunmetal, side * 0.032, 0, 0, 'x'));
+    }
+    grapnel.add(this.spool);
+    grapnel.add(box(0.02, 0.05, 0.05, brass, 0.06, -0.035, -0.2));
+
+    // The resting claw, cradled and ready.
+    const ready = buildGrapnel(0xc9a86a);
+    ready.scale.setScalar(0.55);
+    ready.position.set(0, 0.035, -0.52);
+    grapnel.add(ready);
+
+    const gGrip = box(0.048, 0.15, 0.075, polymer, 0, -0.11, -0.03);
+    gGrip.rotation.x = -0.34;
+    grapnel.add(gGrip);
+    const gGuard = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.006, 5, 10), gunmetal);
+    gGuard.rotation.x = Math.PI / 2;
+    gGuard.position.set(0, -0.08, -0.12);
+    grapnel.add(gGuard);
+    grapnel.add(box(0.004, 0.05, 0.16, accent, 0.05, 0.0, -0.18));
+    const gHandR = box(0.075, 0.1, 0.13, glove, 0.004, -0.135, -0.03);
+    gHandR.rotation.x = -0.3;
+    grapnel.add(gHandR);
+    grapnel.add(box(0.08, 0.085, 0.12, glove, -0.005, -0.07, -0.24));
+    const gSleeveR = cyl(0.055, 0.07, 0.3, sleeve, 0.07, -0.23, 0.02);
+    gSleeveR.rotation.set(1.25, 0, 0.16);
+    grapnel.add(gSleeveR);
+    const gSleeveL = cyl(0.05, 0.066, 0.3, sleeve, -0.11, -0.2, -0.14);
+    gSleeveL.rotation.set(1.3, 0, -0.4);
+    grapnel.add(gSleeveL);
+
+    // Cull the static parts down to one mesh per material (the bolt, spool and
+    // the cradle claw stay separate because they animate).
+    mergeChildren(ready, new Set());
+    mergeChildren(rifle, new Set<THREE.Object3D>([this.boltGroup]));
+    mergeChildren(grapnel, new Set<THREE.Object3D>([this.spool, ready]));
+
+    rifle.position.set(0, 0, 0);
+    grapnel.position.set(0, 0, 0);
+    container.add(rifle, grapnel);
+    this.rifleModel = rifle;
+    this.grapnelModel = grapnel;
+    this.slotBlend = skinIndex === -1 ? 0 : this.slotBlend;
+
+    container.position.set(0.22, -0.2, -0.1);
+    container.rotation.y = -0.04;
+    container.visible = false;
     this.viewmodelSkin = skinIndex;
-    return g;
+    return container;
+  }
+
+  /** Cosmetic kick for the launcher; the sim already knows the hook is away. */
+  hookFire(): void {
+    this.hookKick = 1;
+    this.punch(-0.03, 0.01);
+  }
+
+  /** Sparks at the bite point. */
+  hookHit(pos: Vec3): void {
+    this.particles.burst(pos, 0xffe0a8, 16, { speed: 6, size: 0.12, life: 0.35, gravity: 8 });
+    this.waves.spawn(pos, 0xe6b264, 2.4, 0.3);
   }
 
   setSkin(index: 0 | 1): void {
@@ -795,7 +1202,7 @@ export class Renderer {
     this.viewmodel = this.buildViewmodel(index);
     this.camera.add(this.viewmodel);
     this.viewmodel.add(this.muzzle);
-    this.muzzle.position.set(0, 0.02, -1.85);
+    this.muzzle.position.set(0, 0.008, -1.42);
     this.viewmodel.visible = true;
   }
 
@@ -920,6 +1327,8 @@ export class Renderer {
       visual.group.rotation.y = (isLocal ? local.yaw : remote.yaw) + Math.PI;
       const sliding = state.sliding;
       visual.group.rotation.z = sliding ? 0.6 : 0;
+      // Their hands show the same kit they have equipped.
+      visual.rifle.visible = (isLocal ? local.slot : remote.slot) === 0;
       visual.group.rotation.x = 0;
 
       const airborne = isLocal ? !local.grounded : !remote.alive ? false : true;
@@ -998,6 +1407,27 @@ export class Renderer {
     if (this.floaters) this.floaters.rotation.y = this.time * 0.008;
 
     // ── Viewmodel ──────────────────────────────────────────────────────────
+    // Swapping is a physical motion: the outgoing item drops out of frame and
+    // the new one rises into it, so 1 / 2 reads instantly even in a fight.
+    this.slotBlend = lerp(this.slotBlend, local.slot, 1 - Math.exp(-dt * 13));
+    const blend = this.slotBlend;
+    this.rifleModel.visible = blend < 0.985;
+    this.grapnelModel.visible = blend > 0.015;
+    this.rifleModel.position.y = -blend * 0.42;
+    this.rifleModel.rotation.x = blend * 0.9;
+    this.grapnelModel.position.y = -(1 - blend) * 0.42;
+    this.grapnelModel.rotation.x = (1 - blend) * 0.9;
+
+    // Bolt cycle: handle lifts and draws back while the next round feeds.
+    const cycle = local.fireCooldown > 0 ? clamp(local.fireCooldown / 0.5, 0, 1) : 0;
+    const lifted = Math.sin(Math.min(1, (1 - cycle) * 2) * Math.PI);
+    this.boltGroup.rotation.x = -lifted * 1.15;
+    this.boltGroup.position.z = -0.14 + lifted * 0.06;
+    // Spool pays out while the claw is away.
+    this.hookKick = Math.max(0, this.hookKick - dt * 6);
+    this.spool.rotation.x += dt * (local.hook.active ? 26 : 0) + this.hookKick * dt * 40;
+    this.grapnelModel.position.z = this.hookKick * 0.07;
+
     const scopedNow = local.scopeT > 0.72;
     this.viewmodel.visible = !scopedNow && !view.killcam && local.alive;
     this.weaponRecoil *= Math.exp(-dt * 11);
@@ -1065,35 +1495,65 @@ export class Renderer {
 
   private drawRope(index: number, from: Vec3, rope: RopeView | null, color: number, dt: number): void {
     const entry = this.ropes[index];
-    const hook = this.ropeHook[index];
+    const head = this.hookHeads[index];
     if (!rope) {
       entry.line.visible = false;
-      hook.visible = false;
+      entry.sheath.visible = false;
+      head.visible = false;
+      this.hookClaw[index] = lerp(this.hookClaw[index], 0, 1 - Math.exp(-dt * 20));
       return;
     }
+
     const dist = Math.hypot(rope.anchor.x - from.x, rope.anchor.y - from.y, rope.anchor.z - from.z);
     const slack = Math.max(0, rope.length - dist);
-    const sag = Math.min(3.2, slack * 0.5);
-    const SEG = 18;
+    // A taut cable is a straight line; slack hangs. In flight the cable is
+    // being pulled out of the spool, so it stays dead straight and thin.
+    const flight = !!rope.inFlight;
+    const sag = flight ? 0 : Math.min(3.2, slack * 0.5);
+    const taut = !flight && slack < 0.6;
+    const whip = taut ? Math.sin(this.time * 26 + index) * 0.02 : 0;
+    const SEG = 20;
     const pts: number[] = [];
     for (let i = 0; i <= SEG; i++) {
       const t = i / SEG;
       const s = Math.sin(Math.PI * t) * sag;
+      // A small lateral wobble so a taut line reads as loaded, not painted on.
+      const ox = Math.sin(Math.PI * t) * whip;
       pts.push(
-        from.x + (rope.anchor.x - from.x) * t,
+        from.x + (rope.anchor.x - from.x) * t + ox,
         from.y + (rope.anchor.y - from.y) * t - s,
-        from.z + (rope.anchor.z - from.z) * t,
+        from.z + (rope.anchor.z - from.z) * t + ox * 0.5,
       );
     }
     entry.geo.setPositions(pts);
+    entry.sheathGeo.setPositions(pts);
     entry.line.visible = true;
-    entry.mat.color.setHex(color);
-    entry.mat.linewidth = rope.mode === 'zip' ? 3 : 2.2;
-    entry.mat.opacity = 0.95;
+    entry.sheath.visible = true;
+    entry.mat.color.setHex(flight ? 0xd8c79a : color);
+    entry.mat.linewidth = flight ? 1.1 : rope.mode === 'zip' ? 1.9 : 1.5;
+    entry.mat.opacity = 0.9;
+    entry.sheathMat.linewidth = flight ? 2.6 : rope.mode === 'zip' ? 5 : 4.2;
 
-    hook.visible = true;
-    hook.position.set(rope.anchor.x, rope.anchor.y, rope.anchor.z);
-    hook.rotation.y += dt * 4;
+    // Claw: spins open in flight, snaps shut on the bite.
+    head.visible = true;
+    head.position.set(rope.anchor.x, rope.anchor.y, rope.anchor.z);
+    const dx = rope.anchor.x - from.x;
+    const dy = rope.anchor.y - from.y;
+    const dz = rope.anchor.z - from.z;
+    head.lookAt(rope.anchor.x + dx, rope.anchor.y + dy, rope.anchor.z + dz);
+    const target = flight ? 1 : 0;
+    this.hookClaw[index] = lerp(this.hookClaw[index], target, 1 - Math.exp(-dt * (flight ? 14 : 26)));
+    const open = this.hookClaw[index];
+    head.children.forEach((child) => {
+      if (child.name.startsWith('hinge')) {
+        const i = Number(child.name.slice(5));
+        child.rotation.z = ((i / 3) * Math.PI * 2);
+        const fluke = child.children[0];
+        if (fluke) fluke.rotation.x = -0.15 - open * 0.85;
+      }
+    });
+    head.rotateZ(flight ? dt * 9 : 0);
+    head.scale.setScalar(flight ? 1.15 : 1);
   }
 
   private updateRing(radius: number, active: boolean, dt: number): void {

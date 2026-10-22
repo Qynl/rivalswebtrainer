@@ -219,6 +219,9 @@ export class Hud {
     alive: boolean;
     respawnIn: number;
     protect: boolean;
+    slot: 0 | 1;
+    hookFlying: boolean;
+    hooked: boolean;
   }): void {
     const spread = 8 + opts.hipSpread * 10 + Math.min(26, opts.speed * 0.4);
     this.crosshair.style.setProperty('--spread', `${spread.toFixed(1)}px`);
@@ -231,13 +234,24 @@ export class Hud {
     this.chainval.parentElement?.classList.toggle('hot', opts.chain > 0);
     this.chainglow.classList.toggle('hidden', opts.chain < 2);
 
-    const reloadPct = opts.fireCooldown > 0 ? 1 - opts.fireCooldown / 1 : 1;
-    this.reloadArc.classList.toggle('on', opts.fireCooldown > 0);
-    const loaded = opts.fireCooldown <= 0;
-    this.ammoCount.textContent = loaded ? '1' : '0';
-    this.ammoCount.classList.toggle('empty', !loaded);
-    const circ = 2 * Math.PI * 16;
-    this.reloadCircle.style.strokeDashoffset = `${circ * (1 - reloadPct)}`;
+    // Grapnel equipped: the ammo column becomes a hook state readout, and the
+    // crosshair turns into a hook reticle that opens while the claw is out.
+    const grapnel = opts.slot === 1;
+    this.crosshair.classList.toggle('hook', grapnel);
+    this.crosshair.classList.toggle('hooked', grapnel && opts.hooked);
+    if (grapnel) {
+      this.reloadArc.classList.remove('on');
+      this.ammoCount.textContent = opts.hooked ? '●' : opts.hookFlying ? '…' : '○';
+      this.ammoCount.classList.toggle('empty', !opts.hooked && !opts.hookFlying);
+    } else {
+      const reloadPct = opts.fireCooldown > 0 ? 1 - opts.fireCooldown / 1 : 1;
+      this.reloadArc.classList.toggle('on', opts.fireCooldown > 0);
+      const loaded = opts.fireCooldown <= 0;
+      this.ammoCount.textContent = loaded ? '1' : '0';
+      this.ammoCount.classList.toggle('empty', !loaded);
+      const circ = 2 * Math.PI * 16;
+      this.reloadCircle.style.strokeDashoffset = `${circ * (1 - reloadPct)}`;
+    }
 
     this.respawn.classList.toggle('hidden', opts.alive);
     if (!opts.alive) this.respawnval.textContent = Math.max(0, opts.respawnIn).toFixed(1);

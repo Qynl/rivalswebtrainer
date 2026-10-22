@@ -127,29 +127,36 @@ describe('client', () => {
       shots++;
       orig(s);
     };
-    // Wait out the bolt, then sit on an idle trigger. The old latch re-armed
-    // itself whenever the button was up, so the rifle fired every cycle.
-    await sleep(1400);
+    // Wait on simulation state, not the wall clock: under a loaded machine the
+    // client's frame rate drops and a sleep-based test measures the CPU.
+    const ready = (): Promise<void> =>
+      until(() => g.local.alive && g.local.protect <= 0 && g.local.fireCooldown <= 0, 15000, 'ready');
+
+    // An idle trigger must never cycle the bolt on its own.
+    await ready();
     shots = 0;
-    await sleep(1300);
+    await sleep(900);
     expect(shots).toBe(0);
 
-    // One click, one round — and holding the button down must not cycle it.
+    // One click, one round — holding the button across a whole bolt adds none.
+    await ready();
     canvas.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true }));
-    await sleep(1500);
+    await until(() => shots >= 1, 5000, 'first round');
+    await sleep(1300);
     expect(shots).toBe(1);
     canvas.dispatchEvent(new MouseEvent('mouseup', { button: 0, bubbles: true }));
     await sleep(200);
     expect(shots).toBe(1);
 
     // The next click is a fresh round once the bolt is home.
+    await ready();
     canvas.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true }));
     canvas.dispatchEvent(new MouseEvent('mouseup', { button: 0, bubbles: true }));
-    await sleep(300);
+    await until(() => shots >= 2, 5000, 'second round');
     expect(shots).toBe(2);
     net.sendShot = orig;
     expect(errors).toEqual([]);
-  }, 20000);
+  }, 60000);
 
   it('pauses on Escape, resumes, and leaves through the pause panel', async () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', bubbles: true }));

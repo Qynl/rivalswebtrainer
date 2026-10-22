@@ -72,6 +72,8 @@ class Game {
     glint: 0,
     speed: 0,
     grapple: { active: false, mode: 'none', anchor: { x: 0, y: 0, z: 0 }, length: 0, target: 0 },
+    slot: 0,
+    hook: { active: false, pos: { x: 0, y: 0, z: 0 } },
   };
   private remotePrev: PlayerState = createPlayer(1, 1);
 
@@ -597,14 +599,16 @@ class Game {
         },
         localRope: this.ropeOf(this.local),
         remote: this.remoteView,
-        remoteRope: this.remoteView.grapple.active
-          ? {
-              active: true,
-              anchor: this.remoteView.grapple.anchor,
-              length: this.remoteView.grapple.length,
-              mode: this.remoteView.grapple.mode,
-            }
-          : { active: false, anchor: { x: 0, y: 0, z: 0 }, length: 0, mode: 'none' },
+        remoteRope: this.remoteView.hook.active
+          ? { active: true, anchor: this.remoteView.hook.pos, length: 0, mode: 'none', inFlight: true }
+          : this.remoteView.grapple.active
+            ? {
+                active: true,
+                anchor: this.remoteView.grapple.anchor,
+                length: this.remoteView.grapple.length,
+                mode: this.remoteView.grapple.mode,
+              }
+            : { active: false, anchor: { x: 0, y: 0, z: 0 }, length: 0, mode: 'none' },
         ringRadius: this.ringRadius(),
         ringActive: this.ringActive(),
         scoped: this.local.scopeT,
@@ -704,6 +708,7 @@ class Game {
   }
 
   private tryFire(pressed: number, dt: number): void {
+    if (this.local.slot !== 0) return;
     // One click, one bullet: the trigger is edge-triggered, never held. A press
     // is buffered for a moment so clicking just before the bolt closes still
     // fires, which is what the shot after a fast reload should feel like.
@@ -781,6 +786,21 @@ class Game {
         case 'grappleBreak':
           this.sfx.release(0.15);
           break;
+        case 'equip':
+          this.sfx.equip(e.strength > 0.5);
+          break;
+        case 'hookFire':
+          this.sfx.hookFire();
+          this.renderer.hookFire();
+          break;
+        case 'hookHit':
+          this.sfx.attach(0, 0);
+          this.renderer.hookHit(this.local.hook.pos);
+          this.renderer.shake(0.01);
+          break;
+        case 'hookMiss':
+          this.sfx.hookMiss();
+          break;
       }
     }
   }
@@ -831,6 +851,8 @@ class Game {
       length: pb.grapple.length,
       target: pb.grapple.target,
     };
+    view.slot = pb.slot;
+    view.hook = { active: pb.hook.active, pos: { ...pb.hook.pos } };
     this.remotePrev.pos = { ...pos };
     this.remotePrev.yaw = yaw;
     this.remotePrev.pitch = pitch;
@@ -854,7 +876,11 @@ class Game {
       alive: this.local.alive,
       respawnIn: this.respawnIn,
       protect: this.protect > 0,
+      slot: this.local.slot,
+      hookFlying: this.local.hook.active,
+      hooked: this.local.grapple.active,
     });
+    this.hud.setWeaponLabel(this.local.slot === 1 ? 'GRAPNEL' : SKINS[this.you].weapon === 'lance' ? 'LANCE' : 'NEEDLE');
     this.hud.setRing(this.ringActive(), this.ringRadius(), this.insideRing(), this.serverMatchTime);
     this.hud.setTimer(this.serverMatchTime);
     this.hud.setNet(this.net.latency, this.net.state === 'open' ? 'ONLINE' : 'OFFLINE', this.net.state === 'open' ? 'ok' : 'bad');
@@ -896,6 +922,10 @@ class Game {
   }
 
   private ropeOf(p: PlayerState): RopeView {
+    // The claw pays out a live cable while it flies, so the throw has a line.
+    if (p.hook.active) {
+      return { active: true, anchor: p.hook.pos, length: 0, mode: 'none', inFlight: true };
+    }
     return {
       active: p.grapple.active && p.grapple.mode !== 'none',
       anchor: p.grapple.anchor,

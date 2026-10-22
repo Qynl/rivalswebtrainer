@@ -49,6 +49,8 @@ export const KEY = {
   fire: 128,
   scope: 256,
   dash: 512,
+  slotRifle: 1024,
+  slotGrapple: 2048,
 } as const;
 
 export interface InputFrame {
@@ -75,6 +77,20 @@ export interface GrappleState {
   snap: number;
 }
 
+/**
+ * The grapnel's claw while it is in the air. Flight is a swept segment per
+ * tick, so the server and every client resolve the same landing point.
+ */
+export interface HookState {
+  active: boolean;
+  pos: Vec3;
+  dir: Vec3;
+  target: 0 | 1;
+  time: number;
+  /** Released during the throw: the hook zips in instead of swinging. */
+  zipOnArrive: boolean;
+}
+
 export interface PlayerState {
   id: number;
   pos: Vec3;
@@ -98,6 +114,13 @@ export interface PlayerState {
   dashCooldown: number;
   dashDir: Vec3;
   grapple: GrappleState;
+  hook: HookState;
+  /** Equipped item: 0 = marksman rifle, 1 = grapnel. */
+  slot: 0 | 1;
+  /** Seconds the trigger has been held, for the tap/zip window. */
+  fireHold: number;
+  /** Forgiving window so a throw clicked during the rope cooldown still goes. */
+  hookBuffer: number;
   fireCooldown: number;
   fireHeld: boolean;
   scopeT: number;
@@ -125,7 +148,11 @@ export type SimEventType =
   | 'boost'
   | 'chain'
   | 'grappleMiss'
-  | 'grappleBreak';
+  | 'grappleBreak'
+  | 'hookFire'
+  | 'hookHit'
+  | 'hookMiss'
+  | 'equip';
 
 export interface SimEvent {
   type: SimEventType;
@@ -169,6 +196,17 @@ export function createPlayer(id: number, skin: 0 | 1 = 0): PlayerState {
       stall: 0,
       snap: 0,
     },
+    hook: {
+      active: false,
+      pos: v3(),
+      dir: v3(0, 0, -1),
+      target: 0,
+      time: 0,
+      zipOnArrive: false,
+    },
+    slot: 0,
+    fireHold: 0,
+    hookBuffer: 0,
     fireCooldown: 0,
     fireHeld: false,
     scopeT: 0,
@@ -343,6 +381,62 @@ function endGrapple(p: PlayerState, events: SimEvent[], boost: boolean): void {
 }
 
 /** Resolves a rope attached to the opponent, keeping it elastic and breakable. */
+interface HookHit {
+  point: Vec3;
+  target: 0 | 1;
+  distance: number;
+}
+
+/**
+ * One tick of claw travel: a swept segment against the world, the anchor
+ * pinions and the opponent's capsule. Nothing here is random, so the server
+ * and the client always agree about where the hook bites.
+ */
+function sweepHook(
+  phys: Physics,
+  from: Vec3,
+  dir: Vec3,
+  step: number,
+  opponent: PlayerState | null,
+  arena: Arena,
+  shooterId: number,
+): HookHit | null {
+  let best: HookHit | null = null;
+  const wall = phys.raycast(from, dir, step, shooterId);
+  if (wall) best = { point: wall.point, target: 0, distance: wall.toi };
+  const limit = best ? best.distance : step;
+
+  for (const a of arena.anchors) {
+    const t = raySphere(from, dir, a, GRAPPLE.anchorRadius);
+    if (t !== null && t <= limit && (!best || t < best.distance)) {
+      best = { point: { x: a.x, y: a.y, z: a.z }, target: 0, distance: t };
+    }
+  }
+
+  if (opponent && opponent.alive) {
+    const base = { x: opponent.pos.x, y: opponent.pos.y + PLAYER.hitYOffset, z: opponent.pos.z };
+    const a = { x: base.x, y: base.y - PLAYER.hitHalfHeight, z: base.z };
+    const b = { x: base.x, y: base.y + PLAYER.hitHalfHeight, z: base.z };
+    const t = rayCapsule(from, dir, a, b, PLAYER.hitRadius + 0.15);
+    if (t !== null && t <= limit && (!best || t < best.distance)) {
+      best = { point: base, target: 1, distance: t };
+    }
+  }
+  return best;
+}
+
+/** Swaps items. Anything the grapnel was holding is let go on the way out. */
+function equipSlot(p: PlayerState, slot: 0 | 1, events: SimEvent[]): void {
+  if (p.slot === slot) return;
+  if (p.grapple.active) endGrapple(p, events, true);
+  if (p.hook.active) {
+    p.hook.active = false;
+    events.push({ type: 'hookMiss', strength: 0.25 });
+  }
+  p.slot = slot;
+  events.push({ type: 'equip', strength: slot });
+}
+
 function updateOpponentAnchor(p: PlayerState, opponent: PlayerState | null, events: SimEvent[]): void {
   const g = p.grapple;
   if (!g.active || g.target !== 1) return;
@@ -416,31 +510,85 @@ export function stepPlayer(
     wish.z /= wishLen;
   }
 
-  // ── Grapple input ────────────────────────────────────────────────────────
-  updateOpponentAnchor(p, opponent, events);
-  const grappleHeld = (held & KEY.grapple) !== 0;
-  const grapplePressed = (pressed & KEY.grapple) !== 0;
-  const grappleReleased = (prevKeys & KEY.grapple) !== 0 && !grappleHeld;
+  // ── Loadout ──────────────────────────────────────────────────────────────
+  // Two items, one trigger: 1 is the rifle, 2 (or shift) is the grapnel.
+  // Stepping off the grapnel lets go of the line with the release boost, so
+  // the loop is throw, swing, swap, shoot, swap, throw — no dead hands.
+  if (((pressed & KEY.slotGrapple) !== 0 || (pressed & KEY.grapple) !== 0) && p.slot !== 1) {
+    equipSlot(p, 1, events);
+  } else if ((pressed & KEY.slotRifle) !== 0 && p.slot !== 0) {
+    equipSlot(p, 0, events);
+  }
 
-  if (grapplePressed && p.alive) {
-    if (g.active) {
-      // Second tap releases a swing immediately (fast un-hook is a real skill).
-      endGrapple(p, events, true);
+  const hook = p.hook;
+  updateOpponentAnchor(p, opponent, events);
+
+  // Only the trigger throws the claw. The equip key (2 / Shift) is a slot
+  // switch and nothing else: pressing it must never fire a hook at whatever
+  // happens to be under the crosshair.
+  const triggerHeld = (held & KEY.fire) !== 0;
+  const triggerPressed = (pressed & KEY.fire) !== 0;
+  p.fireHold = triggerHeld ? p.fireHold + dt : 0;
+  if (triggerPressed) p.hookBuffer = 0.18;
+  else p.hookBuffer = Math.max(0, p.hookBuffer - dt);
+
+  // ── Claw in flight ───────────────────────────────────────────────────────
+  if (hook.active) {
+    hook.time += dt;
+    const step = GRAPPLE.hookSpeed * dt;
+    const hit = sweepHook(phys, hook.pos, hook.dir, step, opponent, arena, p.id);
+    if (hit) {
+      hook.active = false;
+      beginGrapple(p, hit, events);
+      events.push({ type: 'hookHit', strength: clamp(hit.distance / GRAPPLE.range, 0.2, 1) });
+      // Released during the throw: the claw bites and immediately reels in.
+      if (hook.zipOnArrive && g.active) {
+        g.mode = 'zip';
+        g.stall = 0;
+        g.hold = 0;
+        events.push({ type: 'zip', strength: 0.6 });
+      }
     } else {
-      const target = findGrappleTarget(phys, p.eye, p.look, opponent, arena, p.id);
-      if (target) beginGrapple(p, target, events);
-      else events.push({ type: 'grappleMiss', strength: 0.4 });
+      hook.pos.x += hook.dir.x * step;
+      hook.pos.y += hook.dir.y * step;
+      hook.pos.z += hook.dir.z * step;
+      if (hook.time > GRAPPLE.hookMaxTime || len(sub(hook.pos, p.eye)) > GRAPPLE.range) {
+        hook.active = false;
+        events.push({ type: 'hookMiss', strength: 0.4 });
+      }
     }
   }
-  if (grappleReleased && g.active) {
-    if (g.mode === 'swing' && g.hold < GRAPPLE.zipTapTime) {
-      // A tap is a zip. The switch happens on release so the rope still fires
-      // on the same frame as the input — responsiveness before semantics.
-      g.mode = 'zip';
-      g.stall = 0;
-      events.push({ type: 'zip', strength: 0.6 });
-    } else if (g.mode === 'swing') {
-      endGrapple(p, events, true);
+
+  // ── Trigger ──────────────────────────────────────────────────────────────
+  if (p.slot === 1 && p.alive) {
+    if (p.hookBuffer > 0 && !g.active && !hook.active) {
+      // A chain re-attach is instant by design, so the cooldown only gates
+      // throws made outside the window.
+      if (g.cooldown === 0 || g.chainTimer > 0) {
+        p.hookBuffer = 0;
+        hook.active = true;
+        hook.pos = { ...p.eye };
+        hook.dir = { ...p.look };
+        hook.target = 0;
+        hook.time = 0;
+        hook.zipOnArrive = false;
+        events.push({ type: 'hookFire', strength: 1 });
+      }
+    }
+    // Let go while the claw is still travelling: remember the intent.
+    if (hook.active && !triggerHeld && !hook.zipOnArrive) {
+      hook.zipOnArrive = p.fireHold < GRAPPLE.zipTapTime;
+    }
+    if (g.active && !triggerHeld) {
+      if (g.mode === 'swing' && g.hold < GRAPPLE.zipTapTime) {
+        // A tap is a zip. Switched on release so the rope still fires on the
+        // same frame as the input — responsiveness before semantics.
+        g.mode = 'zip';
+        g.stall = 0;
+        events.push({ type: 'zip', strength: 0.6 });
+      } else if (g.mode === 'swing') {
+        endGrapple(p, events, true);
+      }
     }
   }
   if (g.active) g.hold += dt;
@@ -629,10 +777,9 @@ export function stepPlayer(
 
   // ── Integrate ───────────────────────────────────────────────────────────
   const delta = mul(p.vel, dt);
-  // Standing still needs a flat sweep. Pushing gravity into the sweep presses
-  // the capsule into the slab, and the controller's push-back reports a bogus
-  // contact normal that launches the player a centimetre into the air — the
-  // bounce you could see and hear as a stream of tiny landings.
+  // A grounded move has no vertical component: the floor already holds the
+  // capsule up, and pushing into it only asks Rapier's de-penetration to
+  // answer, which reads as a bounce.
   if (stick) delta.y = 0;
   const fallSpeed = -p.vel.y;
   const move = phys.move(p.id, p.pos, delta);
@@ -694,7 +841,7 @@ export function stepPlayer(
   }
 
   // ── Scope / glint ───────────────────────────────────────────────────────
-  const wantScope = (held & KEY.scope) !== 0;
+  const wantScope = (held & KEY.scope) !== 0 && p.slot === 0;
   const scopeRate = wantScope ? 1 / WEAPON.scopeTime : -1 / WEAPON.unscopeTime;
   p.scopeT = clamp(p.scopeT + scopeRate * dt, 0, 1);
   p.scoped = p.scopeT > 0.985;
@@ -750,6 +897,19 @@ export function copyPlayerState(src: PlayerState, dst: PlayerState): void {
   dst.grapple.chain = src.grapple.chain;
   dst.grapple.stall = src.grapple.stall;
   dst.grapple.snap = src.grapple.snap;
+  dst.hook.active = src.hook.active;
+  dst.hook.pos.x = src.hook.pos.x;
+  dst.hook.pos.y = src.hook.pos.y;
+  dst.hook.pos.z = src.hook.pos.z;
+  dst.hook.dir.x = src.hook.dir.x;
+  dst.hook.dir.y = src.hook.dir.y;
+  dst.hook.dir.z = src.hook.dir.z;
+  dst.hook.target = src.hook.target;
+  dst.hook.time = src.hook.time;
+  dst.hook.zipOnArrive = src.hook.zipOnArrive;
+  dst.slot = src.slot;
+  dst.fireHold = src.fireHold;
+  dst.hookBuffer = src.hookBuffer;
   dst.fireCooldown = src.fireCooldown;
   dst.fireHeld = src.fireHeld;
   dst.scopeT = src.scopeT;

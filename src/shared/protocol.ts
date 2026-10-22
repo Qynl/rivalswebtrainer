@@ -29,6 +29,10 @@ export interface PlayerSnap {
     chain: number;
     target: 0 | 1;
   };
+  /** Equipped item, so the opponent's hands show the same thing as yours. */
+  slot: 0 | 1;
+  /** Claw in flight. */
+  hook: { active: boolean; pos: Vec3 };
 }
 
 export interface MatchSnap {

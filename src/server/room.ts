@@ -334,7 +334,8 @@ export class Room {
         scoped?: boolean;
         aimTime?: number;
       };
-      if (!p.alive || !canFire(p) || !shot || !shot.dir) continue;
+      // Shots are rifle-only: a client holding the grapnel cannot fire bullets.
+      if (!p.alive || p.slot !== 0 || !canFire(p) || !shot || !shot.dir) continue;
       if (p.protect > 0) continue; // spawn protection is total, both ways
       const origin = shot.origin ?? p.eye;
       if (shotOriginError(origin, p.eye) > 2.5) continue; // teleport/aimbot sanity
@@ -449,6 +450,8 @@ export class Room {
         chain: p.grapple.chain,
         target: p.grapple.target,
       },
+      slot: p.slot,
+      hook: { active: p.hook.active, pos: p.hook.pos },
     };
   }
 

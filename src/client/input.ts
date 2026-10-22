@@ -72,8 +72,12 @@ export class Input {
       KeyD: KEY.right,
       ArrowRight: KEY.right,
       Space: KEY.jump,
+      // Shift is the panic button for the grapnel: it equips the hook and the
+      // trigger works from the same key, so the muscle memory survives.
       ShiftLeft: KEY.grapple,
       ShiftRight: KEY.grapple,
+      Digit1: KEY.slotRifle,
+      Digit2: KEY.slotGrapple,
       ControlLeft: KEY.crouch,
       KeyC: KEY.crouch,
       KeyE: KEY.dash,

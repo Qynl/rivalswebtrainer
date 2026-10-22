@@ -435,6 +435,53 @@ kbd {
   opacity: 0.9;
 }
 
+/* Grapnel equipped: a claw reticle — an open ring with three tines that pull
+   in when the hook bites. Nothing about it is a gun sight. */
+#crosshair.hook .ch.top,
+#crosshair.hook .ch.bottom,
+#crosshair.hook .ch.left,
+#crosshair.hook .ch.right {
+  width: 6px;
+  height: 6px;
+  background: transparent;
+  border: 1.5px solid var(--gold);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+}
+
+#crosshair.hook .ch.top {
+  left: -3px;
+  bottom: calc(var(--spread) + 6px);
+}
+#crosshair.hook .ch.bottom {
+  left: -3px;
+  top: calc(var(--spread) + 6px);
+}
+#crosshair.hook .ch.left {
+  top: -3px;
+  right: calc(var(--spread) + 6px);
+}
+#crosshair.hook .ch.right {
+  top: -3px;
+  left: calc(var(--spread) + 6px);
+}
+
+#crosshair.hook .ch.dot {
+  width: 3px;
+  height: 3px;
+  left: -1.5px;
+  top: -1.5px;
+  background: var(--gold);
+  opacity: 0.85;
+}
+
+#crosshair.hooked .ch.top,
+#crosshair.hooked .ch.bottom,
+#crosshair.hooked .ch.left,
+#crosshair.hooked .ch.right {
+  border-color: #f2e2b6;
+}
+
 #crosshair.scoped {
   opacity: 0;
 }

@@ -46,6 +46,8 @@ describe('renderer', () => {
       glint: 1,
       speed: 26,
       grapple: { active: true, mode: 'swing' as const, anchor: { x: 0, y: 24, z: 0 }, length: 20, target: 0 as const },
+      slot: 0 as const,
+      hook: { active: false, pos: { x: 0, y: 0, z: 0 } },
     };
     expect(() => {
       for (let i = 0; i < 12; i++) {
