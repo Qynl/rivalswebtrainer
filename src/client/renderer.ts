@@ -3208,8 +3208,6 @@ export class Renderer {
     v.head.rotation.y = -v.body.rotation.y * 0.8 + (s.sliding ? 0.18 : 0);
 
     // ── Arms ───────────────────────────────────────────────────────────────
-    // The grip is a cross-body hold on the rifle; running swings the arms
-    // against the legs, and a swing puts both hands up the cable.
     // The right arm bends at the elbow onto the grip; the left reaches out
     // along the handguard. Both are one rotation per axis, but they converge on
     // the weapon, which is what separates "holding a rifle" from "arms up".

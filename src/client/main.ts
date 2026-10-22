@@ -1099,7 +1099,9 @@ class Game {
     view.glint = pb.glint;
     view.speed = pb.speed;
     view.scopeT = pb.scopeT;
-    view.grounded = pb.grounded;
+    // Grounded if either sample says so: a snapshot that lands mid-hop must not
+    // flicker the skeleton into an air pose for a single frame.
+    view.grounded = pa.grounded || pb.grounded;
     view.vel = {
       x: lerp(pa.vel.x, pb.vel.x, f),
       y: lerp(pa.vel.y, pb.vel.y, f),

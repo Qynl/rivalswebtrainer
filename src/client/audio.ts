@@ -436,7 +436,9 @@ export class Sfx {
     const sp = clamp(speed, 0, 80);
 
     if (this.wind) {
-      const target = alive ? Math.min(0.26, (sp / 60) * 0.26) : 0.0001;
+      // Dead is a duck, not a mute: a silent world reads as a broken audio
+      // device, and you still have to hear the fight happening around you.
+      const target = alive ? Math.min(0.26, (sp / 60) * 0.26) : 0.035;
       this.wind.gain.gain.setTargetAtTime(Math.max(0.0001, target), t, 0.12);
       this.wind.filter.frequency.setTargetAtTime(360 + sp * 26, t, 0.2);
     }
