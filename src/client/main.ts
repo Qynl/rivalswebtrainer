@@ -586,6 +586,13 @@ class Game {
     this.renderer.spark(msg.end, color, msg.hit ? 6 : 3);
     if (msg.hit) {
       this.hud.hitmarker(true);
+      if (mine) {
+        this.renderer.hitConfirm(msg.end, {
+          x: msg.end.x - msg.origin.x,
+          y: msg.end.y - msg.origin.y,
+          z: msg.end.z - msg.origin.z,
+        }, color);
+      }
       if (!mine) {
         // We got shot: the kill event handles the rest, this is the impact.
         this.renderer.shake(0.02);

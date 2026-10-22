@@ -139,9 +139,19 @@ describe('client', () => {
     expect(shots).toBe(0);
 
     // One click, one round — holding the button across a whole bolt adds none.
-    await ready();
-    canvas.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true }));
-    await until(() => shots >= 1, 8000, 'first round');
+    // The practice bot is live and may kill us between the readiness gate and
+    // the click, so retry the gate rather than depending on a single race.
+    for (let attempt = 0; attempt < 4 && shots === 0; attempt++) {
+      await ready();
+      if (shots === 0) canvas.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true }));
+      try {
+        await until(() => shots >= 1, 2500, 'first round');
+      } catch {
+        canvas.dispatchEvent(new MouseEvent('mouseup', { button: 0, bubbles: true }));
+        await sleep(200);
+      }
+    }
+    expect(shots).toBe(1);
     await sleep(1300);
     expect(shots).toBe(1);
     canvas.dispatchEvent(new MouseEvent('mouseup', { button: 0, bubbles: true }));
@@ -149,10 +159,18 @@ describe('client', () => {
     expect(shots).toBe(1);
 
     // The next click is a fresh round once the bolt is home.
-    await ready();
-    canvas.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true }));
-    canvas.dispatchEvent(new MouseEvent('mouseup', { button: 0, bubbles: true }));
-    await until(() => shots >= 2, 8000, 'second round');
+    for (let attempt = 0; attempt < 4 && shots === 1; attempt++) {
+      await ready();
+      if (shots === 1) {
+        canvas.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true }));
+        canvas.dispatchEvent(new MouseEvent('mouseup', { button: 0, bubbles: true }));
+      }
+      try {
+        await until(() => shots >= 2, 2500, 'second round');
+      } catch {
+        await sleep(200);
+      }
+    }
     expect(shots).toBe(2);
     net.sendShot = orig;
     expect(errors).toEqual([]);

@@ -395,6 +395,10 @@ export class Renderer {
   private moteAcc = 0;
   /** Pooled debris, lightning, scorch, brass and shock rings. */
   private fx!: Fx;
+  /** Debris pool, exposed for hit confirms that do not need the whole Fx door. */
+  private get shards() {
+    return this.fx.shards;
+  }
   /** The moving parts of the equipped kit. */
   private gunOrnament: Ornament | null = null;
   private ropeOrnament: Ornament | null = null;
@@ -1297,6 +1301,11 @@ export class Renderer {
       glintFlare.visible = false;
       group.add(glintFlare);
 
+      // Everything on the body that never moves gets merged per material: the
+      // character is 20-odd little boxes, and merging them buys back the draw
+      // calls the cape, pack and thrusters cost. Animated parts are preserved.
+      mergeChildren(group, new Set<THREE.Object3D>([...legs, ...cape, ...thrust]));
+
       const shadow = new THREE.Mesh(
         new THREE.PlaneGeometry(1.6, 1.6),
         new THREE.MeshBasicMaterial({ map: this.glow, color: 0x000000, transparent: true, opacity: 0.5, depthWrite: false }),
@@ -2185,6 +2194,21 @@ export class Renderer {
     this.post.flash(0xdceeff, 0.03 + 0.05 * k);
   }
 
+  /**
+   * A confirmed hit on the enemy: a tight ring on the body, aligned to the
+   * shot, plus a spray of hot motes in the shooter's colour. It is the visual
+   * half of the hitmarker, and it is what makes a one-shot rifle feel like it
+   * connected rather than simply removed someone.
+   */
+  hitConfirm(at: Vec3, dir: Vec3, color: number): void {
+    const len = Math.hypot(dir.x, dir.y, dir.z) || 1;
+    const n = { x: dir.x / len, y: dir.y / len, z: dir.z / len };
+    this.fx.rings.spawn(at, 0xffffff, 0.1, 1.1, 0.16, n);
+    this.fx.rings.spawn(at, color, 0.15, 1.9, 0.26, n);
+    this.shards.burst(at, color, 10, { speed: 9, size: 0.14, life: 0.4, gravity: 6, drag: 2 });
+    this.particles.burst(at, 0xfff2d8, 8, { speed: 5, size: 0.14, life: 0.3, gravity: 2, drag: 3 });
+  }
+
   /** Kills punch the lens: a hard FOV kick that decays over half a second. */
   killPunch(): void {
     this.fovPulse(9);
@@ -3047,12 +3071,22 @@ export class Renderer {
   /** Slow establishing shot used behind the menu and the results screen. */
   orbit(dt: number): void {
     this.time += dt;
-    const a = this.time * 0.05;
-    const r = 150 + Math.sin(this.time * 0.07) * 14;
-    this.camera.position.set(Math.cos(a) * r, 46 + Math.sin(this.time * 0.11) * 10, Math.sin(a) * r);
-    this.camera.fov = lerp(this.camera.fov, 46, 1 - Math.exp(-dt * 3));
+    // A slow crane around the spire: low enough to see the joists and brackets
+    // under the decks (the detail nobody sees while playing), close enough for
+    // the structure to fill the frame, and unhurried enough to read as a menu.
+    const a = this.time * 0.042;
+    const breathe = Math.sin(this.time * 0.11);
+    const r = 104 + breathe * 18;
+    const rise = 26 + Math.sin(this.time * 0.075) * 20;
+    // A hand-held drift on top of the crane: two incommensurate sines, so the
+    // shot never looks like it is on a rail.
+    const driftX = Math.sin(this.time * 0.63) * 0.9 + Math.sin(this.time * 1.7) * 0.25;
+    const driftY = Math.cos(this.time * 0.51) * 0.7 + Math.cos(this.time * 1.3) * 0.2;
+    this.camera.position.set(Math.cos(a) * r + driftX, rise + driftY, Math.sin(a) * r + driftX * 0.6);
+    this.camera.fov = lerp(this.camera.fov, 52, 1 - Math.exp(-dt * 2.5));
     this.camera.updateProjectionMatrix();
-    this.camera.lookAt(0, 36, 0);
+    this.camera.lookAt(0, 40 + Math.sin(this.time * 0.09) * 5, 0);
+    this.camera.rotateZ(Math.sin(this.time * 0.13) * 0.02);
     this.ringGroup.visible = false;
     this.viewmodel.visible = false;
     for (const p of this.players) {
@@ -3064,6 +3098,20 @@ export class Renderer {
     this.waves.update(dt);
     this.fx.update(dt);
     this.sky.update(dt, this.camera);
+    // The menu shot is the one place the sun is usually in frame, so keep the
+    // glare and the shafts live instead of switching the grade off.
+    this.camForward.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
+    const facing = this.camForward.dot(this.sunDir);
+    if (facing > 0.1) {
+      this.sunProbe.copy(this.camera.position).addScaledVector(this.sunDir, 1500);
+      this.sunProbe.project(this.camera);
+      this.sunScreen.set(this.sunProbe.x * 0.5 + 0.5, this.sunProbe.y * 0.5 + 0.5);
+      const edge = clamp(Math.min(this.sunScreen.x, 1 - this.sunScreen.x) * 3 + 0.4, 0, 1) *
+        clamp(Math.min(this.sunScreen.y, 1 - this.sunScreen.y) * 3 + 0.4, 0, 1);
+      this.post.setSun(this.sunScreen, edge * clamp((facing - 0.1) * 2.2, 0, 1));
+    } else {
+      this.post.setSun(this.sunScreen, 0);
+    }
     this.post.setState(this.time, 0, 0, 0);
   }
 
