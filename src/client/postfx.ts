@@ -19,6 +19,8 @@ const GradeShader = {
     uSpeed: { value: 0 },
     uScope: { value: 0 },
     uHurt: { value: 0 },
+    uFlash: { value: 0 },
+    uFlashColor: { value: new THREE.Color(0xffd27a) },
     uResolution: { value: new THREE.Vector2(1, 1) },
   },
   vertexShader: /* glsl */ `
@@ -34,6 +36,8 @@ const GradeShader = {
     uniform float uSpeed;
     uniform float uScope;
     uniform float uHurt;
+    uniform float uFlash;
+    uniform vec3 uFlashColor;
     uniform vec2 uResolution;
     varying vec2 vUv;
 
@@ -79,6 +83,12 @@ const GradeShader = {
 
       // Fine grain: keeps large flat surfaces from banding.
       col += (hash(uv * uResolution + uTime * 40.0) - 0.5) * 0.014;
+
+      // Kill flash: a hot centre bloom that dies out fast. It is the frame the
+      // kill lands on, and it has to read through the scope without whiting out
+      // the target you are already tracking.
+      float flashCore = 1.0 - smoothstep(0.0, 0.62, r);
+      col = mix(col, uFlashColor, uFlash * (0.28 + flashCore * 0.55));
 
       // Damage: a red edge tint, not a full-screen wash.
       float edge = smoothstep(0.22, 0.75, r);
@@ -129,12 +139,24 @@ export class PostFX {
     this.updateResolution();
   }
 
+  private flashAmt = 0;
+  private flashColor = new THREE.Color(0xffd27a);
+
+  /** A brief full-frame flash in a given colour. Used on kills only. */
+  flash(color: number, amount = 0.15): void {
+    this.flashAmt = Math.min(0.55, this.flashAmt + amount);
+    this.flashColor.setHex(color);
+  }
+
   /** 0..1 motion, 0..1 scope, 0..1 damage flash. */
   setState(time: number, speed: number, scope: number, hurt: number): void {
     this.grade.uniforms.uTime.value = time;
     this.grade.uniforms.uSpeed.value = speed;
     this.grade.uniforms.uScope.value = scope;
     this.grade.uniforms.uHurt.value = hurt;
+    this.flashAmt = Math.max(0, this.flashAmt - 1 / 60 * 2.4);
+    this.grade.uniforms.uFlash.value = this.flashAmt;
+    (this.grade.uniforms.uFlashColor.value as THREE.Color).copy(this.flashColor);
   }
 
   render(): void {

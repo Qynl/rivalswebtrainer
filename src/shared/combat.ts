@@ -34,6 +34,9 @@ export interface ShotOutcome {
   /** End of the tracer: the impact point, or the far end of the ray. */
   end: Vec3;
   distance: number;
+  /** Surface normal at the impact, when the shot ended on geometry. Cosmetic
+   *  only: the scorch decal and the spark fan are oriented by it. */
+  normal: Vec3 | null;
 }
 
 export function hipSpreadRad(): number {
@@ -156,6 +159,7 @@ export function resolveShot(
       killed: true,
       end: { x: origin.x + dir.x * hitDist, y: origin.y + dir.y * hitDist, z: origin.z + dir.z * hitDist },
       distance: hitDist,
+      normal: null,
     };
   }
   const d = Math.min(wallDist, maxDistance);
@@ -164,6 +168,7 @@ export function resolveShot(
     killed: false,
     end: { x: origin.x + dir.x * d, y: origin.y + dir.y * d, z: origin.z + dir.z * d },
     distance: d,
+    normal: wall ? wall.normal : null,
   };
 }
 

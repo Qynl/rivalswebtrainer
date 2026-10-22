@@ -13,6 +13,22 @@
  */
 
 export type CosmeticKind = 'gun' | 'grapple' | 'effect';
+/**
+ * The moving part of a skin. Colours alone are a paint job; these three knobs
+ * are what make a rifle look *owned* — a light band that runs down the
+ * receiver, an inlay that breathes, and one decorative part that keeps moving
+ * while you are standing still.
+ */
+export interface SkinAnim {
+  /** Light band travel, in bands per second (0 = no band). */
+  sweep: number;
+  /** Breathing rate of the emissive inlay, Hz (0 = steady). */
+  pulse: number;
+  /** Steady emissive strength of the inlay and optic glass. */
+  glow: number;
+  /** The ornament that keeps moving at rest. */
+  orbit: 'none' | 'ring' | 'motes' | 'vent' | 'coil' | 'shards';
+}
 export type Tier = 'field' | 'precision' | 'signature';
 export type Pattern = 'solid' | 'carbon' | 'camo' | 'marble' | 'flake' | 'plate';
 
@@ -34,6 +50,7 @@ export interface GunSkin {
   /** Optic glass and any glowing inlay. */
   glow: number;
   pattern: Pattern;
+  anim: SkinAnim;
 }
 
 export interface GrappleSkin {
@@ -53,6 +70,8 @@ export interface GrappleSkin {
   spool: number;
   /** Spark / trail colour while the claw is in the air. */
   trail: number;
+  /** How the claw reads in flight: a lit core, a shed stream, or both. */
+  anim: SkinAnim;
 }
 
 export interface KillEffect {
@@ -70,7 +89,19 @@ export interface KillEffect {
   motes: number;
   /** Which procedural sound the kill plays. */
   sound: 'shatter' | 'bloom' | 'pulse' | 'sting';
+  /** Which geometry the burst uses. */
+  shape: KillShape;
 }
+
+/**
+ * Kill effects are not recolours of one burst: each has its own geometry.
+ * spark  — fast hot spray
+ * shard  — tumbling crystal fragments
+ * petal  — thin plates that open outward and fall
+ * arc    — electric forks between points around the body
+ * star   — a white core, then a slow wide ring
+ */
+export type KillShape = 'spark' | 'shard' | 'petal' | 'arc' | 'star';
 
 export type Cosmetic = GunSkin | GrappleSkin | KillEffect;
 
@@ -91,6 +122,7 @@ export const GUN_SKINS: GunSkin[] = [
     trim: 0xc9a86a,
     glow: 0x223a4a,
     pattern: 'solid',
+    anim: { sweep: 0, pulse: 0, glow: 0.15, orbit: 'none' },
   }),
   gun({
     id: 'carbon',
@@ -104,6 +136,7 @@ export const GUN_SKINS: GunSkin[] = [
     trim: 0x8fa3b8,
     glow: 0x2a4a62,
     pattern: 'carbon',
+    anim: { sweep: 0.55, pulse: 0, glow: 0.35, orbit: 'none' },
   }),
   gun({
     id: 'sandstorm',
@@ -117,6 +150,7 @@ export const GUN_SKINS: GunSkin[] = [
     trim: 0xd8c08a,
     glow: 0x3d5240,
     pattern: 'camo',
+    anim: { sweep: 0, pulse: 0.35, glow: 0.2, orbit: 'motes' },
   }),
   gun({
     id: 'ivory',
@@ -130,6 +164,7 @@ export const GUN_SKINS: GunSkin[] = [
     trim: 0xd7b977,
     glow: 0x35506a,
     pattern: 'plate',
+    anim: { sweep: 0.8, pulse: 0.2, glow: 0.3, orbit: 'motes' },
   }),
   gun({
     id: 'obsidian',
@@ -143,6 +178,7 @@ export const GUN_SKINS: GunSkin[] = [
     trim: 0xd8b063,
     glow: 0x6b4a1c,
     pattern: 'flake',
+    anim: { sweep: 1.35, pulse: 1.1, glow: 0.85, orbit: 'vent' },
   }),
   gun({
     id: 'aurum',
@@ -156,6 +192,7 @@ export const GUN_SKINS: GunSkin[] = [
     trim: 0xfff0c4,
     glow: 0x8a5a12,
     pattern: 'marble',
+    anim: { sweep: 1.8, pulse: 0.55, glow: 1.15, orbit: 'ring' },
   }),
 ];
 
@@ -171,6 +208,7 @@ export const GRAPPLE_SKINS: GrappleSkin[] = [
     body: 0x3f434a,
     spool: 0x2a2d33,
     trail: 0xffe0a8,
+    anim: { sweep: 0, pulse: 0.4, glow: 0.3, orbit: 'none' },
   }),
   rope({
     id: 'steel',
@@ -183,6 +221,7 @@ export const GRAPPLE_SKINS: GrappleSkin[] = [
     body: 0x53585f,
     spool: 0x3a3f45,
     trail: 0xd8e6f2,
+    anim: { sweep: 0.9, pulse: 0, glow: 0.4, orbit: 'none' },
   }),
   rope({
     id: 'ember',
@@ -195,6 +234,7 @@ export const GRAPPLE_SKINS: GrappleSkin[] = [
     body: 0x4a2f24,
     spool: 0x33211a,
     trail: 0xffa860,
+    anim: { sweep: 1.6, pulse: 1.6, glow: 0.9, orbit: 'coil' },
   }),
   rope({
     id: 'glacier',
@@ -207,6 +247,7 @@ export const GRAPPLE_SKINS: GrappleSkin[] = [
     body: 0x9aa8b4,
     spool: 0x6d7b88,
     trail: 0xc9ecff,
+    anim: { sweep: 1.1, pulse: 0.5, glow: 0.6, orbit: 'shards' },
   }),
   rope({
     id: 'abyss',
@@ -219,6 +260,7 @@ export const GRAPPLE_SKINS: GrappleSkin[] = [
     body: 0x18221f,
     spool: 0x101817,
     trail: 0x74e0cf,
+    anim: { sweep: 0.6, pulse: 0.9, glow: 0.7, orbit: 'coil' },
   }),
   rope({
     id: 'gilded',
@@ -231,6 +273,7 @@ export const GRAPPLE_SKINS: GrappleSkin[] = [
     body: 0x5a4620,
     spool: 0x3d2f14,
     trail: 0xffd88a,
+    anim: { sweep: 2.1, pulse: 0.7, glow: 1.2, orbit: 'ring' },
   }),
 ];
 
@@ -245,6 +288,7 @@ export const KILL_EFFECTS: KillEffect[] = [
     ring: 0xe6b264,
     motes: 0xffffff,
     sound: 'sting',
+    shape: 'spark',
   }),
   fx({
     id: 'shatter',
@@ -256,6 +300,7 @@ export const KILL_EFFECTS: KillEffect[] = [
     ring: 0xa8ccf0,
     motes: 0xffffff,
     sound: 'shatter',
+    shape: 'shard',
   }),
   fx({
     id: 'bloom',
@@ -267,6 +312,7 @@ export const KILL_EFFECTS: KillEffect[] = [
     ring: 0xffa040,
     motes: 0xfff0c0,
     sound: 'bloom',
+    shape: 'petal',
   }),
   fx({
     id: 'static',
@@ -278,6 +324,7 @@ export const KILL_EFFECTS: KillEffect[] = [
     ring: 0x5bc8e8,
     motes: 0xffffff,
     sound: 'pulse',
+    shape: 'arc',
   }),
   fx({
     id: 'nova',
@@ -289,6 +336,7 @@ export const KILL_EFFECTS: KillEffect[] = [
     ring: 0xffd27a,
     motes: 0xffe0a0,
     sound: 'bloom',
+    shape: 'star',
   }),
 ];
 

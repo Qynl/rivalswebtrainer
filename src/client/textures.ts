@@ -597,3 +597,58 @@ export function streakTexture(): THREE.Texture {
   tex.wrapS = THREE.RepeatWrapping;
   return tex;
 }
+
+/** A bullet's scorch: a dark irregular star with a bright core. */
+export function scorchTexture(): THREE.Texture {
+  const size = 128;
+  const [c, ctx] = canvas(size, size);
+  const g = ctx.createRadialGradient(size / 2, size / 2, 2, size / 2, size / 2, size / 2);
+  g.addColorStop(0, 'rgba(24, 22, 20, 0.95)');
+  g.addColorStop(0.42, 'rgba(42, 39, 35, 0.72)');
+  g.addColorStop(0.78, 'rgba(58, 54, 48, 0.24)');
+  g.addColorStop(1, 'rgba(70, 66, 58, 0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  // An irregular edge, so a hundred of these never look like one stamp.
+  for (let i = 0; i <= 40; i++) {
+    const a = (i / 40) * Math.PI * 2;
+    const r = size * (0.36 + Math.random() * 0.12);
+    const x = size / 2 + Math.cos(a) * r;
+    const y = size / 2 + Math.sin(a) * r;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fill();
+  // Radiating fractures.
+  ctx.strokeStyle = 'rgba(28, 25, 22, 0.5)';
+  for (let i = 0; i < 9; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const r0 = size * 0.12;
+    const r1 = size * (0.26 + Math.random() * 0.16);
+    ctx.lineWidth = 1 + Math.random() * 2;
+    ctx.beginPath();
+    ctx.moveTo(size / 2 + Math.cos(a) * r0, size / 2 + Math.sin(a) * r0);
+    ctx.lineTo(size / 2 + Math.cos(a + 0.2) * r1, size / 2 + Math.sin(a + 0.2) * r1);
+    ctx.stroke();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/** The travelling light band on a skin: a soft horizontal falloff. */
+export function sweepTexture(): THREE.Texture {
+  const [c, ctx] = canvas(64, 8);
+  const g = ctx.createLinearGradient(0, 0, 64, 0);
+  g.addColorStop(0, 'rgba(255,255,255,0)');
+  g.addColorStop(0.42, 'rgba(255,255,255,0.15)');
+  g.addColorStop(0.5, 'rgba(255,255,255,1)');
+  g.addColorStop(0.58, 'rgba(255,255,255,0.15)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 8);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}

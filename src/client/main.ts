@@ -831,7 +831,7 @@ class Game {
     // Cosmetic prediction: a tracer from the muzzle and an impact spark.
     const end = resolveShot(this.phys, origin, dir, { pos: this.remoteSim.pos, alive: this.remoteSim.alive }, this.local.id);
     this.renderer.tracer(muzzleOffset(origin, dir), end.end, SKINS[this.you].color);
-    if (!end.hit) this.renderer.spark(end.end, 0x9df9ff, 3);
+    if (!end.hit) this.renderer.spark(end.end, 0x9df9ff, 4, end.normal);
   }
 
   private handleEvents(): void {

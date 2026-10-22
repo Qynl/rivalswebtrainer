@@ -146,4 +146,23 @@ describe('progress profile', () => {
     expect(payout.after.level).toBe(before.level + 1);
     expect(payout.bonus).toBe(ECONOMY.levelCoins);
   });
+
+  it('gives every skin a motion kit and every kill effect its own geometry', () => {
+    // Cosmetic-only rule: these fields are read by the renderer, never by the
+    // simulation. The catalogue test exists so a new skin cannot ship without
+    // the animation data the renderer expects.
+    const orbits = new Set(['none', 'ring', 'motes', 'vent', 'coil', 'shards']);
+    for (const g of GUN_SKINS) {
+      expect(orbits.has(g.anim.orbit)).toBe(true);
+      expect(g.anim.sweep).toBeGreaterThanOrEqual(0);
+      expect(g.anim.glow).toBeGreaterThanOrEqual(0);
+    }
+    for (const r of GRAPPLE_SKINS) {
+      expect(orbits.has(r.anim.orbit)).toBe(true);
+      expect(r.anim.pulse).toBeGreaterThanOrEqual(0);
+    }
+    const shapes = new Set(KILL_EFFECTS.map((f) => f.shape));
+    expect(shapes.size).toBe(KILL_EFFECTS.length);
+    for (const f of KILL_EFFECTS) expect(['spark', 'shard', 'petal', 'arc', 'star']).toContain(f.shape);
+  });
 });

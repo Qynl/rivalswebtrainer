@@ -23,6 +23,7 @@ import { GRAPPLE, SKINS, WEAPON } from '../shared/constants.ts';
 import { DEFAULT_LOADOUT, gunSkin, grappleSkin, killEffect, type Loadout } from '../shared/cosmetics.ts';
 import { clamp, lerp, smoothstep, type Vec3 } from '../shared/mathx.ts';
 import type { PlayerState } from '../shared/sim.ts';
+import { Arcs, Debris, Decals, Fx, Ornament, Rings, Shells } from './fx.ts';
 import { Beams, Particles, Shockwaves } from './particles.ts';
 import { PostFX } from './postfx.ts';
 import { buildSky } from './sky.ts';
@@ -35,7 +36,9 @@ import {
   signTexture,
   aimRingTexture,
   cloudTexture,
+  scorchTexture,
   streakTexture,
+  sweepTexture,
   deckStencilTexture,
   patternTexture,
 } from './textures.ts';
@@ -332,6 +335,16 @@ export class Renderer {
   private aimMark: THREE.Sprite | null = null;
   private aimTarget: { point: Vec3; onPlayer: boolean } | null = null;
   private moteAcc = 0;
+  /** Pooled debris, lightning, scorch, brass and shock rings. */
+  private fx!: Fx;
+  /** The moving parts of the equipped kit. */
+  private gunOrnament: Ornament | null = null;
+  private ropeOrnament: Ornament | null = null;
+  private sweepBand: THREE.Mesh | null = null;
+  private sweepMat: THREE.MeshBasicMaterial | null = null;
+  private accentMats: THREE.MeshStandardMaterial[] = [];
+  private gunAnim = { sweep: 0, pulse: 0, glow: 0 };
+  private glassMats: THREE.MeshStandardMaterial[] = [];
   private lastRemote: Vec3 | null = null;
   private readonly tint = new THREE.Color();
   private readonly warm = new THREE.Color(0xffcf8a);
@@ -405,6 +418,31 @@ export class Renderer {
     this.buildArena();
     this.buildPlayers();
     this.buildRing();
+    const shardMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.18,
+      metalness: 0.35,
+      flatShading: true,
+      emissive: 0xffffff,
+      emissiveIntensity: 0.35,
+      vertexColors: false,
+    });
+    const petalMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.5,
+      metalness: 0.1,
+      side: THREE.DoubleSide,
+      emissive: 0xffffff,
+      emissiveIntensity: 0.25,
+    });
+    this.fx = new Fx(
+      new Debris(this.scene, new THREE.TetrahedronGeometry(0.16), shardMat, 220),
+      new Debris(this.scene, new THREE.PlaneGeometry(0.34, 0.14), petalMat, 120),
+      new Arcs(this.scene),
+      new Decals(this.scene, scorchTexture(), 26),
+      new Shells(this.camera, 6),
+      new Rings(this.scene, 14),
+    );
     this.scene.add(this.particles.points, this.beams.group, this.waves.group);
 
     this.viewmodel = this.buildViewmodel(0);
@@ -1378,6 +1416,17 @@ export class Renderer {
       roughness: 0.08,
       metalness: 0.95,
     });
+    // The inlay and the optic carry the skin's own light: this is what the
+    // pulse and the sweep animate, and it is why two rifles of the same shape
+    // read as different objects across a room.
+    accent.color.setHex(gs.trim);
+    accent.emissive.setHex(gs.glow);
+    accent.emissiveIntensity = 0.1 + gs.anim.glow * 0.25;
+    glass.emissiveIntensity = 0.25 + gs.anim.glow * 0.5;
+    this.accentMats = [accent];
+    this.glassMats = [glass];
+    this.gunAnim = { sweep: gs.anim.sweep, pulse: gs.anim.pulse, glow: gs.anim.glow };
+
     // Launcher furniture follows the grapnel skin, so 1 and 2 wear the same set.
     const gBody = new THREE.MeshStandardMaterial({ color: gr.body, roughness: 0.55, metalness: 0.45 });
     const gSpool = new THREE.MeshStandardMaterial({ color: gr.spool, roughness: 0.62, metalness: 0.5 });
@@ -1538,6 +1587,31 @@ export class Renderer {
     rifle.add(box(0.004, 0.055, 0.2, accent, 0.045, -0.005, -0.42));
     rifle.add(box(0.004, 0.03, 0.05, accent, -0.045, 0.02, -0.2));
 
+    // ── Skin motion: the band and the ornament ───────────────────────────
+    if (gs.anim.sweep > 0) {
+      const band = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.088, 0.5),
+        new THREE.MeshBasicMaterial({
+          map: sweepTexture(),
+          color: gs.glow,
+          transparent: true,
+          opacity: 0.9,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        }),
+      );
+      band.rotation.x = -Math.PI / 2;
+      band.position.set(0, 0.0554, -0.4);
+      rifle.add(band);
+      this.sweepBand = band;
+      this.sweepMat = band.material as THREE.MeshBasicMaterial;
+    } else {
+      this.sweepBand = null;
+      this.sweepMat = null;
+    }
+    this.gunOrnament = gs.anim.orbit === 'none' ? null : new Ornament(gs.anim.orbit, gs.trim, 1);
+    if (this.gunOrnament) rifle.add(this.gunOrnament.group);
+
     // Hands: right on the grip, left under the handguard.
     const handR = box(0.075, 0.1, 0.13, glove, 0.004, -0.135, -0.03);
     handR.rotation.x = -0.3;
@@ -1623,6 +1697,8 @@ export class Renderer {
     gHandR.rotation.x = -0.3;
     grapnel.add(gHandR);
     grapnel.add(box(0.08, 0.085, 0.12, glove, -0.005, -0.07, -0.24));
+    this.ropeOrnament = gr.anim.orbit === 'none' ? null : new Ornament(gr.anim.orbit, gr.trail, 1);
+    if (this.ropeOrnament) grapnel.add(this.ropeOrnament.group);
     const gSleeveR = cyl(0.055, 0.07, 0.3, sleeve, 0.07, -0.23, 0.02);
     gSleeveR.rotation.set(1.25, 0, 0.16);
     grapnel.add(gSleeveR);
@@ -1738,10 +1814,14 @@ export class Renderer {
   /** Their kill, dressed in their effect. */
   killBurst(at: Vec3, effectId: string, scale = 1): void {
     const fx = killEffect(effectId);
+    // Particulate haze under every effect shape: the geometry does the reading,
+    // the particles do the heat.
     this.particles.burst(at, fx.burst, Math.round(26 * scale), { speed: 9 * scale, size: 0.16, life: 0.5, gravity: 10 });
     this.particles.burst(at, fx.motes, Math.round(18 * scale), { speed: 3.5 * scale, size: 0.22, life: 0.85, gravity: -1.2 });
     this.waves.spawn(at, fx.ring, 3.2 * scale, 0.45);
     this.waves.spawn(at, fx.burst, 1.6 * scale, 0.28);
+    this.fx.kill(at, fx.shape, { burst: fx.burst, ring: fx.ring, motes: fx.motes }, scale);
+    this.post.flash(fx.ring, 0.12 * scale);
   }
 
   private rebuildViewmodel(): void {
@@ -1804,6 +1884,25 @@ export class Renderer {
   recoil(): void {
     this.weaponRecoil = 1;
     this.weaponKick = 1;
+    this.fx.shells.eject(new THREE.Vector3(0.075, 0.02, -0.34));
+    // Powder smoke drifts off the brake in world space, so it stays behind when
+    // you turn instead of riding the camera like a decal.
+    const at = new THREE.Vector3(0, 0.008, -1.4).applyMatrix4(this.camera.matrixWorld);
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
+    this.particles.burst(
+      at,
+      0xe8e4d8,
+      7,
+      { speed: 1.6, size: 0.34, life: 0.9, gravity: -0.6, drag: 2.2 },
+    );
+    for (let i = 0; i < 3; i++) {
+      this.particles.ember(
+        { x: at.x + fwd.x * 0.3 * i, y: at.y + fwd.y * 0.3 * i, z: at.z + fwd.z * 0.3 * i },
+        0xffd9a0,
+        0.16,
+        0.22,
+      );
+    }
     this.muzzle.visible = true;
     this.muzzle.material.opacity = 1;
     this.muzzle.scale.setScalar(1.5);
@@ -1819,9 +1918,10 @@ export class Renderer {
     this.beams.fire(from, to, 0xffffff, 0.1, 0.16);
   }
 
-  spark(pos: Vec3, color: number, count = 5): void {
+  spark(pos: Vec3, color: number, count = 5, normal: Vec3 | null = null): void {
     this.particles.burst(pos, color, count, { speed: 9, size: 0.3, life: 0.4, gravity: 18 });
     this.particles.burst(pos, 0xffe2b0, Math.round(count * 0.5), { speed: 6, size: 0.2, life: 0.28, gravity: 22 });
+    this.fx.impact(pos, normal, color);
   }
 
   /** Big hit burst: a kill is the loudest visual event in the game. */
@@ -2011,6 +2111,7 @@ export class Renderer {
     this.particles.update(dt);
     this.beams.update(dt);
     this.waves.update(dt);
+    this.fx.update(dt);
     this.hurtFlash = Math.max(0, this.hurtFlash - dt * 1.8);
 
     if (this.anchorInst) {
@@ -2062,6 +2163,27 @@ export class Renderer {
     const clawAway = local.hook.active || local.grapple.active;
     this.readyClaw.visible = !clawAway;
     this.grapnelModel.position.z = this.hookKick * 0.07;
+
+    // ── Skin motion ────────────────────────────────────────────────────────
+    // The pulse and the band run on the equipped kit only, and they are driven
+    // by wall time rather than by input, so a skin still looks alive while the
+    // player is holding an angle and doing nothing at all.
+    this.gunOrnament?.update(this.time);
+    this.ropeOrnament?.update(this.time);
+    if (this.accentMats.length) {
+      const breath = this.gunAnim.pulse > 0
+        ? 0.5 + 0.5 * Math.sin(this.time * this.gunAnim.pulse * Math.PI * 2)
+        : 0.6;
+      for (const m of this.accentMats) m.emissiveIntensity = (0.1 + this.gunAnim.glow * 0.2) + breath * this.gunAnim.glow * 0.55;
+      for (const m of this.glassMats) m.emissiveIntensity = 0.25 + this.gunAnim.glow * 0.55 + breath * 0.25;
+    }
+    if (this.sweepBand && this.sweepMat) {
+      const loop = (this.time * this.gunAnim.sweep) % 1;
+      this.sweepBand.position.z = -0.14 - loop * 0.62;
+      // The band leaves and enters through the ends of the receiver instead of
+      // popping, which is the whole trick to a sweep that does not look looped.
+      this.sweepMat.opacity = Math.sin(Math.PI * loop) * 0.85;
+    }
 
     const scopedNow = local.scopeT > 0.72;
     this.viewmodel.visible = !scopedNow && !view.killcam && local.alive;
@@ -2292,6 +2414,7 @@ export class Renderer {
     this.particles.update(dt);
     this.beams.update(dt);
     this.waves.update(dt);
+    this.fx.update(dt);
     this.sky.update(dt, this.camera);
     this.post.setState(this.time, 0, 0, 0);
   }
