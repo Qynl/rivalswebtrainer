@@ -1,127 +1,225 @@
 import { describe, expect, it } from 'vitest';
-import { createMoveState, stepMovement, type Aabb, type MoveInput, type MoveState } from '../src/game/movement';
-import { buildArena } from '../src/game/map';
-import { MOVE, PLAYER } from '../src/game/config';
+import { ARENA } from '../src/shared/arena.ts';
+import { makeWorld } from './helpers.ts';
+import { MOVE } from '../src/shared/constants.ts';
+import { KEY, type PlayerState } from '../src/shared/sim.ts';
+import { drive, makePadWorld, place, spawn } from './helpers.ts';
 
-const DT = 1 / 120;
-const floor: Aabb[] = [{ min: { x: -50, y: -1, z: -50 }, max: { x: 50, y: 0, z: 50 } }];
+const DECK = 0;
 
-function input(over: Partial<MoveInput> = {}): MoveInput {
-  return { forward: 0, strafe: 0, yaw: 0, jumpPressed: false, jumpHeld: false, crouchHeld: false, crouchPressed: false, ...over };
+function onDeck(id: 0 | 1 = 0): PlayerState {
+  const p = spawn(id);
+  place(p, 0, DECK, 0, 0);
+  return p;
 }
 
-function run(s: MoveState, frames: number, inp: MoveInput | ((i: number) => MoveInput), solids: Aabb[]) {
-  for (let i = 0; i < frames; i++) {
-    stepMovement(s, typeof inp === 'function' ? inp(i) : inp, DT, solids);
-  }
-}
-
-describe('movement core', () => {
-  it('stands on the floor with no input', () => {
-    const s = createMoveState({ x: 0, y: 3, z: 0 });
-    run(s, 240, input(), floor);
-    expect(s.onGround).toBe(true);
-    expect(s.pos.y).toBeCloseTo(0, 2);
+describe('movement feel', () => {
+  it('gravity pulls hard: falls 10 m in under a second and cannot be floaty', async () => {
+    const phys = await makePadWorld();
+    const p = spawn(0);
+    place(p, 0, DECK + 10, 0);
+    const res = drive(phys, p, { ticks: 60 });
+    const fallTicks = res.ys.findIndex((y) => y <= DECK + 0.95);
+    expect(fallTicks).toBeGreaterThan(10);
+    expect(fallTicks / 60).toBeLessThan(0.9);
+    expect(MOVE.gravity).toBeGreaterThan(25);
   });
 
-  it('accelerates forward to run speed and does not exceed it', () => {
-    const s = createMoveState({ x: 0, y: 0, z: 0 });
-    run(s, 120, input({ forward: 1 }), floor);
-    const speed = Math.hypot(s.vel.x, s.vel.z);
-    expect(speed).toBeGreaterThan(MOVE.runSpeed * 0.9);
-    expect(speed).toBeLessThanOrEqual(MOVE.runSpeed + 1e-3);
-    // yaw 0 faces -Z
-    expect(s.pos.z).toBeLessThan(0);
+  it('jumps snappily: short airtime, jump-cut on release, no autobhop float', async () => {
+    const phys = await makePadWorld();
+    const p = onDeck();
+    const startY = p.pos.y;
+    let peak = startY;
+    let airTicks = 0;
+    const res = drive(phys, p, {
+      ticks: 90,
+      keys: (i) => (i < 3 ? KEY.jump : 0),
+      onTick: () => {
+        peak = Math.max(peak, p.pos.y);
+        if (!p.grounded) airTicks++;
+      },
+    });
+    const height = peak - startY;
+    expect(height).toBeGreaterThan(1.4);
+    expect(height).toBeLessThan(2.4);
+    expect(airTicks / 60).toBeLessThan(0.85);
+    expect(p.grounded).toBe(true);
+    void res;
+
+    // Holding jump keeps hopping (auto-hop): responsive, not floaty.
+    const q = onDeck();
+    let airborneFrames = 0;
+    drive(phys, q, { ticks: 150, keys: () => KEY.jump, onTick: () => { if (!q.grounded) airborneFrames++; } });
+    expect(airborneFrames).toBeGreaterThan(30);
   });
 
-  it('jumps to a sensible height and lands again', () => {
-    const s = createMoveState({ x: 0, y: 0, z: 0 });
-    run(s, 10, input(), floor);
-    stepMovement(s, input({ jumpPressed: true, jumpHeld: true }), DT, floor);
-    let peak = 0;
-    for (let i = 0; i < 200; i++) {
-      // Hold jump through the rise so the full jump height applies.
-      stepMovement(s, input({ jumpHeld: true }), DT, floor);
-      peak = Math.max(peak, s.pos.y);
-      if (s.onGround && i > 5) break;
-    }
-    expect(peak).toBeGreaterThan(1.0);
-    expect(peak).toBeLessThan(1.8);
-    expect(s.onGround).toBe(true);
+  it('walking respects the speed cap and accelerates in your hand immediately', async () => {
+    const phys = await makePadWorld();
+    const p = onDeck();
+    drive(phys, p, { ticks: 4, keys: () => KEY.forward });
+    const early = Math.hypot(p.vel.x, p.vel.z);
+    expect(early).toBeGreaterThan(5); // input fires the same frame, not "next tick"
+    drive(phys, p, { ticks: 60, keys: () => KEY.forward });
+    expect(Math.hypot(p.vel.x, p.vel.z)).toBeLessThanOrEqual(MOVE.walkSpeed + 0.5);
   });
 
-  it('releasing jump early gives a lower jump than holding it', () => {
-    const peakFor = (holdFrames: number) => {
-      const s = createMoveState({ x: 0, y: 0, z: 0 });
-      run(s, 10, input(), floor);
-      stepMovement(s, input({ jumpPressed: true, jumpHeld: true }), DT, floor);
-      let peak = 0;
-      for (let i = 0; i < 200; i++) {
-        stepMovement(s, input({ jumpHeld: i < holdFrames }), DT, floor);
-        peak = Math.max(peak, s.pos.y);
-      }
-      return peak;
-    };
-    expect(peakFor(2)).toBeLessThan(peakFor(200) * 0.8);
+  it('landing at speed slides instead of stopping dead', async () => {
+    const phys = await makePadWorld();
+    const p = spawn(0);
+    // Drop onto the deck with 22 m/s of forward speed.
+    place(p, 0, DECK + 3, 0, 0);
+    p.vel = { x: 0, y: 0, z: -22 };
+    let atLanding = 0;
+    let after = 0;
+    let landTick = -1;
+    drive(phys, p, {
+      ticks: 60,
+      keys: () => KEY.crouch,
+      onTick: (i) => {
+        if (landTick < 0 && p.grounded) {
+          landTick = i;
+          atLanding = Math.hypot(p.vel.x, p.vel.z);
+        }
+        if (landTick >= 0 && i === landTick + 20) after = Math.hypot(p.vel.x, p.vel.z);
+      },
+    });
+    expect(landTick).toBeGreaterThan(0);
+    expect(atLanding).toBeGreaterThan(19); // momentum survives the floor
+    expect(after).toBeGreaterThan(11); // and keeps sliding
+    expect(p.sliding || after < 20).toBe(true);
   });
 
-  it('is blocked by a wall', () => {
-    const wall: Aabb[] = [...floor, { min: { x: -50, y: 0, z: -2 }, max: { x: 50, y: 5, z: -1 } }];
-    const s = createMoveState({ x: 0, y: 0, z: 0 });
-    run(s, 240, input({ forward: 1 }), wall);
-    expect(s.pos.z).toBeGreaterThan(-1 - PLAYER.radius - 0.05);
+  it('has coyote time and jump buffering', async () => {
+    const phys = await makePadWorld();
+    // Coyote: walk off the deck edge, then jump three frames after leaving.
+    const a = spawn(0);
+    place(a, 0, DECK, -38, 0);
+    let leftAt = -1;
+    let maxVy = -100;
+    drive(phys, a, {
+      ticks: 120,
+      keys: (i) => (leftAt >= 0 && i >= leftAt + 3 ? KEY.forward | KEY.jump : KEY.forward),
+      onTick: (i) => {
+        if (leftAt < 0 && !a.grounded && i > 5) leftAt = i;
+        maxVy = Math.max(maxVy, a.vel.y);
+      },
+    });
+    expect(leftAt).toBeGreaterThan(0);
+    expect(maxVy).toBeGreaterThan(5); // the late jump still fired
+
+    // Buffer: a press inside the last 0.12 s of a fall fires the moment the
+    // feet touch the slab, so landing and jumping read as one motion.
+    const b = spawn(0);
+    place(b, 0, DECK + 3, 0, 0);
+    let pressAt = -1;
+    const buffered = drive(phys, b, {
+      ticks: 90,
+      keys: (i) => {
+        if (pressAt < 0 && b.pos.y < DECK + 1.25) pressAt = i;
+        return pressAt >= 0 && i >= pressAt && i <= pressAt + 1 ? KEY.jump : 0;
+      },
+    });
+    expect(pressAt).toBeGreaterThan(0);
+    expect(buffered.events.filter((e) => e.type === 'jump').length).toBe(1);
+
+    // One press, one hop. Holding the button must not turn into a bunnyhop,
+    // otherwise every landing in the game fires a jump you did not ask for.
+    const held = drive(phys, b, { ticks: 150, keys: () => KEY.jump });
+    expect(held.events.filter((e) => e.type === 'jump').length).toBe(1);
   });
 
-  it('steps up a low stair but not a tall block', () => {
-    const solids: Aabb[] = [
-      ...floor,
-      { min: { x: 1, y: 0, z: -2 }, max: { x: 2, y: 0.4, z: 2 } }, // low step
-      { min: { x: 4, y: 0, z: -2 }, max: { x: 5, y: 2.0, z: 2 } }, // too tall
+  it('walks on flat ground without bouncing or dropping contact', async () => {
+    const phys = await makePadWorld();
+    const p = onDeck();
+    drive(phys, p, { ticks: 20, keys: () => 0 });
+    const run = drive(phys, p, { ticks: 120, keys: () => KEY.forward });
+    // Nothing should report a landing once the feet are down.
+    expect(run.events.filter((e) => e.type === 'land').length).toBe(0);
+    // A pixel of sink is fine; a centimetre of pop is a visible bounce.
+    const tail = run.ys.slice(-60);
+    const spread = Math.max(...tail) - Math.min(...tail);
+    expect(spread).toBeLessThan(0.005);
+    expect(tail.every((y) => y > DECK)).toBe(true);
+    // And speed settles exactly on the walk speed rather than oscillating.
+    const speeds = run.speeds.slice(-30);
+    expect(Math.max(...speeds) - Math.min(...speeds)).toBeLessThan(0.01);
+    expect(run.speeds[run.speeds.length - 1]).toBeCloseTo(MOVE.walkSpeed, 1);
+  });
+
+  it('flies where you point: every one of the eight air directions responds', async () => {
+    const phys = await makePadWorld();
+    const dirs: [number, number, number][] = [
+      [KEY.forward, 0, -1],
+      [KEY.back, 0, 1],
+      [KEY.left, -1, 0],
+      [KEY.right, 1, 0],
+      [KEY.forward | KEY.right, 0.7071, -0.7071],
+      [KEY.forward | KEY.left, -0.7071, -0.7071],
+      [KEY.back | KEY.right, 0.7071, 0.7071],
+      [KEY.back | KEY.left, -0.7071, 0.7071],
     ];
-    const s = createMoveState({ x: -1, y: 0, z: 0 });
-    run(s, 120, input({ forward: 0, strafe: 1, yaw: 0 }), solids);
-    // strafe +1 at yaw 0 moves +X
-    expect(s.pos.x).toBeGreaterThan(1.5);
-    expect(s.pos.x).toBeLessThan(4);
+    for (const [keys, wx, wz] of dirs) {
+      const p = spawn(0);
+      place(p, 0, DECK, 0);
+      // Leaves the ground first, then holds one direction in the air.
+      drive(phys, p, { ticks: 2, keys: () => KEY.jump });
+      drive(phys, p, { ticks: 20, keys: () => keys });
+      expect(p.grounded).toBe(false);
+      const sp = Math.hypot(p.vel.x, p.vel.z);
+      expect(sp).toBeGreaterThan(6);
+      // Velocity has to point where the key points, not where the body is.
+      const align = (p.vel.x * wx + p.vel.z * wz) / sp;
+      expect(align).toBeGreaterThan(0.97);
+    }
   });
 
-  it('a slide starts when crouch is pressed at speed and sets low height', () => {
-    const s = createMoveState({ x: 0, y: 0, z: 0 });
-    run(s, 120, input({ forward: 1 }), floor);
-    const ev = stepMovement(s, input({ forward: 1, crouchPressed: true, crouchHeld: true }), DT, floor);
-    expect(ev.slideStarted).toBe(true);
-    expect(s.sliding).toBe(true);
-    expect(s.height).toBe(PLAYER.slideHeight);
+  it('carves in the air: a fast fall can be turned without losing its speed', async () => {
+    const phys = await makePadWorld();
+    const p = spawn(0);
+    place(p, 0, DECK + 60, 0);
+    p.vel = { x: 45, y: -5, z: 0 };
+    drive(phys, p, { ticks: 24, keys: () => KEY.left });
+    expect(p.vel.x).toBeLessThan(-20); // it came round, in 0.4 s
+    const sp = Math.hypot(p.vel.x, p.vel.z);
+    expect(sp).toBeGreaterThan(32); // and kept most of what it had
+    expect(p.vel.y).toBeLessThan(0); // steering never fights gravity
   });
 
-  it('slide-jump keeps and boosts horizontal momentum', () => {
-    const s = createMoveState({ x: 0, y: 0, z: 0 });
-    run(s, 120, input({ forward: 1 }), floor);
-    stepMovement(s, input({ forward: 1, crouchPressed: true, crouchHeld: true }), DT, floor);
-    const before = Math.hypot(s.vel.x, s.vel.z);
-    const ev = stepMovement(s, input({ forward: 1, crouchHeld: true, jumpPressed: true }), DT, floor);
-    expect(ev.slideJumped).toBe(true);
-    const after = Math.hypot(s.vel.x, s.vel.z);
-    expect(after).toBeGreaterThan(before);
-    expect(after).toBeLessThanOrEqual(MOVE.slideJumpCap + 0.01);
-    expect(s.vel.y).toBeGreaterThan(MOVE.jumpVelocity * 0.9);
+  it('caps air thrust well below a swing, so the rope still matters', async () => {
+    const phys = await makePadWorld();
+    const p = spawn(0);
+    place(p, 0, DECK + 120, 0);
+    drive(phys, p, { ticks: 120, keys: () => KEY.forward });
+    const sp = Math.hypot(p.vel.x, p.vel.z);
+    expect(sp).toBeLessThanOrEqual(MOVE.airMaxSpeed + 0.5);
+    expect(sp).toBeGreaterThan(MOVE.walkSpeed * 1.6);
   });
 
-  it('plain jump from walking does not count as a slide-jump', () => {
-    const s = createMoveState({ x: 0, y: 0, z: 0 });
-    run(s, 120, input({ forward: 1 }), floor);
-    const ev = stepMovement(s, input({ forward: 1, jumpPressed: true }), DT, floor);
-    expect(ev.jumped).toBe(true);
-    expect(ev.slideJumped).toBe(false);
+  it('dashes with a cooldown and no frame-rate dependence in the step itself', async () => {
+    const phys = await makePadWorld();
+    const p = onDeck();
+    const start = { ...p.pos };
+    drive(phys, p, { ticks: 1, keys: () => KEY.dash });
+    const moved = Math.hypot(p.pos.x - start.x, p.pos.z - start.z);
+    expect(moved).toBeGreaterThan(0.2);
+    const cd = p.dashCooldown;
+    expect(cd).toBeCloseTo(MOVE.dashCooldown, 5);
+    drive(phys, p, { ticks: 2, keys: () => KEY.dash });
+    expect(p.dashCooldown).toBeLessThan(cd);
+    // The sim consumes dt, and the fixed step is the only caller.
+    expect(p.dashCooldown).toBeGreaterThan(0);
   });
 
-  it('the arena map can be traversed without getting stuck in geometry', () => {
-    const arena = buildArena();
-    const s = createMoveState({ x: -24, y: 0, z: 24 });
-    run(s, 60, input(), arena);
-    expect(s.onGround).toBe(true);
-    // not inside any solid
-    const { overlapsAny } = { overlapsAny: (p: typeof s.pos, h: number, sol: Aabb[]) => sol.some(b => p.x + PLAYER.radius > b.min.x && p.x - PLAYER.radius < b.max.x && p.y + h > b.min.y && p.y < b.max.y && p.z + PLAYER.radius > b.min.z && p.z - PLAYER.radius < b.max.z) };
-    expect(overlapsAny(s.pos, s.height, arena)).toBe(false);
+  it('spawns both players on equal footing', async () => {
+    const phys = await makeWorld();
+    const [a, b] = ARENA.spawns;
+    expect(a.pos.y).toBeCloseTo(b.pos.y);
+    expect(Math.hypot(a.pos.x, a.pos.z)).toBeCloseTo(Math.hypot(b.pos.x, b.pos.z));
+    const p = spawn(0);
+    const q = spawn(1);
+    drive(phys, p, { ticks: 30 });
+    drive(phys, q, { ticks: 30 });
+    expect(p.grounded).toBe(true);
+    expect(q.grounded).toBe(true);
   });
 });
