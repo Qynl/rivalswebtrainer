@@ -15,6 +15,7 @@ import {
   type KillEffect,
 } from '../shared/cosmetics.ts';
 import type { Progress } from './progress.ts';
+import type { Sfx } from './audio.ts';
 
 const el = <T extends HTMLElement = HTMLElement>(id: string): T => {
   const node = document.getElementById(id);
@@ -128,6 +129,7 @@ const TIER_LABEL: Record<string, string> = {
 export class Armory {
   private progress: Progress;
   private onChange: () => void;
+  private sfx: Sfx | null;
   private root = el('armory');
   private grid = el('armory-grid');
   private coins = el('armory-coins');
@@ -139,9 +141,10 @@ export class Armory {
   private kind: CosmeticKind = 'gun';
   private open = false;
 
-  constructor(progress: Progress, onChange: () => void) {
+  constructor(progress: Progress, onChange: () => void, sfx: Sfx | null = null) {
     this.progress = progress;
     this.onChange = onChange;
+    this.sfx = sfx;
     for (const tab of this.tabs) {
       tab.addEventListener('click', () => {
         this.kind = (tab.dataset.armoryTab as CosmeticKind) ?? 'gun';
@@ -150,6 +153,10 @@ export class Armory {
     }
     el<HTMLButtonElement>('armory-back').addEventListener('click', () => this.close());
     this.grid.addEventListener('click', (ev) => this.onCardClick(ev));
+    // Hover is the store's only sound before a purchase, so it stays quiet.
+    this.grid.addEventListener('mouseover', (ev) => {
+      if ((ev.target as HTMLElement).closest('[data-item]')) this.sfx?.ui('hover');
+    });
   }
 
   get isOpen(): boolean {
@@ -181,11 +188,14 @@ export class Armory {
     const kind = target.dataset.kind as CosmeticKind;
     if (target.dataset.action === 'buy') {
       const result = this.progress.buy(kind, id);
+      // A refused purchase gets its own dry thud, not the coin arpeggio.
+      this.sfx?.ui(result.reason === 'poor' ? 'back' : 'buy');
       this.note.textContent =
         result.reason === 'poor' ? 'NOT ENOUGH COINS — WIN DUELS TO EARN MORE' : 'UNLOCKED';
       this.note.classList.toggle('warn', result.reason === 'poor');
     } else {
       this.progress.equip(kind, id);
+      this.sfx?.ui('equip');
       this.note.textContent = 'EQUIPPED';
       this.note.classList.remove('warn');
     }

@@ -138,7 +138,7 @@ class Game {
     this.input = new Input(this.canvas);
     this.bindUi();
     this.bindNet();
-    this.armory = new Armory(this.progress, () => this.applyLoadout());
+    this.armory = new Armory(this.progress, () => this.applyLoadout(), this.sfx);
     this.applyLoadout();
     this.resetLocalSpawn(0);
     this.hintUntil = performance.now() + 9000;
@@ -740,6 +740,10 @@ class Game {
     }
     if (payout.after.level > payout.before.level) {
       this.hud.bannerText(`LEVEL ${payout.after.level}`, 'me', 2600);
+      // The level fanfare lands a beat after the match stinger, not on top of it.
+      window.setTimeout(() => this.sfx.ui('level'), 420);
+    } else if (reward.coins > 0) {
+      window.setTimeout(() => this.sfx.ui('reward'), 260);
     }
     this.refreshProfile();
     this.sfx.hitmarker(won);
@@ -769,7 +773,14 @@ class Game {
       }
       if (this.accumulator > DT * 6) this.accumulator = 0;
       this.updateRemote();
-      this.sfx.mix(this.local.speed, this.local.grapple.active, this.local.alive);
+      const gr = this.local.grapple;
+      // Reel speed drives the grapnel whirr: a zip screams, a slow payout ticks.
+      const reel = this.local.hook.active ? 0.85 : gr.active ? (gr.mode === 'zip' ? 1 : 0.4) : 0;
+      this.sfx.mix(this.local.speed, gr.active, this.local.alive, {
+        grounded: this.local.grounded,
+        reel,
+        dt,
+      });
       if (this.killcam) {
         this.killcam.t += dt;
         if (!this.local.alive && this.killcam.t > 5) this.killcam = null;
