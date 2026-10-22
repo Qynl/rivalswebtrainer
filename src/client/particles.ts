@@ -357,8 +357,49 @@ export class Beams {
 
 // ── Shockwave rings ────────────────────────────────────────────────────────
 
+const WAVE_VERT = /* glsl */ `
+varying vec2 vLocal;
+void main() {
+  vLocal = position.xy;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+
+const WAVE_FRAG = /* glsl */ `
+varying vec2 vLocal;
+uniform vec3 uColor;
+uniform float uOpacity;
+uniform float uSeed;
+uniform float uTime;
+
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float noise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+             mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
+void main() {
+  float r = length(vLocal);
+  float ang = atan(vLocal.y, vLocal.x);
+  // Turbulence running around the ring: a shock front is air, not a hoop, and
+  // the noise is what stops these reading as decals laid on the screen.
+  float n = noise(vec2(ang * 2.6 + uSeed, r * 5.0 - uTime * 2.4)) * 0.6
+          + noise(vec2(ang * 7.0 - uSeed, r * 11.0 + uTime * 1.3)) * 0.4;
+  float band = smoothstep(0.55, 0.98, r + n * 0.16);
+  // Hot leading edge, cool wake.
+  float edge = smoothstep(0.9, 1.0, r + n * 0.05);
+  float a = (band * (0.35 + n * 0.9) + edge * 0.8) * uOpacity;
+  vec3 col = mix(uColor, vec3(1.0), edge * 0.55);
+  gl_FragColor = vec4(col, clamp(a, 0.0, 1.0));
+}
+`;
+
 interface Wave {
   mesh: THREE.Mesh;
+  mat: THREE.ShaderMaterial;
   life: number;
   max: number;
   scale: number;
@@ -367,23 +408,30 @@ interface Wave {
 export class Shockwaves {
   readonly group = new THREE.Group();
   private pool: Wave[] = [];
+  private time = 0;
 
   constructor(count = 8) {
     const geo = new THREE.RingGeometry(0.82, 1, 48);
     for (let i = 0; i < count; i++) {
-      const mat = new THREE.MeshBasicMaterial({
-        color: 0xffffff,
+      const mat = new THREE.ShaderMaterial({
+        uniforms: {
+          uColor: { value: new THREE.Color(0xffffff) },
+          uOpacity: { value: 0 },
+          uSeed: { value: Math.random() * 10 },
+          uTime: { value: 0 },
+        },
+        vertexShader: WAVE_VERT,
+        fragmentShader: WAVE_FRAG,
         transparent: true,
-        opacity: 0,
-        side: THREE.DoubleSide,
-        blending: THREE.AdditiveBlending,
         depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
       });
       const mesh = new THREE.Mesh(geo, mat);
       mesh.visible = false;
       mesh.renderOrder = 4;
       this.group.add(mesh);
-      this.pool.push({ mesh, life: 0, max: 1, scale: 1 });
+      this.pool.push({ mesh, mat, life: 0, max: 1, scale: 1 });
     }
   }
 
@@ -392,7 +440,22 @@ export class Shockwaves {
     if (!slot) slot = this.pool.reduce((a, b) => (a.life < b.life ? a : b));
     slot.mesh.position.set(at.x, at.y, at.z);
     slot.mesh.rotation.set(Math.PI / 2 + tilt, 0, 0);
-    (slot.mesh.material as THREE.MeshBasicMaterial).color.setHex(color);
+    (slot.mat.uniforms.uColor.value as THREE.Color).setHex(color);
+    slot.mat.uniforms.uSeed.value = Math.random() * 10;
+    slot.mesh.visible = true;
+    slot.life = life;
+    slot.max = life;
+    slot.scale = scale;
+  }
+
+  /** Orient a ring along an arbitrary axis (used for shot-aligned plates). */
+  spawnAligned(at: Vec3, color: number, scale: number, life: number, normal: Vec3): void {
+    let slot = this.pool.find((w) => w.life <= 0);
+    if (!slot) slot = this.pool.reduce((a, b) => (a.life < b.life ? a : b));
+    slot.mesh.position.set(at.x, at.y, at.z);
+    slot.mesh.lookAt(at.x + normal.x, at.y + normal.y, at.z + normal.z);
+    (slot.mat.uniforms.uColor.value as THREE.Color).setHex(color);
+    slot.mat.uniforms.uSeed.value = Math.random() * 10;
     slot.mesh.visible = true;
     slot.life = life;
     slot.max = life;
@@ -400,13 +463,15 @@ export class Shockwaves {
   }
 
   update(dt: number): void {
+    this.time += dt;
     for (const w of this.pool) {
       if (w.life <= 0) continue;
       w.life -= dt;
       const t = 1 - Math.max(0, w.life / w.max);
       const s = w.scale * (0.25 + t * 1.6);
       w.mesh.scale.set(s, s, s);
-      (w.mesh.material as THREE.MeshBasicMaterial).opacity = (1 - t) * 0.8;
+      w.mat.uniforms.uOpacity.value = (1 - t) * 0.85;
+      w.mat.uniforms.uTime.value = this.time;
       if (w.life <= 0) w.mesh.visible = false;
     }
   }

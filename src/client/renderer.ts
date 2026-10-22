@@ -2312,7 +2312,7 @@ export class Renderer {
       n.x /= len;
       n.y /= len;
       n.z /= len;
-      this.fx.rings.spawn(at, fx.ring, 0.6, 7.5 * scale, 0.5, n);
+      this.waves.spawnAligned(at, fx.ring, 6.5 * scale, 0.55, n);
     }
     // Particulate haze under every effect shape: the geometry does the reading,
     // the particles do the heat.
