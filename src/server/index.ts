@@ -75,7 +75,9 @@ function handleHello(ws: WebSocket, msg: Extract<ClientMsg, { t: 'hello' }>): vo
   // 3. Duel: fill an open seat, otherwise open a room and wait.
   for (const room of rooms) {
     if (room.dead || room.mode !== 'duel' || room.waiting === false) continue;
-    if (room.join(ws, name) !== null) {
+    // The joiner's kit matters too: without this the second player always wore
+    // the default rifle to their opponent's eyes.
+    if (room.join(ws, name, msg.look) !== null) {
       const idx = room.sockets.indexOf(ws);
       socketMeta.set(ws, { room, slot: idx >= 0 ? idx : 0, alive: true });
       return;

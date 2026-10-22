@@ -318,4 +318,20 @@ describe('room: authority, kills and reconnect', () => {
     // And the player still moved like a player, not like a teleport.
     expect(Math.abs(room.inspect().players[0].pos.z - before)).toBeLessThan(0.5);
   });
+
+  it('carries the joiner\'s cosmetics to the opponent, and refuses invented ids', async () => {
+    const room = await makeRoom('duel');
+    const a = fake();
+    const b = fake();
+    room.join(a.ws, 'A', { gun: 'aurum', grapple: 'gilded', effect: 'nova' });
+    room.join(b.ws, 'B', { gun: 'not-a-skin', grapple: '../../etc/passwd', effect: 'bloom' });
+    advance(room, 6, 1000);
+    const snap = [...b.inbox].reverse().find((m) => m.t === 'snap') as Extract<ServerMsg, { t: 'snap' }>;
+    expect(snap.snap.players[0].look.gun).toBe('aurum');
+    expect(snap.snap.players[0].look.grapple).toBe('gilded');
+    // The second seat's junk falls back to the issue kit rather than through.
+    const snapA = [...a.inbox].reverse().find((m) => m.t === 'snap') as Extract<ServerMsg, { t: 'snap' }>;
+    expect(snapA.snap.players[1].look.gun).toBe('service');
+    expect(snapA.snap.players[1].look.effect).toBe('bloom');
+  });
 });

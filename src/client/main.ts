@@ -267,6 +267,10 @@ class Game {
   }
 
   /** Pushes the equipped kit into the renderer and the next hello message. */
+  /**
+   * Everything the server needs to know about our appearance, before and during
+   * a match. Sent on join and whenever the armory changes something.
+   */
   private applyLoadout(): void {
     const look: Loadout = { ...this.progress.state.loadout };
     this.net.look = look;
