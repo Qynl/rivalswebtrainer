@@ -42,6 +42,7 @@ export class Sfx {
   private hum: { gain: GainNode; osc: OscillatorNode } | null = null;
   private drone: { gain: GainNode } | null = null;
   private reel: { gain: GainNode; filter: BiquadFilterNode; osc: OscillatorNode } | null = null;
+  private scrape: { gain: GainNode; filter: BiquadFilterNode } | null = null;
   /** Metres walked since the last footstep. */
   private stepPhase = 0;
   private gustTimer = 6;
@@ -104,6 +105,7 @@ export class Sfx {
     this.startDrone();
     this.startHum();
     this.startReel();
+    this.startScrape();
   }
 
   /**
@@ -392,6 +394,28 @@ export class Sfx {
     this.reel = { gain, filter, osc };
   }
 
+  /**
+   * Boots on concrete at 9 m/s. A slide is the one movement state that needs a
+   * continuous sound rather than a one-shot, because the friction is.
+   */
+  private startScrape(): void {
+    const ctx = this.ok();
+    if (!ctx || !this.master || !this.noise) return;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    src.loop = true;
+    src.playbackRate.value = 0.55;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 1600;
+    filter.Q.value = 0.9;
+    const gain = ctx.createGain();
+    gain.gain.value = 0.0001;
+    src.connect(filter).connect(gain).connect(this.master);
+    src.start();
+    this.scrape = { gain, filter };
+  }
+
   // ── Per-frame mix ────────────────────────────────────────────────────────
 
   /**
@@ -403,7 +427,7 @@ export class Sfx {
     speed: number,
     swinging: boolean,
     alive: boolean,
-    extra: { grounded?: boolean; reel?: number; dt?: number } = {},
+    extra: { grounded?: boolean; reel?: number; sliding?: boolean; dt?: number } = {},
   ): void {
     const ctx = this.ctx;
     if (!ctx) return;
@@ -424,6 +448,12 @@ export class Sfx {
     }
     if (this.hum) {
       this.hum.gain.gain.setTargetAtTime(swinging ? 0.05 : 0.0001, t, 0.06);
+    }
+    if (this.scrape) {
+      const sliding = alive && !!extra.sliding;
+      const speedK = clamp(sp / 9, 0.2, 1);
+      this.scrape.gain.gain.setTargetAtTime(sliding ? 0.05 + speedK * 0.1 : 0.0001, t, 0.03);
+      this.scrape.filter.frequency.setTargetAtTime(1100 + speedK * 1500, t, 0.05);
     }
     if (this.reel) {
       const target = clamp(extra.reel ?? 0, 0, 1);
@@ -759,5 +789,6 @@ export class Sfx {
     if (this.drone) this.drone.gain.gain.setTargetAtTime(0.0001, t, 0.2);
     if (this.reel) this.reel.gain.gain.setTargetAtTime(0.0001, t, 0.1);
     if (this.hum) this.hum.gain.gain.setTargetAtTime(0.0001, t, 0.1);
+    if (this.scrape) this.scrape.gain.gain.setTargetAtTime(0.0001, t, 0.06);
   }
 }

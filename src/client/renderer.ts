@@ -428,6 +428,8 @@ export class Renderer {
   private rifleModel: THREE.Group = new THREE.Group();
   private grapnelModel: THREE.Group = new THREE.Group();
   private boltGroup: THREE.Group = new THREE.Group();
+  /** The working hand: it rides the bolt handle through the cycle. */
+  private handRig: THREE.Group = new THREE.Group();
   private spool: THREE.Object3D = new THREE.Object3D();
   /** The loaded claw in the launcher's throat; hidden while one is in flight. */
   private readyClaw: THREE.Object3D = new THREE.Object3D();
@@ -2172,18 +2174,23 @@ export class Renderer {
       rifle.add(plate);
     }
 
-    // Hands: right on the grip, left under the handguard.
+    // Hands: the right one is a rig, because it works the bolt. A hand that
+    // never leaves the grip while the bolt cycles is the tell that a viewmodel
+    // is a picture of a rifle rather than a rifle in someone's hands.
+    this.handRig = new THREE.Group();
     const handR = box(0.075, 0.1, 0.13, glove, 0.004, -0.135, -0.03);
     handR.rotation.x = -0.3;
-    rifle.add(handR);
+    this.handRig.add(handR);
+    const sleeveR = cyl(0.055, 0.07, 0.3, sleeve, 0.07, -0.23, 0.02);
+    sleeveR.rotation.set(1.25, 0, 0.16);
+    this.handRig.add(sleeveR);
+    rifle.add(this.handRig);
+
     const handL = box(0.082, 0.088, 0.12, glove, -0.006, -0.075, -0.72);
     rifle.add(handL);
     for (let i = 0; i < 3; i++) {
       rifle.add(box(0.078, 0.018, 0.032, gloveDark, -0.004, -0.052 + i * 0.03, -0.74 - i * 0.001));
     }
-    const sleeveR = cyl(0.055, 0.07, 0.3, sleeve, 0.07, -0.23, 0.02);
-    sleeveR.rotation.set(1.25, 0, 0.16);
-    rifle.add(sleeveR);
     const sleeveL = cyl(0.05, 0.066, 0.34, sleeve, -0.1, -0.19, -0.56);
     sleeveL.rotation.set(1.3, 0, -0.34);
     rifle.add(sleeveL);
@@ -2269,7 +2276,7 @@ export class Renderer {
     // Cull the static parts down to one mesh per material (the bolt, spool and
     // the cradle claw stay separate because they animate).
     mergeChildren(ready, new Set());
-    mergeChildren(rifle, new Set<THREE.Object3D>([this.boltGroup]));
+    mergeChildren(rifle, new Set<THREE.Object3D>([this.boltGroup, this.handRig]));
     mergeChildren(grapnel, new Set<THREE.Object3D>([this.spool, ready]));
 
     rifle.position.set(0, 0, 0);
@@ -2945,6 +2952,10 @@ export class Renderer {
     const lifted = Math.sin(Math.min(1, (1 - cycle) * 2) * Math.PI);
     this.boltGroup.rotation.x = -lifted * 1.15;
     this.boltGroup.position.z = -0.14 + lifted * 0.06;
+    // The hand goes with it: lift, draw back, ride forward, settle.
+    this.handRig.position.set(0, lifted * 0.028, lifted * 0.055);
+    this.handRig.rotation.x = -lifted * 0.22;
+    this.handRig.rotation.z = lifted * 0.05;
     // Spool: pays out while the claw is away, and keeps turning while the rope
     // is loaded, because a reel under tension is never still.
     this.hookKick = Math.max(0, this.hookKick - dt * 6);

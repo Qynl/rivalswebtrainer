@@ -784,6 +784,7 @@ class Game {
       this.sfx.mix(this.local.speed, gr.active, this.local.alive, {
         grounded: this.local.grounded,
         reel,
+        sliding: this.local.sliding,
         dt,
       });
       if (this.killcam) {
