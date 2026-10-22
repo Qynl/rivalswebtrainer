@@ -1,127 +1,249 @@
 import { describe, expect, it } from 'vitest';
-import { createMoveState, stepMovement, type Aabb, type MoveInput, type MoveState } from '../src/game/movement';
-import { buildArena } from '../src/game/map';
-import { MOVE, PLAYER } from '../src/game/config';
+import { PHYSICS } from '../src/game/config';
+import type { Rect } from '../src/game/geometry';
+import type { Level } from '../src/game/level';
+import { createPlayerState, stepPlayer, type InputFrame, type PlayerState } from '../src/game/movement';
 
 const DT = 1 / 120;
-const floor: Aabb[] = [{ min: { x: -50, y: -1, z: -50 }, max: { x: 50, y: 0, z: 50 } }];
 
-function input(over: Partial<MoveInput> = {}): MoveInput {
-  return { forward: 0, strafe: 0, yaw: 0, jumpPressed: false, jumpHeld: false, crouchHeld: false, crouchPressed: false, ...over };
+function flat(input: Partial<InputFrame> = {}): InputFrame {
+  return {
+    moveX: 0,
+    downHeld: false,
+    jumpPressed: false,
+    jumpHeld: false,
+    dashPressed: false,
+    attackPressed: false,
+    ...input,
+  };
 }
 
-function run(s: MoveState, frames: number, inp: MoveInput | ((i: number) => MoveInput), solids: Aabb[]) {
-  for (let i = 0; i < frames; i++) {
-    stepMovement(s, typeof inp === 'function' ? inp(i) : inp, DT, solids);
-  }
+function makeLevel(overrides: Partial<Level> = {}): Level {
+  const floor: Rect = { x: -1000, y: 400, w: 4000, h: 100 };
+  return {
+    width: 4000,
+    height: 1000,
+    spawn: { x: 100, y: 400 - 40 },
+    solids: [floor],
+    hazards: [],
+    bouncePads: [],
+    benches: [],
+    breakables: [],
+    fireflies: [],
+    vines: [],
+    ...overrides,
+  };
 }
 
-describe('movement core', () => {
-  it('stands on the floor with no input', () => {
-    const s = createMoveState({ x: 0, y: 3, z: 0 });
-    run(s, 240, input(), floor);
-    expect(s.onGround).toBe(true);
-    expect(s.pos.y).toBeCloseTo(0, 2);
+function settle(player: PlayerState, level: Level, frames = 5): void {
+  for (let i = 0; i < frames; i++) stepPlayer(player, flat(), level, DT);
+}
+
+describe('ground movement', () => {
+  it('accelerates up to run speed and stops with friction', () => {
+    const level = makeLevel();
+    const p = createPlayerState(level.spawn);
+    settle(p, level);
+    for (let i = 0; i < 60; i++) stepPlayer(p, flat({ moveX: 1 }), level, DT);
+    expect(p.vel.x).toBeCloseTo(PHYSICS.runSpeed, 0);
+
+    for (let i = 0; i < 60; i++) stepPlayer(p, flat(), level, DT);
+    expect(p.vel.x).toBe(0);
   });
 
-  it('accelerates forward to run speed and does not exceed it', () => {
-    const s = createMoveState({ x: 0, y: 0, z: 0 });
-    run(s, 120, input({ forward: 1 }), floor);
-    const speed = Math.hypot(s.vel.x, s.vel.z);
-    expect(speed).toBeGreaterThan(MOVE.runSpeed * 0.9);
-    expect(speed).toBeLessThanOrEqual(MOVE.runSpeed + 1e-3);
-    // yaw 0 faces -Z
-    expect(s.pos.z).toBeLessThan(0);
-  });
+  it('reverses direction faster than it accelerates from rest', () => {
+    const level = makeLevel();
+    const p = createPlayerState(level.spawn);
+    settle(p, level);
+    for (let i = 0; i < 60; i++) stepPlayer(p, flat({ moveX: 1 }), level, DT);
+    stepPlayer(p, flat({ moveX: -1 }), level, DT);
+    const deltaReversing = Math.abs(p.vel.x - PHYSICS.runSpeed);
 
-  it('jumps to a sensible height and lands again', () => {
-    const s = createMoveState({ x: 0, y: 0, z: 0 });
-    run(s, 10, input(), floor);
-    stepMovement(s, input({ jumpPressed: true, jumpHeld: true }), DT, floor);
-    let peak = 0;
-    for (let i = 0; i < 200; i++) {
-      // Hold jump through the rise so the full jump height applies.
-      stepMovement(s, input({ jumpHeld: true }), DT, floor);
-      peak = Math.max(peak, s.pos.y);
-      if (s.onGround && i > 5) break;
-    }
-    expect(peak).toBeGreaterThan(1.0);
-    expect(peak).toBeLessThan(1.8);
-    expect(s.onGround).toBe(true);
-  });
+    const p2 = createPlayerState(level.spawn);
+    settle(p2, level);
+    stepPlayer(p2, flat({ moveX: -1 }), level, DT);
+    const deltaFromRest = Math.abs(p2.vel.x);
 
-  it('releasing jump early gives a lower jump than holding it', () => {
-    const peakFor = (holdFrames: number) => {
-      const s = createMoveState({ x: 0, y: 0, z: 0 });
-      run(s, 10, input(), floor);
-      stepMovement(s, input({ jumpPressed: true, jumpHeld: true }), DT, floor);
-      let peak = 0;
-      for (let i = 0; i < 200; i++) {
-        stepMovement(s, input({ jumpHeld: i < holdFrames }), DT, floor);
-        peak = Math.max(peak, s.pos.y);
-      }
-      return peak;
-    };
-    expect(peakFor(2)).toBeLessThan(peakFor(200) * 0.8);
+    expect(deltaReversing).toBeGreaterThan(deltaFromRest);
   });
+});
 
-  it('is blocked by a wall', () => {
-    const wall: Aabb[] = [...floor, { min: { x: -50, y: 0, z: -2 }, max: { x: 50, y: 5, z: -1 } }];
-    const s = createMoveState({ x: 0, y: 0, z: 0 });
-    run(s, 240, input({ forward: 1 }), wall);
-    expect(s.pos.z).toBeGreaterThan(-1 - PLAYER.radius - 0.05);
-  });
-
-  it('steps up a low stair but not a tall block', () => {
-    const solids: Aabb[] = [
-      ...floor,
-      { min: { x: 1, y: 0, z: -2 }, max: { x: 2, y: 0.4, z: 2 } }, // low step
-      { min: { x: 4, y: 0, z: -2 }, max: { x: 5, y: 2.0, z: 2 } }, // too tall
-    ];
-    const s = createMoveState({ x: -1, y: 0, z: 0 });
-    run(s, 120, input({ forward: 0, strafe: 1, yaw: 0 }), solids);
-    // strafe +1 at yaw 0 moves +X
-    expect(s.pos.x).toBeGreaterThan(1.5);
-    expect(s.pos.x).toBeLessThan(4);
-  });
-
-  it('a slide starts when crouch is pressed at speed and sets low height', () => {
-    const s = createMoveState({ x: 0, y: 0, z: 0 });
-    run(s, 120, input({ forward: 1 }), floor);
-    const ev = stepMovement(s, input({ forward: 1, crouchPressed: true, crouchHeld: true }), DT, floor);
-    expect(ev.slideStarted).toBe(true);
-    expect(s.sliding).toBe(true);
-    expect(s.height).toBe(PLAYER.slideHeight);
-  });
-
-  it('slide-jump keeps and boosts horizontal momentum', () => {
-    const s = createMoveState({ x: 0, y: 0, z: 0 });
-    run(s, 120, input({ forward: 1 }), floor);
-    stepMovement(s, input({ forward: 1, crouchPressed: true, crouchHeld: true }), DT, floor);
-    const before = Math.hypot(s.vel.x, s.vel.z);
-    const ev = stepMovement(s, input({ forward: 1, crouchHeld: true, jumpPressed: true }), DT, floor);
-    expect(ev.slideJumped).toBe(true);
-    const after = Math.hypot(s.vel.x, s.vel.z);
-    expect(after).toBeGreaterThan(before);
-    expect(after).toBeLessThanOrEqual(MOVE.slideJumpCap + 0.01);
-    expect(s.vel.y).toBeGreaterThan(MOVE.jumpVelocity * 0.9);
-  });
-
-  it('plain jump from walking does not count as a slide-jump', () => {
-    const s = createMoveState({ x: 0, y: 0, z: 0 });
-    run(s, 120, input({ forward: 1 }), floor);
-    const ev = stepMovement(s, input({ forward: 1, jumpPressed: true }), DT, floor);
+describe('jumping', () => {
+  it('jumps from the ground and rises', () => {
+    const level = makeLevel();
+    const p = createPlayerState(level.spawn);
+    settle(p, level);
+    expect(p.onGround).toBe(true);
+    const ev = stepPlayer(p, flat({ jumpPressed: true, jumpHeld: true }), level, DT);
     expect(ev.jumped).toBe(true);
-    expect(ev.slideJumped).toBe(false);
+    expect(p.vel.y).toBeLessThan(0);
   });
 
-  it('the arena map can be traversed without getting stuck in geometry', () => {
-    const arena = buildArena();
-    const s = createMoveState({ x: -24, y: 0, z: 24 });
-    run(s, 60, input(), arena);
-    expect(s.onGround).toBe(true);
-    // not inside any solid
-    const { overlapsAny } = { overlapsAny: (p: typeof s.pos, h: number, sol: Aabb[]) => sol.some(b => p.x + PLAYER.radius > b.min.x && p.x - PLAYER.radius < b.max.x && p.y + h > b.min.y && p.y < b.max.y && p.z + PLAYER.radius > b.min.z && p.z - PLAYER.radius < b.max.z) };
-    expect(overlapsAny(s.pos, s.height, arena)).toBe(false);
+  it('coyote time lets a jump fire just after leaving a ledge', () => {
+    const ledge: Rect = { x: 0, y: 400, w: 100, h: 50 };
+    const level = makeLevel({ solids: [ledge] });
+    const p = createPlayerState({ x: 40, y: 400 - 40 });
+    settle(p, level);
+    expect(p.onGround).toBe(true);
+
+    // walk off the ledge
+    for (let i = 0; i < 80 && p.onGround; i++) stepPlayer(p, flat({ moveX: 1 }), level, DT);
+    expect(p.onGround).toBe(false);
+    expect(p.coyote).toBeGreaterThan(0);
+
+    const ev = stepPlayer(p, flat({ jumpPressed: true, jumpHeld: true }), level, DT);
+    expect(ev.jumped).toBe(true);
+  });
+
+  it('does not allow a jump once coyote time has fully elapsed', () => {
+    const ledge: Rect = { x: 0, y: 400, w: 100, h: 50 };
+    const level = makeLevel({ solids: [ledge] });
+    const p = createPlayerState({ x: 40, y: 400 - 40 });
+    settle(p, level);
+    for (let i = 0; i < 80 && p.onGround; i++) stepPlayer(p, flat({ moveX: 1 }), level, DT);
+    expect(p.onGround).toBe(false);
+
+    for (let i = 0; i < 30; i++) stepPlayer(p, flat(), level, DT);
+    expect(p.coyote).toBe(0);
+    const ev = stepPlayer(p, flat({ jumpPressed: true, jumpHeld: true }), level, DT);
+    expect(ev.jumped).toBe(false);
+  });
+
+  it('buffers an early jump press and fires it on landing', () => {
+    const level = makeLevel();
+
+    // First, find out how many frames the jump arc takes without any further input.
+    const dry = createPlayerState(level.spawn);
+    settle(dry, level);
+    stepPlayer(dry, flat({ jumpPressed: true, jumpHeld: true }), level, DT);
+    let framesToLand = 0;
+    for (let i = 0; i < 400; i++) {
+      const ev = stepPlayer(dry, flat(), level, DT);
+      framesToLand++;
+      if (ev.landed) break;
+    }
+
+    // Replay the same arc, but press jump a few frames before the real landing -
+    // well inside the buffer window - and confirm it still fires right on touchdown.
+    const p = createPlayerState(level.spawn);
+    settle(p, level);
+    stepPlayer(p, flat({ jumpPressed: true, jumpHeld: true }), level, DT);
+    const pressAtFrame = Math.max(0, framesToLand - 5);
+    let jumpedAgain = false;
+    for (let i = 0; i < framesToLand + 2; i++) {
+      const ev = stepPlayer(p, flat({ jumpPressed: i === pressAtFrame }), level, DT);
+      if (ev.jumped) jumpedAgain = true;
+    }
+    expect(jumpedAgain).toBe(true);
+  });
+
+  it('a short tap yields less height than holding the jump', () => {
+    const level = makeLevel();
+
+    function peakHeight(hold: boolean): number {
+      const p = createPlayerState(level.spawn);
+      settle(p, level);
+      stepPlayer(p, flat({ jumpPressed: true, jumpHeld: true }), level, DT);
+      let minY = p.pos.y;
+      for (let i = 0; i < 200; i++) {
+        stepPlayer(p, flat({ jumpHeld: hold }), level, DT);
+        minY = Math.min(minY, p.pos.y);
+        if (p.vel.y > 0 && p.onGround === false && minY < p.pos.y - 5) break;
+      }
+      return level.spawn.y - minY;
+    }
+
+    const shortHop = peakHeight(false);
+    const fullJump = peakHeight(true);
+    expect(fullJump).toBeGreaterThan(shortHop * 1.3);
+  });
+});
+
+describe('wall interactions', () => {
+  it('slides down slowly while clinging to a wall', () => {
+    const wall: Rect = { x: 150, y: -1000, w: 40, h: 2000 };
+    const floor: Rect = { x: -1000, y: 400, w: 4000, h: 100 };
+    const level = makeLevel({ solids: [floor, wall] });
+    const p = createPlayerState({ x: 108, y: 200 });
+    p.vel.y = 300;
+    for (let i = 0; i < 40; i++) stepPlayer(p, flat({ moveX: 1 }), level, DT);
+    expect(p.onWall).toBe(1);
+    expect(p.vel.y).toBeLessThanOrEqual(PHYSICS.wallSlideSpeed + 1);
+  });
+
+  it('wall-jumps away from the wall', () => {
+    const wall: Rect = { x: 150, y: -1000, w: 40, h: 2000 };
+    const floor: Rect = { x: -1000, y: 400, w: 4000, h: 100 };
+    const level = makeLevel({ solids: [floor, wall] });
+    const p = createPlayerState({ x: 108, y: 200 });
+    p.vel.y = 300;
+    for (let i = 0; i < 20; i++) stepPlayer(p, flat({ moveX: 1 }), level, DT);
+    expect(p.onWall).toBe(1);
+    const ev = stepPlayer(p, flat({ moveX: 1, jumpPressed: true, jumpHeld: true }), level, DT);
+    expect(ev.wallJumped).toBe(true);
+    expect(p.vel.x).toBeLessThan(0);
+    expect(p.vel.y).toBeLessThan(0);
+  });
+});
+
+describe('dash', () => {
+  it('bursts forward at dash speed and grants brief invulnerability', () => {
+    const level = makeLevel();
+    const p = createPlayerState(level.spawn);
+    settle(p, level);
+    const ev = stepPlayer(p, flat({ dashPressed: true }), level, DT);
+    expect(ev.dashed).toBe(true);
+    expect(p.vel.x).toBeCloseTo(PHYSICS.dashSpeed, 0);
+    expect(p.invulnTimer).toBeGreaterThan(0);
+  });
+
+  it('cannot be re-triggered until the cooldown elapses', () => {
+    const level = makeLevel();
+    const p = createPlayerState(level.spawn);
+    settle(p, level);
+    stepPlayer(p, flat({ dashPressed: true }), level, DT);
+    for (let i = 0; i < 5; i++) stepPlayer(p, flat(), level, DT);
+    const ev = stepPlayer(p, flat({ dashPressed: true }), level, DT);
+    expect(ev.dashed).toBe(false);
+  });
+
+  it('refreshes when the player touches the ground again', () => {
+    const level = makeLevel();
+    const p = createPlayerState(level.spawn);
+    settle(p, level);
+    stepPlayer(p, flat({ jumpPressed: true, jumpHeld: true }), level, DT);
+    stepPlayer(p, flat({ dashPressed: true }), level, DT);
+    expect(p.dashReady).toBe(false);
+    for (let i = 0; i < 400 && !p.onGround; i++) stepPlayer(p, flat(), level, DT);
+    expect(p.onGround).toBe(true);
+    expect(p.dashReady).toBe(true);
+  });
+});
+
+describe('pogo', () => {
+  it('bounces upward off a bounce pad when attacking downward in the air', () => {
+    const pad: Rect = { x: 90, y: 300, w: 40, h: 16 };
+    const floor: Rect = { x: -1000, y: 800, w: 4000, h: 100 };
+    const level = makeLevel({ solids: [floor], bouncePads: [pad] });
+    const p = createPlayerState({ x: 90, y: 250 });
+    p.vel.y = 200;
+    let pogoed = false;
+    for (let i = 0; i < 30 && !pogoed; i++) {
+      const ev = stepPlayer(p, flat({ downHeld: true, attackPressed: i === 0 }), level, DT);
+      if (ev.pogoed) pogoed = true;
+    }
+    expect(pogoed).toBe(true);
+    expect(p.vel.y).toBeCloseTo(PHYSICS.pogoVelocity, 0);
+    expect(p.dashReady).toBe(true);
+  });
+});
+
+describe('falling out of the world', () => {
+  it('reports fellOut once the player drops well below the level', () => {
+    const level = makeLevel({ height: 500 });
+    const p = createPlayerState({ x: 0, y: 0 });
+    p.pos.y = level.height + 500;
+    const ev = stepPlayer(p, flat(), level, DT);
+    expect(ev.fellOut).toBe(true);
   });
 });

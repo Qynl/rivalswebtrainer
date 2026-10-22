@@ -1,115 +1,71 @@
-import type { Command } from './game/game';
+import type { InputFrame } from './game/movement';
 
-const PITCH_LIMIT = Math.PI / 2 - 0.02;
+const LEFT = ['ArrowLeft', 'KeyA'];
+const RIGHT = ['ArrowRight', 'KeyD'];
+const DOWN = ['ArrowDown', 'KeyS'];
+const JUMP = ['Space', 'ArrowUp', 'KeyW'];
+const DASH = ['ShiftLeft', 'ShiftRight', 'KeyK'];
+const ATTACK = ['KeyJ', 'KeyX', 'KeyZ'];
+const PAUSE = ['Escape'];
 
-/** Collects keyboard/mouse state and produces a Command for the player each frame. */
-export class Input {
-  private held = new Set<string>();
-  private edges = new Set<string>();
-  private lmbHeld = false;
-  private lmbEdge = false;
-  private rmbEdge = false;
-  private yaw = 0;
-  private pitch = 0;
-  private slotEdge: 1 | 2 | 3 | null = null;
-  locked = false;
-  sensitivity = 0.0022;
-  invertY = false;
+const BLOCK_DEFAULT = new Set([...LEFT, ...RIGHT, ...DOWN, ...JUMP, ...DASH, ...ATTACK, 'Tab']);
 
-  constructor(private canvas: HTMLCanvasElement) {
-    window.addEventListener('keydown', e => {
-      if (!this.held.has(e.code) && !e.repeat) this.edges.add(e.code);
-      this.held.add(e.code);
-      if (e.code === 'Digit1') this.slotEdge = 1;
-      if (e.code === 'Digit2') this.slotEdge = 2;
-      if (e.code === 'Digit3') this.slotEdge = 3;
-      if (['Space', 'Tab'].includes(e.code)) e.preventDefault();
-    });
-    window.addEventListener('keyup', e => this.held.delete(e.code));
-    window.addEventListener('blur', () => this.held.clear());
-    canvas.addEventListener('mousedown', e => {
-      if (!this.locked) return;
-      if (e.button === 0) {
-        this.lmbHeld = true;
-        this.lmbEdge = true;
-      } else if (e.button === 2) {
-        this.rmbEdge = true;
-      }
-    });
-    window.addEventListener('mouseup', e => {
-      if (e.button === 0) this.lmbHeld = false;
-    });
-    window.addEventListener('mousemove', e => {
-      if (!this.locked) return;
-      this.yaw -= e.movementX * this.sensitivity;
-      this.pitch -= (this.invertY ? -1 : 1) * e.movementY * this.sensitivity;
-      this.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, this.pitch));
-    });
-    canvas.addEventListener('contextmenu', e => e.preventDefault());
-    document.addEventListener('pointerlockchange', () => {
-      this.locked = document.pointerLockElement === canvas;
-      if (!this.locked) {
-        this.lmbHeld = false;
-        this.held.clear();
-      }
+export class InputManager {
+  private down = new Set<string>();
+  private pressed = new Set<string>();
+  private consumedThisPoll = new Set<string>();
+
+  attach(target: HTMLElement | Window = window): void {
+    target.addEventListener('keydown', ((e: KeyboardEvent) => {
+      if (!this.down.has(e.code)) this.pressed.add(e.code);
+      this.down.add(e.code);
+      if (BLOCK_DEFAULT.has(e.code)) e.preventDefault();
+    }) as EventListener);
+    target.addEventListener('keyup', ((e: KeyboardEvent) => {
+      this.down.delete(e.code);
+    }) as EventListener);
+    window.addEventListener('blur', () => {
+      this.down.clear();
+      this.pressed.clear();
     });
   }
 
-  requestLock(): void {
-    void this.canvas.requestPointerLock();
+  private anyDown(codes: string[]): boolean {
+    return codes.some((c) => this.down.has(c));
   }
 
-  releaseLock(): void {
-    if (document.pointerLockElement) document.exitPointerLock();
+  private anyPressed(codes: string[]): boolean {
+    return codes.some((c) => this.pressed.has(c) && !this.consumedThisPoll.has(c));
   }
 
-  /** Whether a key was pressed since the last read (edge). */
-  consumeEdge(code: string): boolean {
-    if (this.edges.has(code)) {
-      this.edges.delete(code);
-      return true;
-    }
-    return false;
+  private consume(codes: string[]): void {
+    for (const c of codes) this.consumedThisPoll.add(c);
   }
 
-  /** Builds the player's Command for this simulation tick. Clears one-shot edges. */
-  sample(): Command {
-    const h = (c: string) => this.held.has(c);
-    const forward = (h('KeyW') ? 1 : 0) - (h('KeyS') ? 1 : 0);
-    const strafe = (h('KeyD') ? 1 : 0) - (h('KeyA') ? 1 : 0);
-    const cmd: Command = {
-      move: {
-        forward,
-        strafe,
-        yaw: this.yaw,
-        jumpPressed: this.consumeEdge('Space'),
-        jumpHeld: h('Space'),
-        crouchHeld: h('ControlLeft') || h('KeyC'),
-        crouchPressed: this.consumeEdge('ControlLeft') || this.consumeEdge('KeyC'),
-      },
-      yaw: this.yaw,
-      pitch: this.pitch,
-      fire: this.lmbHeld,
-      fireEdge: this.lmbEdge,
-      melee: this.lmbEdge,
-      dash: this.rmbEdge,
-      quick: this.consumeEdge('KeyF'),
-      reload: this.consumeEdge('KeyR'),
-      slot: this.slotEdge,
+  pausePressed(): boolean {
+    const hit = this.anyPressed(PAUSE);
+    if (hit) this.consume(PAUSE);
+    return hit;
+  }
+
+  /** Reads the current frame's intent as an InputFrame and clears edge flags. */
+  poll(): InputFrame {
+    const left = this.anyDown(LEFT);
+    const right = this.anyDown(RIGHT);
+    const moveX = (right ? 1 : 0) - (left ? 1 : 0);
+    const frame: InputFrame = {
+      moveX,
+      downHeld: this.anyDown(DOWN),
+      jumpPressed: this.anyPressed(JUMP),
+      jumpHeld: this.anyDown(JUMP),
+      dashPressed: this.anyPressed(DASH),
+      attackPressed: this.anyPressed(ATTACK),
     };
-    this.lmbEdge = false;
-    this.rmbEdge = false;
-    this.slotEdge = null;
-    return cmd;
-  }
-
-  /** Sets the view angles, used when the match starts so the camera faces the arena. */
-  setView(yaw: number, pitch = 0): void {
-    this.yaw = yaw;
-    this.pitch = pitch;
-  }
-
-  get viewYaw(): number {
-    return this.yaw;
+    this.consume(JUMP);
+    this.consume(DASH);
+    this.consume(ATTACK);
+    this.pressed.clear();
+    this.consumedThisPoll.clear();
+    return frame;
   }
 }

@@ -3,139 +3,70 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Arena Duel</title>
+    <title>Silkbound</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
     <div id="app">
       <div id="landing">
         <nav>
-          <div class="brand">ARENA <span>DUEL</span></div>
+          <div class="brand">SILK<span>BOUND</span></div>
           <div>
-            <a href="#features">Features</a>
-            <a href="#loadouts">Loadouts</a>
+            <a href="#features">The Hollow</a>
+            <a href="#moveset">Moveset</a>
             <a href="#controls">Controls</a>
           </div>
         </nav>
         <header class="hero">
-          <div class="eyebrow">1V1 ARENA SHOOTER · BEST OF 5</div>
-          <h1>Slide. Jump. <em>Slice.</em> Repeat.</h1>
+          <div class="eyebrow">A THREADBOUND ACTION-PLATFORMER · MOVEMENT PROTOTYPE</div>
+          <h1>Needle, Thread, <em>Silence.</em></h1>
           <p class="lede">
-            Fast, fluid movement with slides, slide-jumps and a scythe dash. Pick your guns,
-            then take on a bot in five rounds. Runs in your browser, no install.
+            A tiny original tribute to pin-sharp Metroidvania platforming: hand-tuned run &amp; jump
+            physics, wall-clinging, a silk dash with real i-frames, and pogo-bouncing off silk pods —
+            all wrapped in a hand-painted, lantern-lit insect hollow.
           </p>
           <div class="cta-row">
-            <button class="btn" id="enter">PLAY NOW</button>
-            <a class="btn ghost" href="#controls">HOW TO PLAY</a>
+            <button class="btn" id="enter">ENTER THE HOLLOW</button>
+            <a class="btn ghost" href="#controls">HOW TO MOVE</a>
           </div>
         </header>
         <section class="features" id="features">
-          <div class="card"><div class="tag">MOVEMENT</div><h3>Slide and slide-jump</h3><p>Slide to keep speed, then jump out of it for a launch. Hold jump to auto-hop and carry speed.</p></div>
-          <div class="card"><div class="tag">WEAPONS</div><h3>Guns with character</h3><p>Assault rifle, run-and-gun SMG, marksman rifle and a sidearm. Each has its own range and recoil.</p></div>
-          <div class="card"><div class="tag">SCYTHE</div><h3>Slash and dash</h3><p>Close range is the scythe's domain. Its dash closes gaps and dodges incoming fire.</p></div>
-          <div class="card"><div class="tag">BOTS</div><h3>Four difficulty tiers</h3><p>From Recruit to Nightmare. Each round is 90 seconds, first to three wins takes the match.</p></div>
+          <div class="card"><div class="tag">MOVEMENT</div><h3>Coyote time &amp; buffered jumps</h3><p>Every jump is forgiving by design: a grace window after leaving a ledge, and an early press is remembered until you land.</p></div>
+          <div class="card"><div class="tag">SILK DASH</div><h3>Dash with real i-frames</h3><p>A short, committed burst with a handful of invulnerable frames — enough to slip under a swing or skip a gap.</p></div>
+          <div class="card"><div class="tag">WALLS</div><h3>Cling &amp; wall-jump</h3><p>Press into a wall to cling and slide slowly, then kick off at an angle to chain height out of narrow shafts.</p></div>
+          <div class="card"><div class="tag">NEEDLE</div><h3>Pogo off silk pods</h3><p>A downward strike on a glowing pod bounces you skyward and instantly refills your jump and dash.</p></div>
         </section>
-        <section class="loadouts" id="loadouts">
-          <h2>Build your loadout</h2>
+        <section class="loadouts" id="moveset">
+          <h2>The Mossbound Hollow — a movement playground</h2>
           <div class="guns">
-            <div class="card gun gold"><div class="tag">PRIMARY</div><h3>BRUTE-47</h3><p>Assault rifle. Strong per-bullet damage, controlled full-auto.</p></div>
-            <div class="card gun"><div class="tag">PRIMARY · SECONDARY</div><h3>PANTHER</h3><p>Run-and-gun SMG. Very fast fire rate and a large magazine.</p></div>
-            <div class="card gun"><div class="tag">PRIMARY</div><h3>Marksman Rifle</h3><p>Burst-fire precision. Headshots deal double damage.</p></div>
-            <div class="card gun"><div class="tag">SECONDARY</div><h3>Sidearm</h3><p>Semi-automatic backup with a strong headshot multiplier.</p></div>
-            <div class="card gun scythe"><div class="tag">MELEE</div><h3>Scythe</h3><p>Wide slash for close range. Right click dashes to reposition.</p></div>
-            <div class="card gun katana"><div class="tag">MELEE</div><h3>Katana</h3><p>Fast, long-reach slash. Right click deflects incoming shots and reflects them back.</p></div>
+            <div class="card gun gold"><div class="tag">CHAMBER</div><h3>Run the gauntlet</h3><p>One long vertical slice built to exercise every tool: ledges, a dash-gap, a wall-jump chimney and a pogo run over spikes.</p></div>
+            <div class="card gun"><div class="tag">BENCHES</div><h3>Rest &amp; recover</h3><p>Touch a bench to fully heal and set your respawn point, just like a quiet moment between trials.</p></div>
+            <div class="card gun scythe"><div class="tag">FOLIAGE</div><h3>Breakable clutter</h3><p>Slash grass, pots and silk pods for a satisfying little burst — purely for the joy of it.</p></div>
           </div>
         </section>
         <footer id="controls">
-          <b>WASD</b> move · <b>Space</b> jump · <b>Ctrl / C</b> slide · <b>LMB</b> fire / melee attack · <b>RMB</b> ability (dash or deflect) · <b>F</b> quick melee · <b>R</b> reload · <b>1 2 3</b> weapons · <b>Esc</b> pause
+          <b>A / D</b> or <b>← →</b> move · <b>Space / W / ↑</b> jump (tap or hold) · <b>Shift / K</b> silk dash ·
+          <b>↓ / S</b> hold to fast-fall or crouch · <b>J / X</b> needle strike (hold ↓ in air to pogo) · <b>Esc</b> pause
         </footer>
       </div>
-      <canvas id="game"></canvas>
+
+      <canvas id="game" width="1024" height="576"></canvas>
 
       <div id="hud" class="hidden">
-        <div id="crosshair"><span></span><span></span><span></span><span></span></div>
-        <div id="hitmarker"></div>
-        <div id="topbar">
-          <div class="score" id="score-you">0</div>
-          <div class="center">
-            <div id="round-label">ROUND 1 / 5</div>
-            <div id="timer">1:30</div>
-          </div>
-          <div class="score" id="score-bot">0</div>
+        <div id="area-card"><span id="area-card-text"></span></div>
+        <div id="top-hud">
+          <div id="masks"></div>
+          <div id="dash-pip"><div id="dash-fill"></div></div>
         </div>
-        <div id="bottom-left">
-          <div class="bar"><div class="fill hp" id="hp-fill"></div><span id="hp-text">100</span></div>
-          <div class="bar small"><div class="fill stamina" id="stamina-fill"></div></div>
-          <div id="state-text"></div>
-        </div>
-        <div id="bottom-right">
-          <div id="weapon-name">PISTOL</div>
-          <div id="ammo">12 / 12</div>
-          <div id="abilities">
-            <div class="ability" id="ab-dash"><span id="ab-label">DASH</span><b id="dash-cd">READY</b></div>
-          </div>
-        </div>
-        <div id="feed"></div>
-        <div id="banner"></div>
-      </div>
-
-      <div id="menu" class="overlay">
-        <div class="panel">
-          <h1>ARENA DUEL</h1>
-          <p class="sub">1v1 vs Bot · Best of 5 rounds</p>
-          <label>Bot difficulty
-            <select id="difficulty">
-              <option value="easy">Recruit</option>
-              <option value="normal" selected>Veteran</option>
-              <option value="hard">Elite</option>
-              <option value="nightmare">Nightmare</option>
-            </select>
-          </label>
-          <label>Primary weapon
-            <select id="loadout">
-              <option value="ak" selected>BRUTE-47 (assault rifle)</option>
-              <option value="puma">PANTHER (run-and-gun SMG)</option>
-              <option value="smg">Vector SMG (full-auto)</option>
-              <option value="rifle">Marksman Rifle (burst)</option>
-            </select>
-          </label>
-          <label>Secondary weapon
-            <select id="secondary">
-              <option value="pistol" selected>Sidearm (semi-auto)</option>
-              <option value="puma">PANTHER (run-and-gun SMG)</option>
-            </select>
-          </label>
-          <label>Melee weapon
-            <select id="melee">
-              <option value="scythe" selected>Scythe (dash ability)</option>
-              <option value="katana">Katana (deflect ability)</option>
-            </select>
-          </label>
-          <label class="check"><input type="checkbox" id="sensitivity-invert" /> Invert Y</label>
-          <label>Mouse sensitivity <input type="range" id="sensitivity" min="0.0005" max="0.006" step="0.0001" value="0.0022" /></label>
-          <button id="play">PLAY</button>
-          <div class="controls">
-            <b>WASD</b> move · <b>Space</b> jump · <b>Ctrl / C</b> slide (slide + jump = slide-jump)<br/>
-            <b>LMB</b> fire / melee attack · <b>RMB</b> ability (scythe dash or katana deflect) · <b>R</b> reload<br/>
-            <b>F</b> quick melee (returns to your gun) · <b>1 / 2 / 3</b> pistol / primary / melee · <b>Esc</b> pause
-          </div>
-        </div>
+        <div id="hint">A/D move · Space jump · Shift dash · J strike · ↓+J pogo</div>
       </div>
 
       <div id="pause" class="overlay hidden">
         <div class="panel">
           <h2>PAUSED</h2>
           <button id="resume">RESUME</button>
+          <button id="restart-chamber">RESTART CHAMBER</button>
           <button id="quit">QUIT TO MENU</button>
-        </div>
-      </div>
-
-      <div id="match-end" class="overlay hidden">
-        <div class="panel">
-          <h2 id="match-result">MATCH OVER</h2>
-          <p id="match-score"></p>
-          <button id="rematch">PLAY AGAIN</button>
-          <button id="to-menu">MENU</button>
         </div>
       </div>
     </div>

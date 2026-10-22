@@ -1,211 +1,110 @@
 import './style.css';
-import './landing.css';
-import { Game, type GameEvent, type Command } from './game/game';
-import type { Difficulty, MeleeId, WeaponId } from './game/config';
-import { Renderer } from './render/renderer';
-import { Input } from './input';
+import { Game } from './game/game';
+import { InputManager } from './input';
 import { Hud } from './hud';
-import { Sfx } from './audio';
-
-const STEP = 1 / 120;
-const MAX_FRAME = 0.05;
+import { render, VIEW_W, VIEW_H } from './render/renderer';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
-const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
-const menu = $('menu');
-const pause = $('pause');
-const matchEnd = $('match-end');
+const ctx = canvas.getContext('2d')!;
+const hudEl = document.getElementById('hud')!;
+const pauseEl = document.getElementById('pause')!;
+const enterBtn = document.getElementById('enter')!;
+const resumeBtn = document.getElementById('resume')!;
+const quitBtn = document.getElementById('quit')!;
+const restartBtn = document.getElementById('restart-chamber')!;
 
-const renderer = new Renderer(canvas);
-const input = new Input(canvas);
+const input = new InputManager();
+input.attach(window);
+
+const game = new Game();
 const hud = new Hud();
-const sfx = new Sfx();
 
-const difficultyEl = $<HTMLSelectElement>('difficulty');
-const loadoutEl = $<HTMLSelectElement>('loadout');
-const secondaryEl = $<HTMLSelectElement>('secondary');
-const meleeEl = $<HTMLSelectElement>('melee');
-const sensitivityEl = $<HTMLInputElement>('sensitivity');
-const invertEl = $<HTMLInputElement>('sensitivity-invert');
+let playing = false;
+let paused = false;
 
-type Screen = 'menu' | 'playing' | 'paused' | 'over';
-let screen: Screen = 'menu';
-let game: Game | null = null;
-let accumulator = 0;
-let lastTime = performance.now();
-let arenaBuilt = false;
-
-function readSettings(): { primary: WeaponId; secondary: WeaponId; melee: MeleeId; difficulty: Difficulty } {
-  input.sensitivity = Number(sensitivityEl.value);
-  input.invertY = invertEl.checked;
-  return {
-    primary: loadoutEl.value as WeaponId,
-    secondary: secondaryEl.value as WeaponId,
-    melee: meleeEl.value as MeleeId,
-    difficulty: difficultyEl.value as Difficulty,
-  };
-}
-
-/** Builds a fresh match with the chosen settings and points the camera at the spawn. */
-function newGame(): Game {
-  const settings = readSettings();
-  const g = new Game({
-    primary: settings.primary,
-    secondary: settings.secondary,
-    melee: settings.melee,
-    difficulty: settings.difficulty,
-  });
-  if (!arenaBuilt) {
-    renderer.buildArena(g.solids);
-    arenaBuilt = true;
+function resizeCanvas(): void {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const aspect = VIEW_W / VIEW_H;
+  let cssW = window.innerWidth;
+  let cssH = window.innerHeight;
+  if (cssW / cssH > aspect) {
+    cssW = cssH * aspect;
+  } else {
+    cssH = cssW / aspect;
   }
-  renderer.setLoadout(settings.primary, settings.secondary, settings.melee);
-  input.setView(g.player.yaw, 0);
-  return g;
+  canvas.style.width = `${cssW}px`;
+  canvas.style.height = `${cssH}px`;
+  canvas.width = Math.round(cssW * dpr);
+  canvas.height = Math.round(cssH * dpr);
 }
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
 
-function show(el: HTMLElement, visible: boolean): void {
-  el.classList.toggle('hidden', !visible);
-}
-
-function startMatch(): void {
-  sfx.unlock();
-  game = newGame();
-  accumulator = 0;
-  screen = 'playing';
-  show(menu, false);
-  show(pause, false);
-  show(matchEnd, false);
-  hud.show(true);
-  hud.flashBanner('ROUND 1', 1.8);
-  input.requestLock();
-}
-
-function resume(): void {
-  if (screen !== 'paused') return;
-  screen = 'playing';
-  show(pause, false);
-  input.requestLock();
-}
-
-function pauseGame(): void {
-  if (screen !== 'playing') return;
-  screen = 'paused';
-  show(pause, true);
+function startGame(): void {
+  playing = true;
+  paused = false;
+  document.body.classList.add('playing');
+  hudEl.classList.remove('hidden');
+  pauseEl.classList.add('hidden');
+  game.reset();
+  canvas.focus();
 }
 
 function quitToMenu(): void {
-  input.releaseLock();
-  screen = 'menu';
-  game = newGame();
-  hud.show(false);
-  show(pause, false);
-  show(matchEnd, false);
-  show(menu, true);
+  playing = false;
+  paused = false;
+  document.body.classList.remove('playing');
+  hudEl.classList.add('hidden');
+  pauseEl.classList.add('hidden');
 }
 
-function handleEvents(events: GameEvent[], g: Game): void {
-  renderer.handleEvents(events);
-  for (const e of events) {
-    switch (e.type) {
-      case 'shot':
-        if (e.by === 'player') sfx.gunshot('mid');
-        break;
-      case 'swing':
-        sfx.swing();
-        break;
-      case 'dash':
-        sfx.dash();
-        break;
-      case 'roundStart':
-        if (e.round > 1) hud.flashBanner(`ROUND ${e.round}`, 1.8);
-        break;
-      case 'roundEnd':
-        sfx.roundEnd(e.result === 'player');
-        hud.flashBanner(e.result === 'player' ? 'ROUND WON' : e.result === 'bot' ? 'ROUND LOST' : 'DRAW', 2);
-        hud.addFeed(
-          e.result === 'player' ? 'You won the round' : e.result === 'bot' ? 'Bot won the round' : 'Round drawn',
-          e.result === 'player' ? 'you' : e.result === 'bot' ? 'bot' : 'neutral',
-        );
-        break;
-      case 'hit':
-        if (e.by === 'player') {
-          hud.hitMarker(e.head);
-          sfx.hitMarker(e.head);
-        }
-        if (e.target === 'player') sfx.hurt();
-        break;
-      case 'death':
-        hud.addFeed(e.target === 'bot' ? 'Bot eliminated' : 'You were eliminated', e.target === 'bot' ? 'you' : 'bot');
-        break;
-      case 'matchEnd':
-        endMatchScreen(e.winner, g);
-        break;
-    }
-  }
-}
+enterBtn.addEventListener('click', startGame);
+resumeBtn.addEventListener('click', () => {
+  paused = false;
+  pauseEl.classList.add('hidden');
+});
+restartBtn.addEventListener('click', () => {
+  game.reset();
+  paused = false;
+  pauseEl.classList.add('hidden');
+});
+quitBtn.addEventListener('click', quitToMenu);
 
-function endMatchScreen(winner: 'player' | 'bot' | 'draw', g: Game): void {
-  screen = 'over';
-  input.releaseLock();
-  hud.show(false);
-  $('match-result').textContent = winner === 'player' ? 'VICTORY' : winner === 'bot' ? 'DEFEAT' : 'DRAW';
-  $('match-score').textContent = `${g.match.playerWins} - ${g.match.botWins}`;
-  show(matchEnd, true);
-}
+const FIXED_DT = 1 / 120;
+let accumulator = 0;
+let lastTime = performance.now();
 
 function frame(now: number): void {
   requestAnimationFrame(frame);
-  const dt = Math.min(MAX_FRAME, (now - lastTime) / 1000);
+  let dt = (now - lastTime) / 1000;
   lastTime = now;
+  if (dt > 0.25) dt = 0.25;
 
-  if (game && screen === 'playing') {
-    const cmd: Command = input.sample();
-    accumulator += dt;
-    const g = game;
-    let first = true;
-    while (accumulator >= STEP && screen === 'playing') {
-      // One-shot inputs (edges) only apply on the first fixed step of the frame.
-      const stepCmd: Command = first
-        ? cmd
-        : { ...cmd, fireEdge: false, melee: false, dash: false, quick: false, reload: false, slot: null,
-            move: { ...cmd.move, jumpPressed: false, crouchPressed: false } };
-      g.step(STEP, stepCmd);
-      first = false;
-      accumulator -= STEP;
-      handleEvents(g.drainEvents(), g);
-    }
-    hud.update(g, dt);
-  } else if (game) {
-    handleEvents(game.drainEvents(), game);
+  if (!playing) return;
+
+  if (input.pausePressed()) {
+    paused = !paused;
+    pauseEl.classList.toggle('hidden', !paused);
   }
 
-  if (game) renderer.render(game, dt);
+  if (!paused) {
+    accumulator += dt;
+    let steps = 0;
+    while (accumulator >= FIXED_DT && steps < 8) {
+      const frameInput = input.poll();
+      game.update(frameInput, FIXED_DT);
+      accumulator -= FIXED_DT;
+      steps++;
+    }
+  } else {
+    input.poll();
+  }
+
+  const scale = canvas.width / VIEW_W;
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  render(ctx, game, FIXED_DT);
+
+  hud.update(game);
 }
 
-// Input-driven screen transitions.
-document.addEventListener('pointerlockchange', () => {
-  if (!input.locked && screen === 'playing') pauseGame();
-});
-
-$('play').addEventListener('click', startMatch);
-$('resume').addEventListener('click', resume);
-$('quit').addEventListener('click', quitToMenu);
-$('rematch').addEventListener('click', startMatch);
-$('to-menu').addEventListener('click', quitToMenu);
-canvas.addEventListener('click', () => {
-  sfx.unlock();
-  if (screen === 'playing' && !input.locked) input.requestLock();
-});
-
-game = newGame();
-show(menu, false);
-$('enter').addEventListener('click', () => {
-  sfx.unlock();
-  show($('landing'), false);
-  show(menu, true);
-});
-requestAnimationFrame(t => {
-  lastTime = t;
-  frame(t);
-});
+requestAnimationFrame(frame);

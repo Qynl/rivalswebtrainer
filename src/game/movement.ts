@@ -1,307 +1,415 @@
-import { MOVE, PLAYER } from './config';
+import { PHYSICS, PLAYER } from './config';
+import type { Rect, Vec2 } from './geometry';
+import { clamp, rectsOverlap, sign } from './geometry';
+import type { Level } from './level';
 
-export interface Vec3 {
-  x: number;
-  y: number;
-  z: number;
+export type Facing = 1 | -1;
+
+export interface InputFrame {
+  moveX: number; // -1..1
+  downHeld: boolean; // crouch on ground / aim-down in air (gates pogo & fast-fall)
+  jumpPressed: boolean; // edge this frame
+  jumpHeld: boolean;
+  dashPressed: boolean; // edge
+  attackPressed: boolean; // edge
 }
 
-/** Axis-aligned solid. Player-vs-box uses strict overlap so touching is free. */
-export interface Aabb {
-  min: Vec3;
-  max: Vec3;
-}
+export type AttackKind = 'side' | 'down' | null;
 
-export interface MoveInput {
-  forward: number; // -1..1, +1 = W
-  strafe: number; // -1..1, +1 = D
-  yaw: number; // camera yaw in radians (0 looks down -Z)
-  jumpPressed: boolean; // edge
-  jumpHeld: boolean; // held; release cuts the jump short
-  crouchHeld: boolean;
-  crouchPressed: boolean; // edge
-}
-
-export interface MoveState {
-  pos: Vec3; // feet position
-  vel: Vec3;
-  onGround: boolean;
-  sliding: boolean;
-  slideTime: number;
-  timeSinceSlideEnd: number;
-  jumpBuffer: number;
-  /** counts down after leaving the ground; jumping inside it still works */
-  coyote: number;
+export interface PlayerState {
+  pos: Vec2; // top-left of the current (possibly crouched) hitbox
+  vel: Vec2;
+  facing: Facing;
+  width: number;
   height: number;
-  /** true from a slide-jump until the player lands */
-  slideJumping: boolean;
+
+  onGround: boolean;
+  onWall: 0 | 1 | -1; // -1 = wall to the left, 1 = wall to the right
+  crouching: boolean;
+
+  coyote: number;
+  jumpBuffer: number;
+  jumping: boolean; // true from jump start until grounded again (drives gravity curve)
+
+  wallStick: number; // short pause before a wall-cling starts sliding
+  wallJumpLock: number; // seconds of reduced air control after a wall jump
+
+  dashTimer: number;
+  dashCooldown: number;
+  dashReady: boolean;
+  dashDir: Vec2;
+
+  attackTimer: number;
+  attackCooldown: number;
+  attackKind: AttackKind;
+  pogoConsumed: boolean;
+
+  hurtTimer: number; // invulnerable + input-locked after taking a hit
+  invulnTimer: number; // invulnerable only (covers dash i-frames too)
+
+  facingLockTimer: number; // attacks/dashes briefly lock the facing direction
 }
 
-export interface MoveEvents {
+export interface PlayerEvents {
   jumped: boolean;
-  slideJumped: boolean;
-  slideStarted: boolean;
-  slideEnded: boolean;
+  wallJumped: boolean;
   landed: boolean;
+  dashed: boolean;
+  dashEnded: boolean;
+  attacked: AttackKind;
+  pogoed: boolean;
+  fellOut: boolean;
 }
 
-export function createMoveState(pos: Vec3): MoveState {
+export function createPlayerState(spawn: Vec2): PlayerState {
   return {
-    pos: { ...pos },
-    vel: { x: 0, y: 0, z: 0 },
+    pos: { ...spawn },
+    vel: { x: 0, y: 0 },
+    facing: 1,
+    width: PLAYER.width,
+    height: PLAYER.height,
     onGround: false,
-    sliding: false,
-    slideTime: 0,
-    timeSinceSlideEnd: 99,
-    jumpBuffer: 0,
+    onWall: 0,
+    crouching: false,
     coyote: 0,
-    height: PLAYER.standHeight,
-    slideJumping: false,
+    jumpBuffer: 0,
+    jumping: false,
+    wallStick: 0,
+    wallJumpLock: 0,
+    dashTimer: 0,
+    dashCooldown: 0,
+    dashReady: true,
+    dashDir: { x: 1, y: 0 },
+    attackTimer: 0,
+    attackCooldown: 0,
+    attackKind: null,
+    pogoConsumed: false,
+    hurtTimer: 0,
+    invulnTimer: 0,
+    facingLockTimer: 0,
   };
 }
 
-const KEYS = ['x', 'y', 'z'] as const;
-const SUBSTEP = 0.02;
-
-export function overlapsAny(p: Vec3, height: number, solids: readonly Aabb[]): boolean {
-  const r = PLAYER.radius;
-  for (const b of solids) {
-    if (p.x + r <= b.min.x || p.x - r >= b.max.x) continue;
-    if (p.y + height <= b.min.y || p.y >= b.max.y) continue;
-    if (p.z + r <= b.min.z || p.z - r >= b.max.z) continue;
-    return true;
-  }
-  return false;
+function emptyEvents(): PlayerEvents {
+  return {
+    jumped: false,
+    wallJumped: false,
+    landed: false,
+    dashed: false,
+    dashEnded: false,
+    attacked: null,
+    pogoed: false,
+    fellOut: false,
+  };
 }
 
-/** Moves along one axis in small substeps. Returns true if blocked. */
-function moveAxis(p: Vec3, axis: 0 | 1 | 2, amount: number, height: number, solids: readonly Aabb[]): boolean {
-  if (amount === 0) return false;
-  const k = KEYS[axis];
-  const steps = Math.max(1, Math.ceil(Math.abs(amount) / SUBSTEP));
-  const step = amount / steps;
-  for (let i = 0; i < steps; i++) {
-    const prev = p[k];
-    p[k] = prev + step;
-    if (overlapsAny(p, height, solids)) {
-      // Bisect to the exact contact so the body rests flush against the surface.
-      let lo = prev;
-      let hi = prev + step;
-      for (let j = 0; j < 10; j++) {
-        const mid = (lo + hi) / 2;
-        p[k] = mid;
-        if (overlapsAny(p, height, solids)) hi = mid;
-        else lo = mid;
-      }
-      p[k] = lo;
-      return true;
-    }
-  }
-  return false;
-}
-
-/** Horizontal move (x then z). Returns blocked flag and mutates p. */
-function moveHorizontal(p: Vec3, vel: Vec3, dt: number, height: number, solids: readonly Aabb[]): boolean {
-  const bx = moveAxis(p, 0, vel.x * dt, height, solids);
-  const bz = moveAxis(p, 2, vel.z * dt, height, solids);
-  return bx || bz;
-}
-
-function horizontalSpeed(v: Vec3): number {
-  return Math.hypot(v.x, v.z);
-}
-
-/** Quake-style accelerate toward a wish direction. */
-function accelerate(vel: Vec3, wx: number, wz: number, wishSpeed: number, accel: number, dt: number): void {
-  const current = vel.x * wx + vel.z * wz;
-  const add = wishSpeed - current;
+/** Quake-style accelerate-toward-target for the single horizontal axis. */
+function accelerate1D(vel: Vec2, wish: number, targetSpeed: number, accel: number, dt: number): void {
+  const current = vel.x * wish;
+  const add = targetSpeed - current;
   if (add <= 0) return;
-  const gain = Math.min(accel * dt * wishSpeed, add);
-  vel.x += wx * gain;
-  vel.z += wz * gain;
+  vel.x += wish * Math.min(accel * dt, add);
 }
 
-function applyFriction(vel: Vec3, friction: number, dt: number): void {
-  const speed = horizontalSpeed(vel);
-  if (speed < 1e-6) return;
-  const drop = Math.max(speed, 1.5) * friction * dt;
-  const newSpeed = Math.max(speed - drop, 0) / speed;
-  vel.x *= newSpeed;
-  vel.z *= newSpeed;
-}
-
-function canStandAt(s: MoveState, solids: readonly Aabb[]): boolean {
-  return !overlapsAny(s.pos, PLAYER.standHeight, solids);
-}
-
-/** Gives an instantaneous horizontal impulse (used by the scythe dash). */
-export function addHorizontalImpulse(s: MoveState, dx: number, dz: number, speed: number): void {
-  const len = Math.hypot(dx, dz) || 1;
-  s.vel.x = (dx / len) * speed;
-  s.vel.z = (dz / len) * speed;
-}
-
-/** Advances the movement simulation by dt seconds. Mutates state. */
-export function stepMovement(s: MoveState, input: MoveInput, dt: number, solids: readonly Aabb[]): MoveEvents {
-  const ev: MoveEvents = { jumped: false, slideJumped: false, slideStarted: false, slideEnded: false, landed: false };
-  const wasGround = s.onGround;
-
-  // Wish direction on the ground plane.
-  const fx = -Math.sin(input.yaw);
-  const fz = -Math.cos(input.yaw);
-  const rx = Math.cos(input.yaw);
-  const rz = -Math.sin(input.yaw);
-  let wx = fx * input.forward + rx * input.strafe;
-  let wz = fz * input.forward + rz * input.strafe;
-  const wlen = Math.hypot(wx, wz);
-  const hasWish = wlen > 1e-4;
-  if (hasWish) {
-    wx /= wlen;
-    wz /= wlen;
+function applyFriction1D(vel: Vec2, friction: number, dt: number): void {
+  const speed = Math.abs(vel.x);
+  if (speed < 1e-4) {
+    vel.x = 0;
+    return;
   }
+  const drop = friction * dt;
+  vel.x = sign(vel.x) * Math.max(speed - drop, 0);
+}
 
-  s.timeSinceSlideEnd += dt;
-  if (input.jumpPressed) s.jumpBuffer = MOVE.jumpBuffer;
-  else s.jumpBuffer = Math.max(0, s.jumpBuffer - dt);
-  s.coyote = s.onGround ? MOVE.coyoteTime : Math.max(0, s.coyote - dt);
-
-  // --- Slide state machine -------------------------------------------------
-  if (s.onGround && !s.sliding && input.crouchPressed && horizontalSpeed(s.vel) >= MOVE.slideMinSpeed) {
-    s.sliding = true;
-    s.slideTime = 0;
-    const speed = horizontalSpeed(s.vel);
-    const target = Math.min(Math.max(speed, speed + MOVE.slideStartBoost), MOVE.slideMaxStart);
-    const k = speed > 1e-6 ? target / speed : 1;
-    s.vel.x *= k;
-    s.vel.z *= k;
-    ev.slideStarted = true;
-  }
-
-  // Slide-jump: jumping during a slide, or within a short window after a slide.
-  const canSlideJump =
-    s.jumpBuffer > 0 && (s.sliding || (s.onGround && s.timeSinceSlideEnd < MOVE.slideJumpWindow));
-  // Coyote time lets a jump fire just after walking off a ledge; auto-hop repeats
-  // the jump while the key is held so bunny-hopping needs no timing.
-  const coyoteJump = s.jumpBuffer > 0 && !s.onGround && s.coyote > 0;
-  const hopJump = MOVE.autoHop && input.jumpHeld && s.onGround;
-  const wantsJump = (s.jumpBuffer > 0 || hopJump) && (s.onGround || canSlideJump || coyoteJump);
-  if (wantsJump) {
-    const wasSliding = s.sliding || s.timeSinceSlideEnd < MOVE.slideJumpWindow;
-    s.jumpBuffer = 0;
-    s.onGround = false;
-    s.coyote = 0;
-    s.vel.y = MOVE.jumpVelocity;
-    ev.jumped = true;
-    if (wasSliding) {
-      const speed = horizontalSpeed(s.vel);
-      if (speed > 1e-6) {
-        const boosted = Math.min(speed * MOVE.slideJumpMult, Math.max(speed, MOVE.slideJumpCap));
-        const k = boosted / speed;
-        s.vel.x *= k;
-        s.vel.z *= k;
+/** Moves one axis in short substeps so fast motion (dashes) can't tunnel through thin solids. */
+const MAX_STEP = 6;
+function sweepAxis(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  axis: 'x' | 'y',
+  delta: number,
+  solids: readonly Rect[],
+): { pos: number; blocked: boolean } {
+  if (delta === 0) return { pos: axis === 'x' ? x : y, blocked: false };
+  const steps = Math.max(1, Math.ceil(Math.abs(delta) / MAX_STEP));
+  const inc = delta / steps;
+  let cx = x;
+  let cy = y;
+  for (let i = 0; i < steps; i++) {
+    const nx = axis === 'x' ? cx + inc : cx;
+    const ny = axis === 'y' ? cy + inc : cy;
+    const test: Rect = { x: nx, y: ny, w, h };
+    let blocked = false;
+    for (const s of solids) {
+      if (rectsOverlap(test, s)) {
+        blocked = true;
+        break;
       }
-      s.vel.y *= MOVE.slideJumpVelBonus;
-      s.slideJumping = true;
-      ev.slideJumped = true;
     }
-    if (s.sliding) {
-      s.sliding = false;
-      s.timeSinceSlideEnd = 0;
-      ev.slideEnded = true;
-    }
+    if (blocked) return { pos: axis === 'x' ? cx : cy, blocked: true };
+    cx = nx;
+    cy = ny;
+  }
+  return { pos: axis === 'x' ? cx : cy, blocked: false };
+}
+
+const PROBE = 2; // thin probe strip, in px, used for ground/wall adjacency checks
+const PROBE_MARGIN = 3; // shrink probes away from corners so a ledge isn't both "wall" and "ground"
+
+function anyOverlap(test: Rect, solids: readonly Rect[]): boolean {
+  for (const s of solids) {
+    if (rectsOverlap(test, s)) return true;
+  }
+  return false;
+}
+
+/**
+ * Adjacency is checked with a small probe *after* integration, independent of this
+ * frame's velocity. Deriving "on ground"/"on wall" purely from whether the sweep was
+ * blocked this frame flickers whenever velocity settles to zero (a resting body stops
+ * moving into the floor, so the sweep sees no collision at all) - the probe avoids that.
+ */
+function probeGround(x: number, y: number, w: number, h: number, solids: readonly Rect[]): boolean {
+  const test: Rect = { x: x + PROBE_MARGIN, y: y + h, w: Math.max(1, w - PROBE_MARGIN * 2), h: PROBE };
+  return anyOverlap(test, solids);
+}
+
+function probeWall(x: number, y: number, w: number, h: number, dir: 1 | -1, solids: readonly Rect[]): boolean {
+  const test: Rect = {
+    x: dir === 1 ? x + w : x - PROBE,
+    y: y + PROBE_MARGIN,
+    w: PROBE,
+    h: Math.max(1, h - PROBE_MARGIN * 2),
+  };
+  return anyOverlap(test, solids);
+}
+
+function moveAndCollide(s: PlayerState, dt: number, solids: readonly Rect[]) {
+  const dx = s.vel.x * dt;
+  const rx = sweepAxis(s.pos.x, s.pos.y, s.width, s.height, 'x', dx, solids);
+  s.pos.x = rx.pos;
+  if (rx.blocked) s.vel.x = 0;
+
+  const dy = s.vel.y * dt;
+  const ry = sweepAxis(s.pos.x, s.pos.y, s.width, s.height, 'y', dy, solids);
+  s.pos.y = ry.pos;
+  const onCeiling = ry.blocked && dy < 0;
+  if (ry.blocked) s.vel.y = onCeiling ? Math.max(s.vel.y, 0) : 0;
+
+  const onGround = probeGround(s.pos.x, s.pos.y, s.width, s.height, solids);
+  const wallLeft = probeWall(s.pos.x, s.pos.y, s.width, s.height, -1, solids);
+  const wallRight = probeWall(s.pos.x, s.pos.y, s.width, s.height, 1, solids);
+
+  return { onGround, onCeiling, wallLeft, wallRight };
+}
+
+export function attackHitbox(s: PlayerState): Rect | null {
+  if (s.attackTimer <= 0 || !s.attackKind) return null;
+  if (s.attackKind === 'down') {
+    const w = s.width * 0.9;
+    return { x: s.pos.x + (s.width - w) / 2, y: s.pos.y + s.height - 4, w, h: 22 };
+  }
+  const w = 34;
+  const h = 22;
+  const x = s.facing === 1 ? s.pos.x + s.width - 4 : s.pos.x - w + 4;
+  return { x, y: s.pos.y + s.height * 0.3, w, h };
+}
+
+/** Advances the player simulation by dt seconds. Mutates `s` in place. */
+export function stepPlayer(s: PlayerState, input: InputFrame, level: Level, dt: number): PlayerEvents {
+  const ev = emptyEvents();
+  const wasGrounded = s.onGround;
+
+  // --- timers ---
+  s.coyote = s.onGround ? PHYSICS.coyoteTime : Math.max(0, s.coyote - dt);
+  s.jumpBuffer = input.jumpPressed ? PHYSICS.jumpBufferTime : Math.max(0, s.jumpBuffer - dt);
+  s.wallJumpLock = Math.max(0, s.wallJumpLock - dt);
+  s.dashCooldown = Math.max(0, s.dashCooldown - dt);
+  s.attackCooldown = Math.max(0, s.attackCooldown - dt);
+  s.facingLockTimer = Math.max(0, s.facingLockTimer - dt);
+  s.hurtTimer = Math.max(0, s.hurtTimer - dt);
+  s.invulnTimer = Math.max(0, s.invulnTimer - dt);
+
+  const hurtLocked = s.hurtTimer > 0;
+
+  // --- facing ---
+  if (!hurtLocked && s.facingLockTimer <= 0 && input.moveX !== 0) {
+    s.facing = input.moveX > 0 ? 1 : -1;
   }
 
-  // Slide ends: crouch released, too slow, or too long.
-  if (s.sliding && s.onGround) {
-    s.slideTime += dt;
-    const tooSlow = horizontalSpeed(s.vel) < MOVE.slideEndSpeed;
-    const tooLong = s.slideTime > MOVE.slideMaxTime;
-    if (!input.crouchHeld || tooSlow || tooLong) {
-      s.sliding = false;
-      s.timeSinceSlideEnd = 0;
-      ev.slideEnded = true;
-    }
+  // --- crouch (cosmetic + speed only; hitbox stays constant for simple, reliable collision) ---
+  s.crouching = s.onGround && input.downHeld && s.dashTimer <= 0;
+
+  // --- dash start ---
+  if (!hurtLocked && input.dashPressed && s.dashReady && s.dashTimer <= 0 && s.dashCooldown <= 0) {
+    const dashingDown = !s.onGround && input.downHeld;
+    s.dashDir = dashingDown ? { x: 0, y: 1 } : { x: s.facing, y: 0 };
+    s.dashTimer = PHYSICS.dashDuration;
+    s.dashReady = false;
+    s.dashCooldown = PHYSICS.dashCooldown;
+    s.vel.x = s.dashDir.x * PHYSICS.dashSpeed;
+    s.vel.y = s.dashDir.y * PHYSICS.dashSpeed;
+    s.invulnTimer = Math.max(s.invulnTimer, PHYSICS.dashInvulnTime);
+    s.jumping = true;
+    s.facingLockTimer = PHYSICS.dashDuration;
+    ev.dashed = true;
   }
 
-  // Stand-up collision: keep crouch-height while there is no headroom.
-  if (s.sliding || !canStandAt(s, solids)) {
-    s.height = PLAYER.slideHeight;
+  if (s.dashTimer > 0) {
+    s.dashTimer = Math.max(0, s.dashTimer - dt);
+    if (s.dashTimer === 0) {
+      s.vel.x = s.dashDir.x * PHYSICS.dashSpeed * PHYSICS.dashEndCarryMul;
+      s.vel.y = s.dashDir.y === 0 ? 0 : s.vel.y * PHYSICS.dashEndCarryMul;
+      ev.dashEnded = true;
+    }
   } else {
-    s.height = PLAYER.standHeight;
-  }
+    // --- horizontal movement ---
+    const wish = input.moveX;
+    const speedMul = s.crouching ? PHYSICS.crouchSpeedMul : 1;
+    if (!hurtLocked) {
+      if (s.onGround) {
+        const target = PHYSICS.runSpeed * speedMul;
+        if (wish !== 0) {
+          const reversing = sign(s.vel.x) !== 0 && sign(s.vel.x) !== sign(wish);
+          accelerate1D(s.vel, wish, target, reversing ? PHYSICS.groundTurnAccel : PHYSICS.groundAccel, dt);
+        } else {
+          applyFriction1D(s.vel, PHYSICS.groundFriction, dt);
+        }
+      } else {
+        const lockScale = s.wallJumpLock > 0 ? 0.25 : 1;
+        if (wish !== 0) {
+          accelerate1D(s.vel, wish, PHYSICS.airSpeed * lockScale, PHYSICS.airAccel * lockScale, dt);
+        } else {
+          applyFriction1D(s.vel, PHYSICS.airFriction, dt);
+        }
+      }
+    }
 
-  // --- Horizontal velocity -------------------------------------------------
-  if (s.onGround) {
-    if (s.sliding) {
-      applyFriction(s.vel, MOVE.slideFriction, dt);
-      if (hasWish) accelerate(s.vel, wx, wz, MOVE.slideAccel, MOVE.slideAccel, dt);
+    // --- gravity & variable jump height ---
+    if (s.onGround) {
+      if (s.vel.y >= 0) s.vel.y = 0;
+      s.jumping = false;
     } else {
-      // Holding jump preserves speed on landing (bunny-hop friendly).
-      const bhopHold = input.jumpPressed || s.jumpBuffer > 0;
-      if (!hasWish && !bhopHold) applyFriction(s.vel, MOVE.groundFriction, dt);
-      if (hasWish) {
-        accelerate(s.vel, wx, wz, MOVE.runSpeed, MOVE.groundAccel, dt);
-        if (!bhopHold) applyFriction(s.vel, MOVE.groundFriction * 0.25, dt);
+      const rising = s.vel.y < 0;
+      const nearApex = Math.abs(s.vel.y) < PHYSICS.apexThreshold;
+      let g: number;
+      if (rising) {
+        g = nearApex ? PHYSICS.apexGravity : PHYSICS.riseGravity;
+      } else {
+        g = input.downHeld ? PHYSICS.fastFallGravity : PHYSICS.fallGravity;
+      }
+      s.vel.y = Math.min(s.vel.y + g * dt, PHYSICS.maxFallSpeed);
+      if (!input.jumpHeld && rising && s.jumping) {
+        s.vel.y = Math.max(s.vel.y, PHYSICS.jumpVelocity * PHYSICS.jumpCutMultiplier);
       }
     }
-  } else {
-    if (hasWish) accelerate(s.vel, wx, wz, Math.min(MOVE.runSpeed, MOVE.airWishCap), MOVE.airAccel, dt);
+
+    // --- wall cling ---
+    if (!s.onGround && s.onWall !== 0 && s.vel.y > 0 && input.moveX === s.onWall) {
+      s.wallStick = s.wallStick > 0 ? s.wallStick - dt : 0;
+      if (s.wallStick <= 0) s.vel.y = Math.min(s.vel.y, PHYSICS.wallSlideSpeed);
+      else s.vel.y = Math.min(s.vel.y, 10);
+    } else {
+      s.wallStick = PHYSICS.wallStickTime;
+    }
+
+    // --- jump / wall jump ---
+    const wantsJump = s.jumpBuffer > 0;
+    const canGroundJump = s.onGround || s.coyote > 0;
+    if (!hurtLocked && wantsJump && canGroundJump) {
+      s.vel.y = PHYSICS.jumpVelocity;
+      s.jumping = true;
+      s.coyote = 0;
+      s.jumpBuffer = 0;
+      ev.jumped = true;
+    } else if (!hurtLocked && wantsJump && !s.onGround && s.onWall !== 0) {
+      s.vel.y = PHYSICS.wallJumpVelY;
+      s.vel.x = -s.onWall * PHYSICS.wallJumpVelX;
+      s.facing = -s.onWall as Facing;
+      s.jumping = true;
+      s.wallJumpLock = PHYSICS.wallJumpLockTime;
+      s.jumpBuffer = 0;
+      s.dashReady = true;
+      s.facingLockTimer = 0.08;
+      ev.wallJumped = true;
+    }
   }
 
-  // --- Vertical velocity ---------------------------------------------------
-  if (s.onGround && s.vel.y <= 0) {
-    s.vel.y = -2; // ground snap
-  } else {
-    // Variable jump height: releasing jump while rising cuts the upward velocity.
-    if (!input.jumpHeld && s.vel.y > 0 && !s.slideJumping) s.vel.y *= MOVE.jumpCutMult;
-    s.vel.y -= MOVE.gravity * dt;
+  // --- attack / pogo ---
+  if (!hurtLocked && input.attackPressed && s.attackCooldown <= 0) {
+    const down = !s.onGround && input.downHeld;
+    s.attackKind = down ? 'down' : 'side';
+    s.attackTimer = PHYSICS.attackDuration;
+    s.attackCooldown = PHYSICS.attackDuration + PHYSICS.attackCooldown;
+    s.pogoConsumed = false;
+    if (down) s.facingLockTimer = Math.max(s.facingLockTimer, PHYSICS.attackDuration);
+    ev.attacked = s.attackKind;
   }
-
-  // --- Integrate with collision -------------------------------------------
-  const start: Vec3 = { ...s.pos };
-  const p = s.pos;
-  const blocked = moveHorizontal(p, s.vel, dt, s.height, solids);
-
-  // Step-up: if blocked on the ground, try raising by stepHeight and moving again.
-  if (blocked && s.onGround) {
-    const raised: Vec3 = { x: start.x, y: start.y + PLAYER.stepHeight, z: start.z };
-    if (!overlapsAny(raised, s.height, solids)) {
-      const alt: Vec3 = { ...raised };
-      moveHorizontal(alt, s.vel, dt, s.height, solids);
-      const dxAlt = alt.x - start.x;
-      const dzAlt = alt.z - start.z;
-      const dxCur = p.x - start.x;
-      const dzCur = p.z - start.z;
-      if (dxAlt * dxAlt + dzAlt * dzAlt > dxCur * dxCur + dzCur * dzCur + 1e-8) {
-        p.x = alt.x;
-        p.y = alt.y;
-        p.z = alt.z;
+  if (s.attackTimer > 0) {
+    s.attackTimer = Math.max(0, s.attackTimer - dt);
+    if (s.attackKind === 'down' && !s.pogoConsumed && s.vel.y >= 0) {
+      const box = attackHitbox(s);
+      if (box) {
+        for (const pad of level.bouncePads) {
+          if (rectsOverlap(box, pad)) {
+            s.vel.y = PHYSICS.pogoVelocity;
+            s.jumping = true;
+            s.dashReady = true;
+            s.pogoConsumed = true;
+            s.attackTimer = 0;
+            ev.pogoed = true;
+            break;
+          }
+        }
       }
     }
   }
+  if (s.attackTimer <= 0) s.attackKind = null;
 
-  const yBlocked = moveAxis(p, 1, s.vel.y * dt, s.height, solids);
-  if (yBlocked) {
-    if (s.vel.y < 0) {
-      s.onGround = true;
-      if (!wasGround) ev.landed = true;
-      s.slideJumping = false;
-    }
-    s.vel.y = 0;
-  } else {
-    s.onGround = false;
+  // --- integrate + collide ---
+  const { onGround, wallLeft, wallRight } = moveAndCollide(s, dt, level.solids);
+  s.onGround = onGround;
+  s.onWall = wallLeft ? -1 : wallRight ? 1 : 0;
+
+  if (s.onGround) {
+    s.dashReady = true;
+    if (!wasGrounded) ev.landed = true;
   }
 
-  // Keep the player from being stuck: if we are still in the ground-snap state but blocked by
-  // nothing below us, allow falling next frame.
-  if (s.onGround && s.vel.y < 0) s.vel.y = 0;
-
-  // Sliding while airborne cancels, the slide-jump keeps horizontal speed.
-  if (!s.onGround && s.sliding) {
-    s.sliding = false;
-    s.timeSinceSlideEnd = 0;
-    ev.slideEnded = true;
+  // --- fell into the void ---
+  if (s.pos.y > level.height + 400) {
+    ev.fellOut = true;
   }
 
   return ev;
+}
+
+export function applyHurt(s: PlayerState, fromX: number): void {
+  if (s.invulnTimer > 0) return;
+  const away = s.pos.x + s.width / 2 < fromX ? -1 : 1;
+  s.vel.x = away * PHYSICS.hurtKnockbackX;
+  s.vel.y = PHYSICS.hurtKnockbackY;
+  s.hurtTimer = PHYSICS.hurtLockTime;
+  s.invulnTimer = PHYSICS.hurtInvulnTime;
+  s.jumping = true;
+  s.dashTimer = 0;
+}
+
+export function respawn(s: PlayerState, at: Vec2): void {
+  s.pos = { ...at };
+  s.vel = { x: 0, y: 0 };
+  s.onGround = false;
+  s.onWall = 0;
+  s.dashTimer = 0;
+  s.dashReady = true;
+  s.attackTimer = 0;
+  s.attackKind = null;
+  s.hurtTimer = 0;
+  s.invulnTimer = PHYSICS.hurtInvulnTime * 0.5;
+}
+
+export function clampToWorld(s: PlayerState, worldWidth: number): void {
+  s.pos.x = clamp(s.pos.x, 0, worldWidth - s.width);
 }

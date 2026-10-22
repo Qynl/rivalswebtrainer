@@ -1,150 +1,70 @@
-// Central tuning. All units are metres and seconds.
+/**
+ * Every tunable number for the player controller lives here so the feel can be
+ * adjusted in one place. Values are in pixels / seconds. TILE is the base grid
+ * unit used to lay out the test chamber.
+ */
+export const TILE = 48;
 
-export const PLAYER = {
-  radius: 0.35,
-  standHeight: 1.8,
-  slideHeight: 0.9,
-  eyeStand: 1.6,
-  eyeSlide: 0.75,
-  maxHp: 100,
-  stepHeight: 0.55,
-} as const;
-
-export const MOVE = {
-  gravity: 26,
-  jumpVelocity: 8.4,
-  /** releasing jump early cuts upward velocity for variable jump height */
-  jumpCutMult: 0.42,
-  /** holding jump auto-hops on landing (bunny-hop friendly) */
-  autoHop: true,
-  /** jump still works briefly after walking off a ledge */
-  coyoteTime: 0.12,
-  runSpeed: 7.4,
-  groundAccel: 62,
-  groundFriction: 7,
-  airAccel: 42,
-  airWishCap: 8,
-  slideMinSpeed: 6,
-  slideStartBoost: 1.8,
-  slideMaxStart: 11.5,
-  slideFriction: 1.2,
-  slideAccel: 4.5,
-  slideEndSpeed: 3.2,
-  slideMaxTime: 1.8,
-  slideJumpWindow: 0.2,
-  slideJumpMult: 1.14,
-  slideJumpCap: 14.5,
-  slideJumpVelBonus: 1.05,
-  jumpBuffer: 0.12,
-} as const;
-
-export const SCYTHE = {
-  range: 2.4,
-  arcDeg: 110,
-  damage: 45,
-  swingTime: 0.35,
-  swingCooldown: 0.45,
-  hitWindowStart: 0.08,
-  hitWindowEnd: 0.22,
-  dashSpeed: 22,
-  dashTime: 0.16,
-  dashCooldown: 2.5,
-  dashDamage: 30,
-  dashHitRange: 1.6,
-} as const;
-
-/** Katana: faster, longer slash. Right click deflects incoming shots and reflects them. */
-export const KATANA = {
-  range: 2.7,
-  arcDeg: 140,
-  damage: 40,
-  swingTime: 0.3,
-  swingCooldown: 0.35,
-  hitWindowStart: 0.06,
-  hitWindowEnd: 0.18,
-  deflectTime: 0.35,
-  deflectCooldown: 3,
-  reflectMult: 0.75,
-} as const;
-
-export type MeleeId = 'scythe' | 'katana';
-
-export interface MeleeDef {
-  range: number;
-  arcDeg: number;
-  damage: number;
-  swingTime: number;
-  swingCooldown: number;
-  hitWindowStart: number;
-  hitWindowEnd: number;
-}
-
-export const MELEE: Record<MeleeId, MeleeDef> = { scythe: SCYTHE, katana: KATANA };
-
-/** F quick melee: a short melee attack, then the previous gun comes back. */
-export const QUICK_MELEE = { duration: 0.6 } as const;
-
-export type WeaponId = 'pistol' | 'smg' | 'rifle' | 'ak' | 'puma';
-
-export const WEAPON_IDS: WeaponId[] = ['pistol', 'smg', 'rifle', 'ak', 'puma'];
-
-export interface WeaponDef {
-  id: WeaponId;
-  name: string;
-  /** display class, e.g. 'ASSAULT RIFLE' */
-  type: string;
-  /** ideal engagement distance used by the bot AI */
-  rangePref: number;
-  damage: number;
-  headMult: number;
-  fireInterval: number; // seconds between shots
-  auto: boolean;
-  burst: number; // shots per trigger pull (1 = normal)
-  magSize: number;
-  reloadTime: number;
-  spread: number; // radians of max cone
-  recoil: number; // view kick in radians
-  range: number;
-}
-
-export const WEAPONS: Record<WeaponId, WeaponDef> = {
-  pistol: {
-    id: 'pistol', name: 'SIDEARM', type: 'PISTOL', rangePref: 8, damage: 24, headMult: 1.6, fireInterval: 0.22,
-    auto: false, burst: 1, magSize: 12, reloadTime: 1.1, spread: 0.004, recoil: 0.03, range: 120,
-  },
-  smg: {
-    id: 'smg', name: 'VECTOR SMG', type: 'SMG', rangePref: 6, damage: 13, headMult: 1.5, fireInterval: 0.085,
-    auto: true, burst: 1, magSize: 30, reloadTime: 1.6, spread: 0.02, recoil: 0.012, range: 90,
-  },
-  rifle: {
-    id: 'rifle', name: 'MARKSMAN RIFLE', type: 'BURST RIFLE', rangePref: 14, damage: 22, headMult: 2.0, fireInterval: 0.55,
-    auto: false, burst: 3, magSize: 18, reloadTime: 2.0, spread: 0.006, recoil: 0.05, range: 200,
-  },
-  // Full-auto assault rifle: hard-hitting, moderate rate, strong recoil.
-  ak: {
-    id: 'ak', name: 'BRUTE-47', type: 'ASSAULT RIFLE', rangePref: 11, damage: 26, headMult: 1.7, fireInterval: 0.1,
-    auto: true, burst: 1, magSize: 30, reloadTime: 2.1, spread: 0.013, recoil: 0.032, range: 160,
-  },
-  // Run-and-gun SMG: fastest fire rate, big mag, forgiving but weak per bullet.
-  puma: {
-    id: 'puma', name: 'PANTHER', type: 'RUN-AND-GUN SMG', rangePref: 6, damage: 11, headMult: 1.5, fireInterval: 0.062,
-    auto: true, burst: 1, magSize: 34, reloadTime: 1.35, spread: 0.026, recoil: 0.01, range: 70,
-  },
+export const WORLD = {
+  width: TILE * 70,
+  height: TILE * 26,
+  gravityWell: TILE * 40, // y below which the player is considered "fallen out"
 };
 
-export const BOT_DIFFICULTY = {
-  easy: { reaction: 0.55, aimError: 0.14, accuracy: 0.35, speedMult: 0.85, strafeChance: 0.2, slideChance: 0.05, dashChance: 0.1, meleeChance: 0.15 },
-  normal: { reaction: 0.35, aimError: 0.08, accuracy: 0.55, speedMult: 0.95, strafeChance: 0.4, slideChance: 0.15, dashChance: 0.25, meleeChance: 0.3 },
-  hard: { reaction: 0.22, aimError: 0.045, accuracy: 0.7, speedMult: 1.0, strafeChance: 0.6, slideChance: 0.3, dashChance: 0.4, meleeChance: 0.45 },
-  nightmare: { reaction: 0.14, aimError: 0.02, accuracy: 0.85, speedMult: 1.0, strafeChance: 0.75, slideChance: 0.45, dashChance: 0.55, meleeChance: 0.6 },
+export const PLAYER = {
+  width: 26,
+  height: 40,
+  crouchHeight: 26,
+};
+
+export const PHYSICS = {
+  // --- horizontal movement ---
+  runSpeed: 236, // px/s top ground speed
+  groundAccel: 2900, // px/s^2 while a direction is held
+  groundTurnAccel: 4600, // px/s^2 when reversing direction (snappy turns)
+  groundFriction: 3600, // px/s^2 deceleration with no input
+  airSpeed: 236,
+  airAccel: 1700,
+  airFriction: 900,
+  crouchSpeedMul: 0.45,
+
+  // --- gravity & jump ---
+  riseGravity: 1480, // while moving upward and jump still held
+  apexGravity: 820, // extra floaty zone near the top of the arc
+  apexThreshold: 70, // |vel.y| below this counts as "near apex"
+  fallGravity: 2000, // while falling
+  fastFallGravity: 2650, // while falling and down is held
+  maxFallSpeed: 980,
+  jumpVelocity: -560, // initial upward velocity on jump/buffer consume
+  jumpCutMultiplier: 0.42, // releasing jump early clamps vel.y toward 0 by this factor
+  coyoteTime: 0.1, // grace period after walking off a ledge
+  jumpBufferTime: 0.12, // grace period for an early jump press
+
+  // --- walls ---
+  wallSlideSpeed: 86, // max downward speed while clinging
+  wallStickTime: 0.07, // short pause when first touching a wall before sliding
+  wallJumpVelX: 320,
+  wallJumpVelY: -520,
+  wallJumpLockTime: 0.16, // time after a wall jump with reduced air control
+
+  // --- dash (Swift Step analogue) ---
+  dashSpeed: 760,
+  dashDuration: 0.16,
+  dashCooldown: 0.46,
+  dashEndCarryMul: 0.55, // fraction of dash speed kept as horizontal momentum after a dash
+  dashInvulnTime: 0.16,
+
+  // --- needle attack / pogo ---
+  attackDuration: 0.16,
+  attackCooldown: 0.22,
+  pogoWindow: 0.22,
+  pogoVelocity: -640,
+
+  // --- misc ---
+  hurtKnockbackX: 260,
+  hurtKnockbackY: -340,
+  hurtInvulnTime: 0.9,
+  hurtLockTime: 0.22,
 } as const;
 
-export type Difficulty = keyof typeof BOT_DIFFICULTY;
-
-export const MATCH = {
-  rounds: 5,
-  roundTime: 90,
-  intermission: 2.5,
-  respawnDelay: 1.2,
-  mouseSens: 0.0022,
-} as const;
+export const MASKS_MAX = 5;
