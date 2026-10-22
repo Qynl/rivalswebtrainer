@@ -298,6 +298,8 @@ export class Renderer {
   private grapnelModel: THREE.Group = new THREE.Group();
   private boltGroup: THREE.Group = new THREE.Group();
   private spool: THREE.Object3D = new THREE.Object3D();
+  /** The loaded claw in the launcher's throat; hidden while one is in flight. */
+  private readyClaw: THREE.Object3D = new THREE.Object3D();
   private slotBlend = 0;
   private hookKick = 0;
   private hookHeads: THREE.Group[] = [];
@@ -339,7 +341,9 @@ export class Renderer {
     this.renderer.setPixelRatio(this.baseDpr);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 0.95;
+    // Slightly hot exposure: daylight should clip on the concrete, not sit in
+    // the middle of the histogram where every surface reads the same grey.
+    this.renderer.toneMappingExposure = 1.04;
     this.renderer.setClearColor(0xb9d2e6, 1);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -375,12 +379,12 @@ export class Renderer {
 
   private buildLights(): void {
     // Overcast-bright: strong sky dome, warm sun, cool bounce from below.
-    const hemi = new THREE.HemisphereLight(0xcfe3f6, 0x8a8172, 0.85);
+    const hemi = new THREE.HemisphereLight(0xcfe3f6, 0x8a8172, 0.72);
     this.scene.add(hemi);
-    const fill = new THREE.DirectionalLight(0xa8c8ec, 0.55);
+    const fill = new THREE.DirectionalLight(0xa8c8ec, 0.42);
     fill.position.set(80, 40, 120);
     this.scene.add(fill);
-    const ambient = new THREE.AmbientLight(0xffffff, 0.16);
+    const ambient = new THREE.AmbientLight(0xffffff, 0.1);
     this.scene.add(ambient);
   }
 
@@ -816,6 +820,47 @@ export class Renderer {
       }
     }
 
+    // ── Masonry ───────────────────────────────────────────────────────────
+    // The central spire is the map's landmark, so it gets the only real
+    // architectural treatment on the map: fluted faces, a cornice band every
+    // few metres, and a stepped crown. Plain boxes read as placeholders; a
+    // little articulated stone reads as a building.
+    const flutes: THREE.Matrix4[] = [];
+    const bands: THREE.Matrix4[] = [];
+    const brackets: THREE.Matrix4[] = [];
+    for (const b of this.arena.blocks) {
+      if (b.kind === 'strut' && b.hx >= 4 && b.hz >= 4) {
+        // Flutes: shallow vertical ribs, pulled 0.1 m proud of the face.
+        const n = Math.max(3, Math.round(b.hx));
+        for (let i = 0; i < n; i++) {
+          const t = (i + 0.5) / n;
+          for (const side of [-1, 1]) {
+            push(flutes, b.x + (t - 0.5) * b.hx * 1.9, b.y, b.z + side * (b.hz + 0.1), 0.34, b.hy * 1.96, 0.2);
+            push(flutes, b.x + side * (b.hx + 0.1), b.y, b.z + (t - 0.5) * b.hz * 1.9, 0.2, b.hy * 1.96, 0.34);
+          }
+        }
+        // Cornice + string courses: horizontal shadow lines break the height.
+        const courses = Math.max(2, Math.round(b.hy / 9));
+        for (let i = 0; i <= courses; i++) {
+          const y = b.y - b.hy + (i / courses) * b.hy * 2;
+          const grow = i === courses ? 0.55 : 0.3;
+          push(bands, b.x, y, b.z, b.hx * 2 + grow * 2, i === courses ? 0.9 : 0.4, b.hz * 2 + grow * 2);
+        }
+      } else if (b.kind === 'deck' && b.hx > 5) {
+        // Brackets under the rim: the slab looks carried, not floating.
+        const span = Math.min(b.hx, b.hz);
+        const n = Math.max(2, Math.round(b.hx * 0.5));
+        for (let i = 0; i < n; i++) {
+          const t = (i + 0.5) / n;
+          const x = b.x + (t - 0.5) * b.hx * 1.8;
+          for (const side of [-1, 1]) {
+            push(brackets, x, b.y - b.hy - 0.55, b.z + side * (b.hz - 0.5), 0.34, 1.0, span * 0.35);
+            push(brackets, b.x + side * (b.hx - 0.5), b.y - b.hy - 0.55, b.z + (t - 0.5) * b.hz * 1.8, span * 0.35, 1.0, 0.34);
+          }
+        }
+      }
+    }
+
     const instanced = (list: THREE.Matrix4[], geo: THREE.BufferGeometry, mat: THREE.Material, shadow = true): void => {
       if (!list.length) return;
       const mesh = new THREE.InstancedMesh(geo, mat, list.length);
@@ -827,6 +872,9 @@ export class Renderer {
     };
     instanced(joists, unit, darkSteel);
     instanced(caps, unit, steel);
+    instanced(brackets, unit, darkSteel);
+    instanced(flutes, unit, steel);
+    instanced(bands, unit, steel);
     const pipeGeo = new THREE.CylinderGeometry(0.16, 0.16, 1, 8);
     instanced(pipes, pipeGeo, steel);
     void mat4;
@@ -1056,6 +1104,10 @@ export class Renderer {
     const eyeLens = new THREE.Mesh(new THREE.CircleGeometry(0.03, 16), glass);
     eyeLens.position.set(0, scopeY, -0.088);
     rifle.add(eyeLens);
+    rifle.add(cyl(0.047, 0.049, 0.05, blued, 0, scopeY, -0.575));
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.038, 0.004, 5, 16), brass);
+    rim.position.set(0, scopeY, -0.552);
+    rifle.add(rim);
     const turret = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.03, 12), blued);
     turret.position.set(0, scopeY + 0.045, -0.34);
     rifle.add(turret);
@@ -1089,6 +1141,22 @@ export class Renderer {
     rifle.add(box(0.06, 0.11, 0.028, polymer, 0, -0.012, 0.23));
     rifle.add(box(0.03, 0.02, 0.05, gunmetal, 0, 0.075, -0.02));
 
+    // Cheek riser and recoil pad: the two parts that make a rifle look
+    // shouldered rather than moulded from one lump.
+    rifle.add(box(0.052, 0.03, 0.16, polymer, 0, 0.088, 0.06));
+    rifle.add(box(0.055, 0.07, 0.03, blued, 0, -0.012, 0.25));
+    // Rail slots along the receiver top.
+    for (let i = 0; i < 3; i++) rifle.add(box(0.03, 0.008, 0.022, blued, 0, 0.072, -0.2 - i * 0.06));
+    // Sling: two straps and a brass swivel.
+    const slingA = box(0.014, 0.006, 0.5, sleeve, 0.055, -0.075, 0.03);
+    slingA.rotation.x = 0.18;
+    rifle.add(slingA);
+    rifle.add(box(0.014, 0.006, 0.34, sleeve, 0.055, -0.055, -0.5));
+    rifle.add(cyl(0.012, 0.012, 0.02, brass, 0.055, -0.088, 0.2, 'x'));
+    // Ejection port + a chip of bare metal where the finish has worn.
+    rifle.add(box(0.006, 0.026, 0.07, blued, -0.044, 0.028, -0.3));
+    rifle.add(box(0.004, 0.014, 0.03, gunmetal, 0.045, -0.03, -0.72));
+
     // Folded bipod under the handguard.
     for (const side of [-1, 1]) {
       const leg = box(0.012, 0.012, 0.22, gunmetal, side * 0.028, -0.06, -0.62);
@@ -1118,12 +1186,19 @@ export class Renderer {
 
     // ── Grapnel launcher ──────────────────────────────────────────────────
     const grapnel = new THREE.Group();
-    grapnel.add(box(0.098, 0.11, 0.24, gunmetal, 0, -0.01, -0.16));
-    grapnel.add(box(0.08, 0.07, 0.1, sand, 0, 0.03, -0.3));
-    grapnel.add(cyl(0.048, 0.052, 0.17, gunmetal, 0, 0.02, -0.42));
-    grapnel.add(cyl(0.055, 0.055, 0.02, brass, 0, 0.02, -0.5));
-    grapnel.add(cyl(0.056, 0.056, 0.02, brass, 0, 0.02, -0.34));
-    grapnel.add(box(0.04, 0.02, 0.06, blued, 0, 0.085, -0.42));
+    grapnel.add(box(0.11, 0.12, 0.26, gunmetal, 0, -0.01, -0.17));
+    grapnel.add(box(0.088, 0.075, 0.11, sand, 0, 0.032, -0.31));
+    grapnel.add(cyl(0.05, 0.055, 0.18, gunmetal, 0, 0.02, -0.44));
+    // Muzzle crown: a toothed brass ring, the launcher's one loud detail.
+    grapnel.add(cyl(0.058, 0.058, 0.026, brass, 0, 0.02, -0.52));
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      grapnel.add(box(0.014, 0.014, 0.03, brass, Math.cos(a) * 0.055, 0.02 + Math.sin(a) * 0.055, -0.535));
+    }
+    grapnel.add(cyl(0.058, 0.058, 0.022, brass, 0, 0.02, -0.35));
+    grapnel.add(box(0.03, 0.022, 0.08, blued, 0, 0.09, -0.44));
+    // Carrying handle over the receiver.
+    grapnel.add(box(0.02, 0.016, 0.16, gunmetal, 0, 0.078, -0.19));
 
     // Spool: visible cable, spins while the claw is out.
     this.spool = new THREE.Group();
@@ -1144,6 +1219,7 @@ export class Renderer {
     ready.scale.setScalar(0.55);
     ready.position.set(0, 0.035, -0.52);
     grapnel.add(ready);
+    this.readyClaw = ready;
 
     const gGrip = box(0.048, 0.15, 0.075, polymer, 0, -0.11, -0.03);
     gGrip.rotation.x = -0.34;
@@ -1426,6 +1502,9 @@ export class Renderer {
     // Spool pays out while the claw is away.
     this.hookKick = Math.max(0, this.hookKick - dt * 6);
     this.spool.rotation.x += dt * (local.hook.active ? 26 : 0) + this.hookKick * dt * 40;
+    // One claw, one place: while it is out the launcher's cradle is empty.
+    const clawAway = local.hook.active || local.grapple.active;
+    this.readyClaw.visible = !clawAway;
     this.grapnelModel.position.z = this.hookKick * 0.07;
 
     const scopedNow = local.scopeT > 0.72;

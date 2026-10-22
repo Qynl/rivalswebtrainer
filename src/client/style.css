@@ -610,6 +610,52 @@ kbd {
   gap: 14px;
 }
 
+/* Two-slot loadout rail: which item is in your hands, at a glance. */
+#slots {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  align-items: flex-end;
+}
+
+#slots .slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 9px 3px 7px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: rgba(10, 13, 17, 0.45);
+  opacity: 0.4;
+  transition: opacity 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+#slots .slot b {
+  font-size: 0.62rem;
+  font-weight: 800;
+  color: var(--muted);
+  min-width: 8px;
+  text-align: center;
+}
+
+#slots .slot span {
+  font-size: 0.5rem;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  color: var(--muted);
+}
+
+#slots .slot.on {
+  opacity: 1;
+  border-color: var(--gold);
+  background: rgba(230, 178, 100, 0.14);
+}
+
+#slots .slot.on b,
+#slots .slot.on span {
+  color: var(--gold);
+}
+
 #ammo {
   display: flex;
   flex-direction: column;

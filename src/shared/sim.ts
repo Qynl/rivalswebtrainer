@@ -562,8 +562,8 @@ export function stepPlayer(
   // ── Trigger ──────────────────────────────────────────────────────────────
   if (p.slot === 1 && p.alive) {
     if (p.hookBuffer > 0 && !g.active && !hook.active) {
-      // A chain re-attach is instant by design, so the cooldown only gates
-      // throws made outside the window.
+      // Chaining is the whole point of the tool, so the cooldown must never
+      // swallow a throw made inside the chain window.
       if (g.cooldown === 0 || g.chainTimer > 0) {
         p.hookBuffer = 0;
         hook.active = true;

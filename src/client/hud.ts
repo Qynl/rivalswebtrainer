@@ -47,6 +47,8 @@ export class Hud {
   private speedvignette = el('speedvignette');
   private ringvignette = el('ringvignette');
   private weaponLabel = el('weaponLabel');
+  private slotRifle = el('slot-rifle');
+  private slotHook = el('slot-hook');
   private ammoCount = el('ammoCount');
   private matchTimer = el('matchtimer');
   private hitdir = el('hitdir');
@@ -239,6 +241,8 @@ export class Hud {
     const grapnel = opts.slot === 1;
     this.crosshair.classList.toggle('hook', grapnel);
     this.crosshair.classList.toggle('hooked', grapnel && opts.hooked);
+    this.slotRifle.classList.toggle('on', !grapnel);
+    this.slotHook.classList.toggle('on', grapnel);
     if (grapnel) {
       this.reloadArc.classList.remove('on');
       this.ammoCount.textContent = opts.hooked ? '●' : opts.hookFlying ? '…' : '○';
